@@ -29,7 +29,7 @@
   };
   console.log("Website Avatar loader: window.WA_CONFIG set", window.WA_CONFIG);
 
-  // Helper to load JS scripts in order
+  // Helper to load JS scripts sequentially
   function loadScript(src, isModule = false) {
     return new Promise(resolve => {
       const s = document.createElement('script');
@@ -41,18 +41,29 @@
       };
       s.onerror = () => {
         console.error(`Website Avatar loader: failed to load ${src}`);
-        resolve(); // still resolve so other scripts continue
+        resolve(); // continue on error
       };
       document.head.appendChild(s);
     });
   }
 
-  // Load scripts in sequence after DOM is ready
-  window.addEventListener('DOMContentLoaded', async () => {
-    console.log("Website Avatar loader: DOMContentLoaded, starting JS scripts");
-    await loadScript(`${baseURL}wa-discover.js`);
-    await loadScript(`${baseURL}wa-agent.js`);
-    await loadScript(`${baseURL}wa-elevenlabs.js`, true);
-    console.log("Website Avatar loader: all scripts loaded");
-  });
+  // Load all scripts sequentially
+  async function loadScriptsSequentially() {
+    try {
+      await loadScript(`${baseURL}wa-discover.js`);
+      await loadScript(`${baseURL}wa-agent.js`);
+      await loadScript(`${baseURL}wa-elevenlabs.js`, true);
+      console.log('Website Avatar loader: all scripts loaded');
+    } catch (err) {
+      console.error('Website Avatar loader: error loading scripts', err);
+    }
+  }
+
+  // Run when DOM is ready
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', loadScriptsSequentially);
+  } else {
+    loadScriptsSequentially();
+  }
+
 })();
