@@ -27,7 +27,14 @@
  }
 
  #wa-panel *, #wa-bubble *, #wa-transition * {
-   all: unset; 
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  font-style: inherit; 
+  font-weight: inherit;
  }
  
  /* ── PAGE TRANSITION ─────────────────────────────────────────────────────────── */
