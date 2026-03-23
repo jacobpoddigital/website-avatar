@@ -25,6 +25,10 @@
    --wa-action-bg:       rgba(255,248,235,0.65);
    --wa-action-border:   rgba(200,150,80,0.30);
  }
+
+ #wa-panel *, #wa-bubble *, #wa-transition * {
+  font-family: 'DM Sans', sans-serif;
+ }
  
  /* ── PAGE TRANSITION ─────────────────────────────────────────────────────────── */
  #wa-transition {
