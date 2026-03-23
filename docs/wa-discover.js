@@ -9,8 +9,10 @@
 
   // ─── NAMESPACE ────────────────────────────────────────────────────────────
   window.WebsiteAvatar = window.WebsiteAvatar || {};
-  const WA    = window.WebsiteAvatar;
-  const DEBUG = WA.DEBUG || false;
+  window.WebsiteAvatar.DEBUG = window.WA_CONFIG?.debug || false;
+  const DEBUG = window.WebsiteAvatar.DEBUG; // fix for log/warn
+  console.log('[WA:Discover] DEBUG mode is', DEBUG);
+  const WA = window.WebsiteAvatar;
 
   function log(...args)  { if (DEBUG) console.log('[WA:Discover]', ...args); }
   function warn(...args) { if (DEBUG) console.warn('[WA:Discover]', ...args); }
@@ -214,7 +216,12 @@
   }
 
   // ─── RUN ──────────────────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', initDiscovery);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDiscovery);
+  } else {
+    initDiscovery();
+  }
+
   // Fallback for dynamic or late-loading content
   setTimeout(initDiscovery, 1000);
 
