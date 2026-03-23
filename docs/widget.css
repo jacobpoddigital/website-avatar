@@ -28,7 +28,7 @@
  
  /* ── PAGE TRANSITION ─────────────────────────────────────────────────────────── */
  #wa-transition {
-   position: fixed; inset: 0; z-index: 9999;
+   position: fixed; inset: 0; z-index: 999999999999;
    background: var(--wa-glass-strong);
    backdrop-filter: var(--wa-blur);
    -webkit-backdrop-filter: var(--wa-blur);
@@ -47,7 +47,7 @@
  
  /* ── BUBBLE ──────────────────────────────────────────────────────────────────── */
  #wa-bubble {
-   position: fixed; bottom: 32px; right: 32px; z-index: 1000;
+   position: fixed; bottom: 32px; right: 32px; z-index: 999999999999;
    width: 54px; height: 54px; border-radius: 50%;
    background: var(--wa-glass-strong);
    backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
@@ -79,7 +79,7 @@
  
  /* ── PANEL ───────────────────────────────────────────────────────────────────── */
  #wa-panel {
-   position: fixed; bottom: 104px; right: 32px; z-index: 999;
+   position: fixed; bottom: 104px; right: 32px; z-index: 999999999999;
    width: 360px; max-height: 520px;
    background: var(--wa-glass-bg);
    backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
@@ -262,7 +262,7 @@
    background: rgba(10,12,10,0.72); backdrop-filter: var(--wa-blur-light);
    border: 1px solid rgba(100,255,120,0.15); color: #a0f0a0;
    font-family: 'Courier New', monospace; font-size: 11px;
-   border-radius: 12px; padding: 16px; z-index: 998;
+   border-radius: 12px; padding: 16px; z-index: 999999999999;
  }
  #wa-debug-panel h5 { color: #f0c060; margin-bottom: 8px; font-size: 11px; letter-spacing: .05em; }
  #wa-debug-panel pre { white-space: pre-wrap; word-break: break-all; line-height: 1.3; }
