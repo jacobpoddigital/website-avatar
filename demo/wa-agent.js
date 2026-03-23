@@ -14,7 +14,7 @@
   // Read from window.WA_CONFIG injected by platform plugin, or use defaults.
   const CONFIG = window.WA_CONFIG || {};
 
-  const OPENAI_PROXY   = CONFIG.openaiProxyUrl || 'https://website-avatar.advelocity-ai.workers.dev/classify';
+  const OPENAI_PROXY   = CONFIG.openaiProxyUrl || 'https://backend.jacob-e87.workers.dev/classify';
   const SESSION_KEY    = 'wa_session';
   const PROMPTS_KEY    = 'wa_sent_prompts';
   const DEBUG          = CONFIG.debug || false;

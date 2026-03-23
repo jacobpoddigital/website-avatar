@@ -1,9 +1,7 @@
-name = "website-avatar"
+name = "backend"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# KV namespace for client configs
-# After running `wrangler kv:namespace create "CONFIGS"` paste the id below
 [[kv_namespaces]]
 binding = "CONFIGS"
 id = "4c0d294800474fe28ba486a34b13c461"
