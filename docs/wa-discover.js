@@ -215,26 +215,19 @@
     }
   }
 
-  // ─── RUN / SPA / THROTTLED ────────────────────────────────────────────────
-let discoveryTimeout = null;
+  // ─── RUN ──────────────────────────────────────────────────────────────────
+  function runDiscovery() {
+    if (window._wa_discoveryDone) return; // prevent multiple runs
+    window._wa_discoveryDone = true;
 
-function scheduleDiscovery() {
-  if (discoveryTimeout) return; // already scheduled
-  discoveryTimeout = setTimeout(() => {
-    discoveryTimeout = null;
     initDiscovery();
-  }, 200); // 200ms throttle
-}
+  }
 
-// Initial run
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', scheduleDiscovery);
-} else {
-  scheduleDiscovery();
-}
-
-// SPA / dynamic content support
-const observer = new MutationObserver(scheduleDiscovery);
-observer.observe(document.body, { childList: true, subtree: true });
+  // Run once on DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runDiscovery);
+  } else {
+    runDiscovery();
+  }
 
 })();
