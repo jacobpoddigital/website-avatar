@@ -215,18 +215,26 @@
     }
   }
 
-  // ─── RUN ──────────────────────────────────────────────────────────────────
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initDiscovery);
-  } else {
+  // ─── RUN / SPA / THROTTLED ────────────────────────────────────────────────
+let discoveryTimeout = null;
+
+function scheduleDiscovery() {
+  if (discoveryTimeout) return; // already scheduled
+  discoveryTimeout = setTimeout(() => {
+    discoveryTimeout = null;
     initDiscovery();
-  }
+  }, 200); // 200ms throttle
+}
 
-  // Fallback for dynamic or late-loading content
-  setTimeout(initDiscovery, 1000);
+// Initial run
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', scheduleDiscovery);
+} else {
+  scheduleDiscovery();
+}
 
-  // ─── SPA / DYNAMIC CONTENT SUPPORT ─────────────────────────────────────────
-  const observer = new MutationObserver(() => initDiscovery());
-  observer.observe(document.body, { childList: true, subtree: true });
+// SPA / dynamic content support
+const observer = new MutationObserver(scheduleDiscovery);
+observer.observe(document.body, { childList: true, subtree: true });
 
 })();
