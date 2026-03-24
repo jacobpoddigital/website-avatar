@@ -2,12 +2,22 @@
  * wa-discover.js — Website Avatar by AdVelocity
  * Site discovery: builds PAGE_MAP and FORM_MAP from the live DOM.
  * Runs before wa-agent.js. Exposes results on window.WebsiteAvatar.
+ * Updated with SPA support and robust logging.
  */
 
 (function () {
 
-  // ─── FILTERS ──────────────────────────────────────────────────────────────
+  // ─── NAMESPACE ────────────────────────────────────────────────────────────
+  window.WebsiteAvatar = window.WebsiteAvatar || {};
+  window.WebsiteAvatar.DEBUG = window.WA_CONFIG?.debug || false;
+  const DEBUG = window.WebsiteAvatar.DEBUG; // fix for log/warn
+  console.log('[WA:Discover] DEBUG mode is', DEBUG);
+  const WA = window.WebsiteAvatar;
 
+  function log(...args)  { if (DEBUG) console.log('[WA:Discover]', ...args); }
+  function warn(...args) { if (DEBUG) console.warn('[WA:Discover]', ...args); }
+
+  // ─── FILTERS ──────────────────────────────────────────────────────────────
   const SKIP_HREF = [
     /^tel:/, /^mailto:/, /^javascript:/,
     /whatsapp\.com/, /facebook\.com/, /twitter\.com/, /linkedin\.com/,
@@ -16,14 +26,12 @@
   ];
 
   const SKIP_LABELS = ['terms', 'privacy', 'cookies', 'policy', 'sitemap'];
-
   const SKIP_FORM_IDS    = ['adminbarsearch', 'search-form', 'searchform'];
   const SKIP_FORM_CLASSES = ['klaviyo', 'mailchimp', 'newsletter', 'search'];
 
   // ─── PAGE DISCOVERY ───────────────────────────────────────────────────────
-
   function discoverPages() {
-    const found   = [];
+    const found = [];
     const seenUrls = new Set();
 
     const selectors = [
@@ -38,15 +46,14 @@
         const text = a.textContent.trim();
         const url  = a.href;
 
-        if (!text || !url)                                        return;
-        if (SKIP_HREF.some(p => p.test(raw) || p.test(url)))     return;
+        if (!text || !url) return;
+        if (SKIP_HREF.some(p => p.test(raw) || p.test(url))) return;
         if (SKIP_LABELS.some(l => text.toLowerCase().includes(l))) return;
-        if (raw === '#' || raw.endsWith('/#'))                    return; // hash-only anchors
-        if (seenUrls.has(url))                                    return;
+        if (raw === '#' || raw.endsWith('/#')) return;
+        if (seenUrls.has(url)) return;
 
         seenUrls.add(url);
 
-        // Generate keywords from label — split on whitespace, slashes, hyphens
         const words    = text.toLowerCase().split(/[\s/\-&]+/).filter(w => w.length > 1);
         const keywords = [...new Set([text.toLowerCase(), ...words])];
 
@@ -54,12 +61,12 @@
       });
     }
 
-    // Ensure homepage is first
+    // Ensure homepage first
     const homeIdx = found.findIndex(p =>
       p.file === window.location.origin + '/' ||
-      p.file === window.location.origin      ||
-      p.file.endsWith('/index.html')         ||
-      p.label.toLowerCase() === 'home'       ||
+      p.file === window.location.origin ||
+      p.file.endsWith('/index.html') ||
+      p.label.toLowerCase() === 'home' ||
       p.label.toLowerCase() === 'homepage'
     );
 
@@ -68,11 +75,10 @@
       found.unshift(home);
     }
 
-    // Add homepage manually if missing
     if (!found.length || !found[0].keywords.some(k => ['home','homepage'].includes(k))) {
       found.unshift({
-        label:    'Homepage',
-        file:     window.location.origin + '/',
+        label: 'Homepage',
+        file: window.location.origin + '/',
         keywords: ['home', 'homepage', 'home page', 'main page', 'start']
       });
     }
@@ -81,23 +87,18 @@
   }
 
   // ─── FORM DISCOVERY ───────────────────────────────────────────────────────
-
   function discoverForms() {
     const VALID_TAGS  = ['INPUT', 'TEXTAREA', 'SELECT'];
     const SKIP_TYPES  = ['hidden', 'submit', 'button', 'reset', 'image', 'checkbox', 'radio', 'file'];
 
-    // Candidate containers — real <form> tags first, then common div wrappers
     const realForms = Array.from(document.querySelectorAll('form'));
     const divForms  = realForms.length === 0
       ? Array.from(document.querySelectorAll('.contact-form, .wpcf7-form, [class*="contact-form"], [id*="contact-form"]'))
       : [];
 
     const candidates = [...realForms, ...divForms].filter((el, idx, arr) => {
-      // Skip WordPress admin bar search
-      if (SKIP_FORM_IDS.some(id => el.id === id))                             return false;
-      // Skip newsletter / search forms by class
+      if (SKIP_FORM_IDS.some(id => el.id === id)) return false;
       if (SKIP_FORM_CLASSES.some(c => el.className && el.className.toLowerCase().includes(c))) return false;
-      // Deduplicate — skip descendants of already-included containers
       return !arr.slice(0, idx).some(prev => prev.contains(el) || el.contains(prev));
     });
 
@@ -107,150 +108,101 @@
       const fields = [];
 
       form.querySelectorAll(VALID_TAGS.join(',')).forEach(el => {
-        if (SKIP_TYPES.includes(el.type))                  return;
-        if (!el.id && !el.name && !el.placeholder)         return;
+        if (SKIP_TYPES.includes(el.type)) return;
+        if (!el.id && !el.name && !el.placeholder) return;
 
         const label = resolveLabel(el);
 
         fields.push({
-          id:       el.id   || null,
-          name:     el.name || null,
-          label:    label,
-          type:     el.type || el.tagName.toLowerCase(),
+          id: el.id || null,
+          name: el.name || null,
+          label,
+          type: el.type || el.tagName.toLowerCase(),
           required: el.required || el.getAttribute('aria-required') === 'true',
-          value:    null
+          value: null
         });
       });
 
       if (fields.length > 0) {
         found.push({
-          index:    i,
-          formEl:   form,
-          isCF7:    form.classList.contains('wpcf7-form'),
+          index: i,
+          formEl: form,
+          isCF7: form.classList.contains('wpcf7-form'),
           fields
         });
       }
     });
 
-    // Sort — pick the form with the most fields as the primary contact form
     found.sort((a, b) => b.fields.length - a.fields.length);
-
     return found;
   }
 
   // ─── LABEL RESOLUTION ─────────────────────────────────────────────────────
-  // Tries multiple strategies to find a human-readable label for a field.
-
   function resolveLabel(el) {
     let label = null;
 
-    // 1. <label for="id">
     if (el.id) {
       const l = document.querySelector(`label[for="${el.id}"]`);
       if (l) label = l.textContent.trim();
     }
-
-    // 2. Wrapping <label>
     if (!label) {
       const parentLabel = el.closest('label');
       if (parentLabel) label = parentLabel.textContent.replace(el.value || '', '').trim();
     }
-
-    // 3. aria-label
-    if (!label && el.getAttribute('aria-label')) {
-      label = el.getAttribute('aria-label');
-    }
-
-    // 4. Floating label — sibling span after the input (Pod Digital / CF7 pattern)
-    if (!label && el.nextElementSibling) {
-      const next = el.nextElementSibling;
-      if (next.classList && next.classList.contains('floating-label')) {
-        label = next.textContent.trim();
-      }
-    }
-
-    // 5. wpcf7 — parent label text node
+    if (!label && el.getAttribute('aria-label')) label = el.getAttribute('aria-label');
+    if (!label && el.nextElementSibling?.classList?.contains('floating-label')) label = el.nextElementSibling.textContent.trim();
     if (!label && el.closest('.wpcf7-form-control-wrap')) {
-      const wrap        = el.closest('.wpcf7-form-control-wrap');
-      const parentLabel = wrap.closest('label');
-      if (parentLabel) {
-        const text = Array.from(parentLabel.childNodes)
-          .filter(n => n.nodeType === 3)
-          .map(n => n.textContent.trim())
-          .filter(Boolean)
-          .join(' ');
-        if (text) label = text;
-      }
+      const wrap = el.closest('.wpcf7-form-control-wrap');
+      const pl = wrap.closest('label');
+      if (pl) label = Array.from(pl.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent.trim())
+        .filter(Boolean)
+        .join(' ');
     }
-
-    // 6. Preceding sibling text element
     if (!label && el.previousElementSibling) {
       const prev = el.previousElementSibling;
-      if (['LABEL','SPAN','P','DIV'].includes(prev.tagName)) {
-        label = prev.textContent.trim();
-      }
+      if (['LABEL','SPAN','P','DIV'].includes(prev.tagName)) label = prev.textContent.trim();
     }
 
-    // 7. Placeholder or name fallback
     if (!label) label = el.placeholder || el.name || el.id || 'Field';
-
-    // Clean up — remove trailing colons, asterisks, extra whitespace
     return label.replace(/[*:\s]+$/, '').trim();
   }
 
   // ─── CF7 EVENT LISTENERS ──────────────────────────────────────────────────
-  // Register early so they're ready before any form interaction.
-
   function registerCF7Listeners() {
-    document.addEventListener('wpcf7mailsent', e => {
-      window.WebsiteAvatar.bus.emit('form:submitted', { detail: e.detail });
-    });
-    document.addEventListener('wpcf7invalid', e => {
-      window.WebsiteAvatar.bus.emit('form:invalid', { detail: e.detail });
-    });
-    document.addEventListener('wpcf7spam', e => {
-      window.WebsiteAvatar.bus.emit('form:spam', { detail: e.detail });
-    });
-    document.addEventListener('wpcf7mailfailed', e => {
-      window.WebsiteAvatar.bus.emit('form:failed', { detail: e.detail });
-    });
+    document.addEventListener('wpcf7mailsent', e => WA.bus.emit('form:submitted', { detail: e.detail }));
+    document.addEventListener('wpcf7invalid', e => WA.bus.emit('form:invalid', { detail: e.detail }));
+    document.addEventListener('wpcf7spam', e => WA.bus.emit('form:spam', { detail: e.detail }));
+    document.addEventListener('wpcf7mailfailed', e => WA.bus.emit('form:failed', { detail: e.detail }));
   }
 
-  // ─── RUN ──────────────────────────────────────────────────────────────────
+  // ─── EVENT BUS ────────────────────────────────────────────────────────────
+  if (!WA.bus) {
+    const listeners = {};
+    WA.bus = {
+      on: (evt, fn) => { (listeners[evt] = listeners[evt] || []).push(fn); },
+      off: (evt, fn) => { listeners[evt] = (listeners[evt] || []).filter(f => f !== fn); },
+      emit: (evt, data) => { (listeners[evt] || []).forEach(f => f(data)); }
+    };
+  }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    // Ensure namespace exists
-    window.WebsiteAvatar = window.WebsiteAvatar || {};
-
-    // Simple event bus for cross-script communication
-    if (!window.WebsiteAvatar.bus) {
-      const listeners = {};
-      window.WebsiteAvatar.bus = {
-        on:   (event, fn) => { (listeners[event] = listeners[event] || []).push(fn); },
-        off:  (event, fn) => { listeners[event] = (listeners[event] || []).filter(f => f !== fn); },
-        emit: (event, data) => { (listeners[event] || []).forEach(fn => fn(data)); }
-      };
-    }
-
-    const pageMap = discoverPages();
-    const formMap = discoverForms();
-
-    window.WebsiteAvatar.PAGE_MAP = pageMap;
-    window.WebsiteAvatar.FORM_MAP = formMap;
-
-    // Legacy globals for backward compat during transition
-    window.PAGE_MAP = pageMap;
-    window.FORM_MAP = formMap;
+  // ─── INITIALISATION ───────────────────────────────────────────────────────
+  function initDiscovery() {
+    WA.PAGE_MAP = discoverPages();
+    WA.FORM_MAP = discoverForms();
+    window.PAGE_MAP = WA.PAGE_MAP;
+    window.FORM_MAP = WA.FORM_MAP;
 
     registerCF7Listeners();
 
-    if (window.WebsiteAvatar.DEBUG) {
-      console.group('[WA] 🔍 Site discovery — ' + window.location.hostname);
-      console.group(`[WA] 📄 Pages (${pageMap.length})`);
-      pageMap.forEach(p => console.log(`  "${p.label}" → ${p.file}`));
+    if (DEBUG) {
+      console.group(`[WA] 🔍 Site discovery — ${window.location.hostname}`);
+      console.group(`[WA] 📄 Pages (${WA.PAGE_MAP.length})`);
+      WA.PAGE_MAP.forEach(p => console.log(`  "${p.label}" → ${p.file}`));
       console.groupEnd();
-      console.group(`[WA] 📋 Forms (${formMap.length})`);
-      formMap.forEach(f => {
+      console.group(`[WA] 📋 Forms (${WA.FORM_MAP.length})`);
+      WA.FORM_MAP.forEach(f => {
         console.group(`  Form ${f.index}${f.isCF7 ? ' [CF7]' : ''}${f.formEl.id ? ' #' + f.formEl.id : ''}`);
         f.fields.forEach(field => {
           const id = field.id ? `id=${field.id}` : `name=${field.name}`;
@@ -261,6 +213,21 @@
       console.groupEnd();
       console.groupEnd();
     }
-  });
+  }
+
+  // ─── RUN ──────────────────────────────────────────────────────────────────
+  function runDiscovery() {
+    if (window._wa_discoveryDone) return; // prevent multiple runs
+    window._wa_discoveryDone = true;
+
+    initDiscovery();
+  }
+
+  // Run once on DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runDiscovery);
+  } else {
+    runDiscovery();
+  }
 
 })();
