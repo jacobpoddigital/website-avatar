@@ -42,7 +42,8 @@
   const State = {
     connection:   'offline',    // offline | connecting | connected | disconnecting
     conversation: 'idle',       // idle | awaiting | responding
-    action:       'none'        // none | classifying | proposed | active | complete | error
+    action:       'none',       // none | classifying | proposed | active | complete | error
+    session:      'fresh'       // fresh | active | ended
   };
 
   function setState(layer, value, context) {
@@ -55,13 +56,14 @@
   }
 
   function handleStateChange(layer, value) {
-    // Disable/enable send button based on combined state
     const sendBtn = document.getElementById('wa-send');
-    if (sendBtn) {
-      const blocked = State.conversation === 'responding' || State.action === 'active';
-      sendBtn.disabled = blocked;
-      sendBtn.title    = blocked ? 'Wait for the agent to finish…' : '';
-    }
+    if (!sendBtn) return;
+    // In voice mode — disable while agent speaking or action active
+    // In text mode — only disable while action active (user can type while agent speaks)
+    const blocked = State.action === 'active' ||
+                    (State.conversation === 'responding' && WA._voiceMode);
+    sendBtn.disabled = blocked;
+    sendBtn.title    = blocked ? 'Please wait…' : '';
   }
 
   // ─── SESSION ──────────────────────────────────────────────────────────────
@@ -96,9 +98,6 @@
     } catch(e) { return new Set(); }
   }
 
-  function saveSentPrompts() {
-    try { sessionStorage.setItem(PROMPTS_KEY, JSON.stringify([...sentPrompts])); } catch(e) {}
-  }
 
   let session     = loadSession();
   let sentPrompts = loadSentPrompts();
@@ -131,6 +130,7 @@
     action.status    = 'active';
     action.startedAt = Date.now();
     saveSession();
+    updateAbortButton();
 
     try {
       await handler.execute(action);
@@ -138,6 +138,7 @@
       action.completedAt = Date.now();
       saveSession();
       setState('action', 'complete');
+      updateAbortButton();
       if (handler.onComplete) await handler.onComplete(action);
     } catch (err) {
       warn(`Action ${action.type} failed:`, err);
@@ -146,6 +147,7 @@
       action.completedAt = Date.now();
       saveSession();
       setState('action', 'error');
+      updateAbortButton();
       if (handler.onError) {
         await handler.onError(err, action);
       } else {
@@ -186,7 +188,12 @@
     permissionLevel: 'propose',
 
     execute: async (action) => {
-      await startFormFill(action);
+      // Returns a Promise that resolves only after the user submits or cancels
+      // This keeps the action in 'active' state until submission is confirmed
+      await new Promise(resolve => {
+        action._resolveFormFill = resolve;
+        startFormFill(action);
+      });
     },
 
     onError: async (err, action) => {
@@ -195,7 +202,9 @@
     },
 
     onComplete: async (action) => {
-      // Handled inside submitForm() after CF7 event fires
+      // finishFormFill calls action._resolveFormFill which resolves the Promise above
+      // reconnectBridge happens here after true completion
+      setTimeout(reconnectBridge, 1000);
     }
   });
 
@@ -276,14 +285,15 @@
   // Runs on every page load — checks if we arrived via a navigate action.
 
   function checkArrival() {
-    // Simple navigate — mark complete and reconnect
+    // Simple navigate — mark complete, open panel and reconnect
     const navAction = session.actions.find(a => a.type === 'navigate' && a.status === 'active');
     if (navAction) {
       navAction.status      = 'complete';
       navAction.completedAt = Date.now();
       saveSession();
       setState('action', 'complete');
-      setTimeout(reconnectBridge, 600);
+      openPanel();
+      reconnectBridge();
       return;
     }
 
@@ -302,6 +312,14 @@
     openPanel();
 
     setTimeout(async () => {
+      // Discover fields now that we're on the contact page
+      const fields = freshFields();
+      if (!fields.length) {
+        agentSay("I'm here but I couldn't find the contact form. You can fill it in manually.");
+        reconnectBridge();
+        return;
+      }
+      action.payload.fields = fields;
       agentSay("We're here! Let's fill out that contact form.");
       const fullAction = createAction('fill_form', action.description, action.payload);
       await executeAction(fullAction);
@@ -311,128 +329,186 @@
   // ─── FORM FILL ────────────────────────────────────────────────────────────
 
   let formState = {
-    active:               false,
-    action:               null,
-    fieldIndex:           0,
-    awaitingAbandon:      false,
-    awaitingSubmitConfirm: false
+    active:  false,  // is a form fill in progress
+    action:  null    // the active fill_form action
   };
 
   async function startFormFill(action) {
     if (formState.active) return;
 
-    formState.active               = true;
-    formState.action               = action;
-    formState.fieldIndex           = action.payload.fields.findIndex(f => f.value === null);
-    formState.awaitingAbandon      = false;
-    formState.awaitingSubmitConfirm = false;
-
-    if (formState.fieldIndex === -1) formState.fieldIndex = action.payload.fields.length;
+    formState.active = true;
+    formState.action = action;
 
     session.activeFormActionId = action.id;
     saveSession();
 
     openPanel();
+    updateAbortButton();
     repopulateFields(action);
-    askNextField();
+
+    // Kick off AI — do NOT await, the fill_form Promise stays open until finishFormFill
+    handleFormInputAI('__RESUME__');
   }
 
-  function askNextField() {
-    const fields = formState.action.payload.fields;
 
-    if (formState.fieldIndex >= fields.length) {
-      completeFormFill();
-      return;
+  // ─── AI FORM FILL ─────────────────────────────────────────────────────────
+  // OpenAI manages the entire form fill conversation.
+  // Handles: field filling, corrections, validation, abort, submit readiness.
+
+  let formAIController = null; // module-level so resetFormState can abort it
+
+  async function handleFormInputAI(userText) {
+    if (!formState.action) return; // guard — form fill may have been reset
+
+    // Cancel any in-flight request
+    if (formAIController) formAIController.abort();
+    formAIController = new AbortController();
+
+    const fields   = formState.action.payload.fields;
+    const isResume = userText === '__RESUME__';
+
+    // Build field summary for prompt
+    const fieldSummary = fields.map(f =>
+      `- ${f.label} (name: ${f.name}, type: ${f.type}${f.required ? ', required' : ', optional'}): ${f.value ? '"' + f.value + '"' : 'empty'}`
+    ).join('\n');
+
+    // Recent conversation for context
+    const recentMsgs = session.messages.slice(-6).map(m =>
+      `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`
+    ).join('\n');
+
+    const prompt = `You are managing a form fill conversation for a website contact form.
+
+FORM FIELDS (name | type | required | current value):
+${fieldSummary}
+
+RECENT CONVERSATION:
+${recentMsgs}
+
+USER JUST SAID: "${isResume ? '(resuming form fill — greet user and ask for next empty required field)' : userText}"
+
+Reply with JSON only, no explanation:
+{
+  "action": "fill_field" | "correct_field" | "submit_ready" | "abort" | "ask_again",
+  "field_name": "name attribute of field to update, or null",
+  "value": "value to set, or null",
+  "message": "what to say to the user — natural, warm, confirm what was filled and ask for next empty field",
+  "all_required_filled": true | false
+}
+
+Rules:
+- abort: user wants to stop, cancel, or leave (any phrasing)
+- fill_field: user provided a value for a field
+- correct_field: user is correcting a previously filled field
+- submit_ready: all required fields are filled and user confirmed or nothing left to ask
+- ask_again: input was unclear or ambiguous
+- After filling a field, message should confirm it and ask for the next empty required field
+- If all required fields are now filled, set action to submit_ready and all_required_filled to true
+- Never ask for a field that already has a value unless user is correcting it
+- Validate email format, phone must have at least 7 digits — if invalid ask user to correct it`;
+
+    showTyping();
+    log('→ Form AI request sent');
+    const t0 = Date.now();
+
+    try {
+      const res = await fetch(OPENAI_PROXY, {
+        method:  'POST',
+        signal:  formAIController.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt, maxTokens: 120 })
+      });
+
+      if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
+
+      const data = await res.json();
+      const raw  = data.content || '';
+      log(`← Form AI ${Date.now() - t0}ms:`, raw.trim());
+
+      let parsed;
+      try {
+        parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+      } catch(e) {
+        warn('Form AI bad JSON:', raw);
+        hideTyping();
+        agentSay("Sorry, I didn't catch that — could you say it again?");
+        return;
+      }
+
+      hideTyping();
+
+      if (parsed.action === 'abort') {
+        abandonFormFill();
+        return;
+      }
+
+      if (parsed.action === 'fill_field' || parsed.action === 'correct_field') {
+        const field = fields.find(f => f.name === parsed.field_name);
+        if (field && parsed.value) {
+          field.value = parsed.value;
+          const el = getFieldElement(field);
+          if (el) {
+            el.classList.add('wa-filling');
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            fillField(el, parsed.value);
+          }
+          saveSession();
+        }
+      }
+
+      // submit_ready — go to confirmation card, don't agentSay here
+      // completeFormFill handles the summary message
+      if (parsed.action === 'submit_ready' || parsed.all_required_filled) {
+        setTimeout(completeFormFill, 400);
+        return;
+      }
+
+      if (parsed.message) agentSay(parsed.message);
+
+    } catch(e) {
+      if (e.name === 'AbortError') { log('Form AI cancelled'); return; }
+      warn('Form AI error:', e.message);
+      hideTyping();
+      agentSay("I'm having trouble processing that — could you try again?");
     }
-
-    const field = fields[formState.fieldIndex];
-    const el    = getFieldElement(field);
-
-    if (el) {
-      el.classList.add('wa-filling');
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    agentSay(`What's your ${field.label.toLowerCase()}?`);
   }
 
-  function handleFormInput(text) {
-    // Check for abandon intent
-    if (isNavigationIntent(text)) {
-      formState.awaitingAbandon = true;
-      agentSay("Looks like you want to navigate away — should I save your progress and continue later? Reply 'yes' to leave or 'no' to keep going.");
-      return;
-    }
-
-    // Check for field correction — "actually my email is..."
-    const correctedField = detectFieldCorrection(text, formState.action.payload.fields);
-    if (correctedField !== null) {
-      handleFieldCorrection(correctedField, text);
-      return;
-    }
-
-    const field = formState.action.payload.fields[formState.fieldIndex];
-
-    // Validate before accepting
-    const validationError = validateField(field, text);
-    if (validationError) {
-      agentSay(validationError);
-      return; // Don't advance — re-ask same field
-    }
-
-    // Fill field
-    field.value = text;
-    fillField(getFieldElement(field), text);
-    saveSession();
-
-    agentSay(`Got it — ${field.label}: "${text}"`);
-    formState.fieldIndex++;
-    setTimeout(askNextField, 600);
-  }
-
-  function handleAbandonConfirm(text) {
-    formState.awaitingAbandon = false;
-    if (/^y(es)?$/i.test(text.trim())) {
-      abandonFormFill();
-    } else {
-      agentSay("Got it — let's carry on.");
-      setTimeout(askNextField, 400);
-    }
-  }
+  let _completeFormFillAttempts = 0;
 
   function completeFormFill() {
-    // Validate all required fields before showing summary
+    if (!formState.action) return;
     const fields  = formState.action.payload.fields;
     const missing = fields.filter(f => f.required && (!f.value || !f.value.trim()));
 
+    // Safety net — max 2 retries to prevent infinite loop
     if (missing.length) {
-      agentSay(`Before we submit, I still need: ${missing.map(f => f.label).join(', ')}. Let's fill those in.`);
-      formState.fieldIndex = fields.indexOf(missing[0]);
-      askNextField();
+      _completeFormFillAttempts++;
+      if (_completeFormFillAttempts <= 2) {
+        handleFormInputAI('__RESUME__');
+      } else {
+        _completeFormFillAttempts = 0;
+        agentSay(`I still need: ${missing.map(f => f.label).join(', ')}. Please provide these to continue.`);
+      }
       return;
     }
+    _completeFormFillAttempts = 0;
 
-    const summary = fields
-      .filter(f => f.value)
-      .map(f => `${f.label}: ${f.value}`)
-      .join(', ');
+    const filled  = fields.filter(f => f.value);
+    const summary = filled.map(f => `${f.label}: ${f.value}`).join(', ');
 
     agentSay(`All set! I've filled in ${summary}. Ready to send?`);
-    formState.awaitingSubmitConfirm = true;
 
     renderCard({
       label:   'Ready to submit',
       message: 'Shall I submit the form now?',
       buttons: [
-        { text: 'Submit',  action: () => submitForm() },
-        { text: 'Cancel',  action: () => cancelFormFill(), style: 'deny' }
+        { text: 'Submit', action: () => submitForm() },
+        { text: 'Cancel', action: () => cancelFormFill(), style: 'deny' }
       ]
     });
   }
 
   async function submitForm() {
-    formState.awaitingSubmitConfirm = false;
-
     // Mark action
     if (formState.action) {
       formState.action.status      = 'complete';
@@ -529,40 +605,43 @@
       await sleep(1000);
       finishFormFill('success');
     } else {
-      // No button found — show demo success or tell user
-      const formEl    = document.getElementById('contact-form-fields');
-      const successEl = document.getElementById('form-success');
-      if (formEl)    formEl.style.display    = 'none';
-      if (successEl) successEl.style.display = 'block';
-      finishFormFill('success');
+      agentSay("The form is filled — please click the submit button to send your enquiry.");
+      highlightSubmitButton();
+      resetFormState();
+      setState('action', 'none');
     }
   }
 
   function finishFormFill(outcome) {
+    document.querySelectorAll('.wa-filling').forEach(el => el.classList.remove('wa-filling'));
+    session.activeFormActionId = null;
+    saveSession();
+    // Update the action card status to complete
+    if (formState.action) {
+      updateActionCardStatus(formState.action.id, 'complete');
+    }
+    // Resolve the Promise in fill_form execute — this lets executeAction mark it complete
+    // executeAction.onComplete handles reconnect
+    if (formState.action?._resolveFormFill) {
+      formState.action._resolveFormFill();
+    }
     resetFormState();
-    setState('action', 'complete');
-    // Reconnect bridge — it will build context including form outcome
-    setTimeout(reconnectBridge, 1000);
+    // setState handled by executeAction after Promise resolves
   }
 
   function handleCF7ValidationError(detail) {
-    agentSay("A few fields need checking — let me re-ask those.");
-    // Identify failed fields from CF7 response
+    // Reset failed fields and let AI re-ask
     const failedInputs = document.querySelectorAll('.wpcf7-not-valid');
-    if (failedInputs.length) {
+    if (failedInputs.length && formState.action) {
       const failedNames = Array.from(failedInputs).map(el => el.getAttribute('name'));
-      const failedFields = formState.action.payload.fields.filter(f => failedNames.includes(f.name));
-      if (failedFields.length) {
-        // Reset values for failed fields and re-ask
-        failedFields.forEach(f => { f.value = null; });
-        formState.fieldIndex = formState.action.payload.fields.indexOf(failedFields[0]);
-        formState.active     = true;
-        setTimeout(askNextField, 600);
-        return;
-      }
+      formState.action.payload.fields.forEach(f => {
+        if (failedNames.includes(f.name)) f.value = null;
+      });
+      formState.active = true;
+      handleFormInputAI('__RESUME__');
+      return;
     }
-    // Couldn't identify specific fields — tell user to check manually
-    agentSay("Please check the form — some fields may need correcting.");
+    agentSay("Some fields need correcting — please check the form.");
     reconnectBridge();
   }
 
@@ -584,10 +663,10 @@
     if (formState.action) {
       formState.action.status      = 'denied';
       formState.action.completedAt = Date.now();
+      if (formState.action._resolveFormFill) formState.action._resolveFormFill();
     }
     session.activeFormActionId = null;
     saveSession();
-    agentSay("No problem — the form is still there if you want to fill it in manually.");
     resetFormState();
     setState('action', 'none');
     setTimeout(reconnectBridge, 800);
@@ -597,22 +676,22 @@
     if (formState.action) {
       formState.action.status      = 'denied';
       formState.action.completedAt = Date.now();
+      if (formState.action._resolveFormFill) formState.action._resolveFormFill();
     }
     session.activeFormActionId = null;
     document.querySelectorAll('.wa-filling').forEach(el => el.classList.remove('wa-filling'));
     saveSession();
-    agentSay("I've left the form for now.");
     resetFormState();
     setState('action', 'none');
     setTimeout(reconnectBridge, 800);
   }
 
   function resetFormState() {
-    formState.active                = false;
-    formState.action                = null;
-    formState.fieldIndex            = 0;
-    formState.awaitingAbandon       = false;
-    formState.awaitingSubmitConfirm = false;
+    formState.active = false;
+    formState.action = null;
+    _completeFormFillAttempts = 0;
+    if (formAIController) { formAIController.abort(); formAIController = null; }
+    updateAbortButton();
   }
 
   function repopulateFields(action) {
@@ -649,58 +728,94 @@
     el.blur();
   }
 
-  function validateField(field, value) {
-    if (field.required && (!value || !value.trim())) {
-      return `${field.label} is required — please provide a value.`;
-    }
-    if (field.type === 'email' && value && !value.includes('@')) {
-      return `That doesn't look like a valid email — could you double-check it?`;
-    }
-    if (field.type === 'tel' && value && value.replace(/\D/g, '').length < 7) {
-      return `That phone number looks too short — could you check it?`;
-    }
-    if (field.type === 'url' && value && !value.match(/^https?:\/\//i)) {
-      // Not a hard error — URL field is often optional
-      // Auto-prefix if they forgot http
-      const el = getFieldElement(field);
-      if (el) fillField(el, 'https://' + value);
-      field.value = 'https://' + value;
-    }
-    return null;
+
+
+  // ─── END SESSION ─────────────────────────────────────────────────────────
+  // First-class action — clears everything and returns to fresh state.
+
+  function endSession() {
+    log('Ending session');
+
+    // Disconnect bridge first
+    disconnectBridge();
+
+    // Clear all session storage
+    try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
+    try { sessionStorage.removeItem(PROMPTS_KEY); } catch(e) {}
+
+    // Reset session object — isOpen false so panel stays closed on next load
+    session = freshSession();
+    session.isOpen = false;
+    sentPrompts = new Set();
+
+    // Reset form state
+    resetFormState();
+
+    // Reset state machine
+    State.connection   = 'offline';
+    State.conversation = 'idle';
+    State.action       = 'none';
+    State.session      = 'fresh';
+
+    // Reset inactivity
+    inactivity.reset();
+
+    // Clear 11labs sent prompts
+    WA._sentReconnectPrompts = new Set();
+
+    // Clear UI messages
+    const msgs = document.getElementById('wa-messages');
+    if (msgs) msgs.innerHTML = '';
+
+    // Remove buttons
+    const endBtn   = document.getElementById('wa-end-session-btn');
+    const abortBtn = document.getElementById('wa-abort-btn');
+    if (endBtn)   endBtn.remove();
+    if (abortBtn) abortBtn.remove();
+
+    // Close the panel
+    const panel = document.getElementById('wa-panel');
+    if (panel) panel.classList.remove('wa-open');
+
+    // Show greeting directly in DOM without saving to session
+    // so session stays empty (fresh) after end
+    setTimeout(() => {
+      if (msgs) {
+        const el = document.createElement('div');
+        el.className   = 'wa-msg wa-agent';
+        el.textContent = 'Session ended. Open the chat to start a new conversation.';
+        msgs.appendChild(el);
+      }
+    }, 300);
+
+    saveSession();
+    renderDebug();
+    log('Session ended — fresh state restored');
   }
 
-  function detectFieldCorrection(text, fields) {
-    const lower = text.toLowerCase();
-    const correctionSignals = ['actually', 'sorry', 'change', 'wrong', 'correct', 'meant', 'meant to say'];
-    const hasSignal = correctionSignals.some(s => lower.includes(s));
-    if (!hasSignal) return null;
+  function updateSessionButton() {
+    const existing = document.getElementById('wa-end-session-btn');
+    // Place below messages, above input row
+    const panel    = document.getElementById('wa-panel');
+    if (!panel) return;
 
-    // Find which field they're referring to
-    for (let i = 0; i < fields.length; i++) {
-      if (lower.includes(fields[i].label.toLowerCase())) return i;
-    }
-    return null;
-  }
+    const hasSession = session.messages.length > 0;
 
-  function handleFieldCorrection(fieldIndex, text) {
-    // Extract the new value — strip the correction signal words
-    const signals = ['actually', 'sorry', 'change', 'wrong', 'correct', 'it is', "it's", 'to'];
-    let value = text.toLowerCase();
-    signals.forEach(s => { value = value.replace(s, ''); });
-    // Remove the field label too
-    const field = formState.action.payload.fields[fieldIndex];
-    value = value.replace(field.label.toLowerCase(), '').trim();
-
-    if (value) {
-      field.value = value;
-      fillField(getFieldElement(field), value);
-      agentSay(`Updated — ${field.label}: "${value}"`);
-      // Continue from where we were
-      setTimeout(askNextField, 600);
-    } else {
-      // Couldn't extract value — re-ask the field
-      formState.fieldIndex = fieldIndex;
-      askNextField();
+    if (hasSession && !existing) {
+      const btn = document.createElement('button');
+      btn.id        = 'wa-end-session-btn';
+      btn.className = 'wa-btn-end-session';
+      btn.textContent = 'End session';
+      btn.title     = 'Clear conversation and start fresh';
+      btn.onclick   = () => {
+        if (confirm('End this session and clear the conversation?')) endSession();
+      };
+      // Insert before the input row
+      const inputRow = panel.querySelector('.wa-input-row');
+      if (inputRow) panel.insertBefore(btn, inputRow);
+      else panel.appendChild(btn);
+    } else if (!hasSession && existing) {
+      existing.remove();
     }
   }
 
@@ -743,7 +858,7 @@
     renderCard({
       label:   'Choose an action',
       message: description,
-      buttons: options.map((opt, i) => ({
+      buttons: options.map((opt) => ({
         text:   opt.label,
         style:  'confirm',
         action: () => {
@@ -889,7 +1004,8 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
           {
             targetPage:          contact.file,
             targetLabel:         contact.label,
-            nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: freshFields() } }
+            // Fields are empty here — discovered fresh on arrival at contact page
+            nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } }
           }
         );
 
@@ -897,7 +1013,11 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
         // Guard — don't navigate to current page
         const targetClean  = parsed.target_url.replace(/\/$/, '');
         const currentClean = window.location.href.replace(/\/$/, '');
-        if (targetClean === currentClean) return;
+        if (targetClean === currentClean) {
+          const page = getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
+          agentSay(`You're already on the ${page ? page.label : 'page'} — is there something I can help you with here?`);
+          return;
+        }
 
         const page  = getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
         const label = page ? page.label : 'page';
@@ -909,7 +1029,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
             `Would you like to just visit the ${contact.label}, or go there and fill out the enquiry form?`,
             [
               { label: 'Just browse', action: { type: 'navigate', description: `Take you to the ${contact.label}.`, payload: { targetPage: contact.file, targetLabel: contact.label } } },
-              { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${contact.label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: contact.label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: freshFields() } } } } }
+              { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${contact.label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: contact.label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } } } } }
             ]
           );
         } else {
@@ -931,8 +1051,6 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     }
   }
 
-  // Expose for wa-elevenlabs.js to call
-  WA.classifyAgentMessage = classifyAgentMessage;
 
   // ─── MESSAGE FLOW ─────────────────────────────────────────────────────────
 
@@ -941,33 +1059,27 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     const text  = (input ? input.value : '').trim();
     if (!text) return;
 
-    // Block send while agent is speaking
-    if (State.conversation === 'responding') return;
+    // Only block send in voice mode while agent is speaking
+    if (State.conversation === 'responding' && WA._voiceMode) return;
 
     if (input) input.value = '';
     userSay(text);
+    inactivity.reset(); // text message counts as user activity
 
     // Cancel in-flight classification and dismiss pending cards on new message
     if (classifyController) { classifyController.abort(); classifyController = null; }
     if (WA.bridge && WA.bridge.isConnected()) dismissPendingActions();
 
-    // Form fill takes priority
-    if (formState.awaitingAbandon) {
-      showTyping();
-      setTimeout(() => { hideTyping(); handleAbandonConfirm(text); }, 400);
-      return;
-    }
-
+    // Form fill takes priority — OpenAI handles all form fill input
     if (formState.active) {
-      showTyping();
-      setTimeout(() => { hideTyping(); handleFormInput(text); }, 400);
+      handleFormInputAI(text);
       return;
     }
 
     // Send to bridge (11labs) if connected
     if (WA.bridge && WA.bridge.isConnected()) {
       WA.bridge.sendText(text);
-      window._wa_lastUserMessage = text;
+      WA._lastUserMessage = text;
       showTyping();
       setState('conversation', 'awaiting');
       return;
@@ -987,6 +1099,10 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
 
   function userSay(text) {
     session.messages.push({ role: 'user', text, ts: Date.now() });
+    if (State.session === 'fresh') {
+      setState('session', 'active');
+      updateSessionButton();
+    }
     saveSession();
     appendMessage('user', text);
   }
@@ -994,11 +1110,15 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   function agentSay(text) {
     hideTyping();
     session.messages.push({ role: 'agent', text, ts: Date.now() });
+    if (State.session === 'fresh') {
+      setState('session', 'active');
+      updateSessionButton();
+    }
     saveSession();
 
     // Skip DOM render if bridge already showed this message
-    if (window._wa_tentativeCommitted) {
-      window._wa_tentativeCommitted = false;
+    if (WA._tentativeCommitted) {
+      WA._tentativeCommitted = false;
       return;
     }
     appendMessage('agent', text);
@@ -1039,7 +1159,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
           {
             targetPage:          contact.file,
             targetLabel:         contact.label,
-            nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: freshFields() } }
+            nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } }
           }
         );
       }
@@ -1047,9 +1167,13 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   }
 
   function handleNavIntent(text) {
-    const target = resolveTargetPage(text);
+    const lower = text.toLowerCase();
+    const pages = getPageMap();
+    // Only navigate if we find a genuine keyword match — no fallback to pages[0]
+    const target = pages.find(p => p.keywords.some(kw => lower.includes(kw)));
     if (!target) {
-      agentSay("I'm not sure which page you mean — which section are you looking for?");
+      const pageList = pages.map(p => p.label).join(', ');
+      agentSay(`I'm not sure which page you mean. Available pages: ${pageList}.`);
       return;
     }
     const currentClean = window.location.href.replace(/\/$/, '');
@@ -1064,12 +1188,12 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   // ─── BRIDGE INTERFACE ─────────────────────────────────────────────────────
   // Clean interface for wa-elevenlabs.js — no direct function calls back in.
 
-  WA.onBridgeConnected    = () => { setState('connection', 'connected'); };
+  WA.onBridgeConnected    = () => { setState('connection', 'connected'); inactivity.onConnect(); };
   WA.onBridgeDisconnected = () => { setState('connection', 'offline'); setState('conversation', 'idle'); hideTyping(); };
-  WA.onSpeakingStart      = () => { setState('conversation', 'responding'); hideTyping(); };
-  WA.onSpeakingStop       = () => { setState('conversation', 'idle'); };
-  WA.onAgentMessage       = (text) => { agentSay(text); classifyAgentMessage(window._wa_lastUserMessage || '', text); };
-  WA.onUserMessage        = (text) => { userSay(text); window._wa_lastUserMessage = text; inactivity.reset(); };
+  WA.onSpeakingStart = () => { setState('conversation', 'responding'); hideTyping(); };
+  WA.onSpeakingStop  = () => { setState('conversation', 'idle'); };
+  WA.onAgentMessage       = (text) => { agentSay(text); classifyAgentMessage(WA._lastUserMessage || '', text); };
+  WA.onUserMessage        = (text) => { userSay(text); WA._lastUserMessage = text; inactivity.reset(); };
   WA.onPreAudioMessage    = (text) => {
     // Text arrived before/during audio — show immediately
     hideTyping();
@@ -1080,19 +1204,46 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     return WA.bridge ? WA.bridge.disconnect() : Promise.resolve();
   }
 
-  function reconnectBridge() {
-    if (WA.bridge) WA.bridge.connect();
+  function reconnectBridge(delay = 0) {
+    // If bridge already ready — connect immediately
+    if (WA.bridge && typeof WA.bridge.connect === 'function') {
+      if (WA.bridge.isConnected && WA.bridge.isConnected()) {
+        log('reconnectBridge — already connected, skipping');
+        return;
+      }
+      setTimeout(() => {
+        log('reconnectBridge — calling connect');
+        WA.bridge.connect();
+      }, delay);
+      return;
+    }
+
+    // Bridge not ready yet — wait for bridge:ready event from wa-elevenlabs.js
+    log('reconnectBridge — waiting for bridge:ready');
+    function onReady() {
+      WA.bus.off('bridge:ready', onReady);
+      setTimeout(() => {
+        log('reconnectBridge — bridge ready, calling connect');
+        WA.bridge.connect();
+      }, delay);
+    }
+    WA.bus.on('bridge:ready', onReady);
   }
 
   // ─── INACTIVITY ───────────────────────────────────────────────────────────
 
   const inactivity = {
-    rounds:  0,
-    max:     2,
-    reset:   function () { this.rounds = 0; },
+    rounds:       0,
+    max:          3,
+    justConnected: false, // true for first message after reconnect — don't count
+    reset:   function () { this.rounds = 0; this.justConnected = false; },
+    onConnect: function () { this.rounds = 0; this.justConnected = true; },
     tick:    function () {
-      // Don't disconnect if action is in progress
+      // Don't disconnect if action or form fill is in progress
       if (['active','proposed'].includes(State.action)) return;
+      if (formState.active) return;
+      // First message after connect is Michelle's greeting — don't count it
+      if (this.justConnected) { this.justConnected = false; return; }
       this.rounds++;
       log(`Inactivity: ${this.rounds}/${this.max}`);
       if (this.rounds >= this.max) {
@@ -1138,7 +1289,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
       tentativeMsgEl.classList.remove('wa-tentative');
       tentativeMsgEl.textContent = text;
       tentativeMsgEl = null;
-      window._wa_tentativeCommitted = true;
+      WA._tentativeCommitted = true;
       return true;
     }
     return false;
@@ -1220,6 +1371,46 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     }
   }
 
+  function updateAbortButton() {
+    const existing = document.getElementById('wa-abort-btn');
+    const msgs     = document.getElementById('wa-messages');
+    if (!msgs) return;
+
+    const hasActive = session.actions.some(a => a.status === 'active');
+
+    if (hasActive && !existing) {
+      const btn = document.createElement('button');
+      btn.id        = 'wa-abort-btn';
+      btn.className = 'wa-btn-abort';
+      btn.textContent = '✕ Cancel action';
+      btn.title     = 'Cancel current action';
+      btn.onclick   = () => abortCurrentAction();
+      // Append inside messages — appears below last message
+      msgs.appendChild(btn);
+      scrollToBottom();
+    } else if (!hasActive && existing) {
+      existing.remove();
+    }
+  }
+
+  function abortCurrentAction() {
+    const activeAction = session.actions.find(a => a.status === 'active');
+    if (!activeAction) return;
+
+    if (formState.active) {
+      abandonFormFill();
+      return;
+    }
+
+    activeAction.status      = 'denied';
+    activeAction.completedAt = Date.now();
+    saveSession();
+    setState('action', 'none');
+    updateAbortButton();
+    agentSay("Action cancelled. What would you like to do?");
+    setTimeout(reconnectBridge, 600);
+  }
+
   function toggleChat() {
     const panel = document.getElementById('wa-panel');
     if (!panel) return;
@@ -1230,8 +1421,9 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     if (isOpen) {
       const badge = document.getElementById('wa-badge');
       if (badge) badge.classList.remove('wa-show');
-      // Auto-connect bridge on open
-      if (WA.bridge && !WA.bridge.isConnected()) {
+      // Only auto-connect if session is active — not on fresh panel open
+      if (WA.bridge && !WA.bridge.isConnected() &&
+          State.session === 'active' && session.messages.length > 0) {
         reconnectBridge();
       }
     }
@@ -1252,8 +1444,11 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   // ─── INIT ─────────────────────────────────────────────────────────────────
 
   function init() {
-    // Sync maps from discover.js
-    // (already on window.WebsiteAvatar from discover.js DOMContentLoaded)
+    // Declare these first — used throughout init
+    const hasActiveSession = session.messages.length > 0;
+    const hasNavAction     = session.actions.some(a => a.type === 'navigate' && a.status === 'active');
+    const hasFormResume    = !!(session.activeFormActionId &&
+                               session.actions.find(a => a.id === session.activeFormActionId && a.status === 'active'));
 
     // Restore messages
     const msgs = document.getElementById('wa-messages');
@@ -1278,40 +1473,54 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
         a => a.id === session.activeFormActionId && a.status === 'active'
       );
       if (resumeAction) {
-        formState.active     = true;
-        formState.action     = resumeAction;
-        formState.fieldIndex = resumeAction.payload.fields.findIndex(f => f.value === null);
-        if (formState.fieldIndex === -1) formState.fieldIndex = resumeAction.payload.fields.length;
+        formState.active = true;
+        formState.action = resumeAction;
         repopulateFields(resumeAction);
-        agentSay("Welcome back — let's pick up where we left off.");
-        setTimeout(askNextField, 600);
+        updateAbortButton();
+        // Don't reconnect bridge during form fill resume —
+        // Michelle speaking would conflict with the form fill conversation.
+        // Let the AI greet the user and ask for the next field directly.
+        setTimeout(() => handleFormInputAI('__RESUME__'), 400);
       } else {
         session.activeFormActionId = null;
         saveSession();
       }
     }
 
-    // Panel state
-    if (session.isOpen) openPanel();
+    // Panel state — only restore open state if session is active
+    if (session.isOpen && session.messages.length > 0) openPanel();
     if (session.messages.length > 0 && !session.isOpen) {
       const badge = document.getElementById('wa-badge');
       if (badge) badge.classList.add('wa-show');
     }
 
-    // First visit greeting (mock mode only — bridge sends its own greeting)
-    if (session.messages.length === 0) {
+    // First visit greeting — only in mock mode (no active session, bridge not connecting)
+    if (!hasActiveSession) {
       setTimeout(() => {
+        // By this point bridge would have connected if it was going to — safe to check
         if (!WA.bridge || !WA.bridge.isConnected()) {
           agentSay("Hi! I'm your Website Avatar. Connect the voice agent or type to get started.");
           const badge = document.getElementById('wa-badge');
           if (badge && !session.isOpen) badge.classList.add('wa-show');
         }
-      }, 800);
+      }, 1500);
     }
 
     scrollToBottom();
     renderDebug();
     checkArrival();
+
+    // Auto-connect if session active — not during form resume or navigate arrival
+    // (those handle their own reconnect)
+    if (hasActiveSession && !hasNavAction && !hasFormResume) {
+      reconnectBridge();
+    }
+
+    // Show end session button if session has messages
+    if (hasActiveSession) {
+      setState('session', 'active');
+      updateSessionButton();
+    }
   }
 
   // ─── EXPOSE PUBLIC API ────────────────────────────────────────────────────
@@ -1323,6 +1532,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   WA.denyAction     = denyAction;
   WA.submitForm     = submitForm;
   WA.cancelFormFill = cancelFormFill;
+  WA.endSession     = endSession;
   WA.manualSubmit   = () => submitGenericForm(); // for demo submit button
 
   // ─── HELPERS ──────────────────────────────────────────────────────────────
@@ -1331,6 +1541,20 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
 
   // ─── START ────────────────────────────────────────────────────────────────
 
-  document.addEventListener('DOMContentLoaded', init);
+  function waitForPanel(cb, attempts = 0) {
+    if (document.getElementById('wa-messages')) {
+      cb();
+    } else if (attempts < 30) {
+      setTimeout(() => waitForPanel(cb, attempts + 1), 100);
+    } else {
+      warn('wa-messages element never appeared — init aborted');
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => waitForPanel(init));
+  } else {
+    waitForPanel(init);
+  }
 
 })();

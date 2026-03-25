@@ -2,7 +2,6 @@
  * wa-discover.js — Website Avatar by AdVelocity
  * Site discovery: builds PAGE_MAP and FORM_MAP from the live DOM.
  * Runs before wa-agent.js. Exposes results on window.WebsiteAvatar.
- * Updated with SPA support and robust logging.
  */
 
 (function () {
@@ -11,7 +10,6 @@
   window.WebsiteAvatar = window.WebsiteAvatar || {};
   window.WebsiteAvatar.DEBUG = window.WA_CONFIG?.debug || false;
   const DEBUG = window.WebsiteAvatar.DEBUG; // fix for log/warn
-  console.log('[WA:Discover] DEBUG mode is', DEBUG);
   const WA = window.WebsiteAvatar;
 
   function log(...args)  { if (DEBUG) console.log('[WA:Discover]', ...args); }
@@ -191,9 +189,6 @@
   function initDiscovery() {
     WA.PAGE_MAP = discoverPages();
     WA.FORM_MAP = discoverForms();
-    window.PAGE_MAP = WA.PAGE_MAP;
-    window.FORM_MAP = WA.FORM_MAP;
-
     registerCF7Listeners();
 
     if (DEBUG) {
@@ -217,9 +212,8 @@
 
   // ─── RUN ──────────────────────────────────────────────────────────────────
   function runDiscovery() {
-    if (window._wa_discoveryDone) return; // prevent multiple runs
-    window._wa_discoveryDone = true;
-
+    if (WA._discoveryDone) return;
+    WA._discoveryDone = true;
     initDiscovery();
   }
 
