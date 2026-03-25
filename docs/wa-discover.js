@@ -249,22 +249,33 @@
     }
 
     // ── CTAs — buttons and prominent links ──────────────────────────────────
-    const CTA_SKIP = /^(menu|nav|close|open|toggle|accept|reject|cookie|search|submit|send|next|prev|back|more|less|show|hide|expand|collapse|\d+)$/i;
+    // Skip common cookie/consent/newsletter words and generic UI labels
+    const CTA_SKIP_WORDS = /^(menu|nav|close|open|toggle|search|submit|send|next|prev|back|more|less|show|hide|expand|collapse|\d+|customise|customize|accept|accept all|reject|reject all|save my preferences|necessary|functional|analytics|performance|advertisement|uncategorised|uncategorized|subscribe|sign up|newsletter|manage|manage cookies|manage preferences|cookie|privacy|i agree|agree|decline|got it|ok|okay)$/i;
+
+    // Skip containers that are cookie banners, popups, or newsletter widgets
+    const SKIP_CONTAINERS = [
+      '[class*="cookie"]', '[class*="consent"]', '[class*="gdpr"]',
+      '[class*="privacy"]', '[id*="cookie"]', '[id*="consent"]',
+      '[id*="gdpr"]', '[class*="newsletter"]', '[class*="popup"]',
+      '[class*="modal"]:not(.wa-)', '[role="dialog"]', '[aria-modal]'
+    ].join(', ');
+
     const CTA_SELECTORS = 'a.btn, a.button, a[class*="btn"], a[class*="button"], button:not([type="submit"]):not([type="reset"]):not(.wa-), input[type="button"]';
 
     document.querySelectorAll(CTA_SELECTORS).forEach(el => {
       const text = el.textContent.trim().replace(/\s+/g, ' ');
       if (!text || text.length < 3 || text.length > 60) return;
-      if (CTA_SKIP.test(text)) return;
-      // Skip if inside our own widget
+      if (CTA_SKIP_WORDS.test(text)) return;
+      // Skip if inside our widget, a cookie banner, or other skip containers
       if (el.closest('#wa-panel, #wa-bubble')) return;
+      if (el.closest(SKIP_CONTAINERS)) return;
 
       addEl({
         type:    'button',
         text,
         role:    'cta',
         actions: ['click'],
-        _el:     el   // kept for execution, not sent to AI
+        _el:     el
       });
     });
 
@@ -274,6 +285,7 @@
       const text = el.textContent.trim().replace(/\s+/g, ' ');
       if (!text || text.length < 3 || text.length > 80) return;
       if (el.closest('#wa-panel, #wa-bubble, nav, header, footer')) return;
+      if (el.closest(SKIP_CONTAINERS)) return;
 
       // Find the scrollable parent section
       const section = el.closest('section, article, div[id], div[class]') || el.parentElement;
