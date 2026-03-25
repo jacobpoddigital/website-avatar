@@ -527,6 +527,10 @@ Rules:
             fillField(el, parsed.value);
           }
           saveSession();
+        } else if (!parsed.value && parsed.field_name) {
+          // AI returned fill_field but no value — treat as ask_again, just show message
+          if (parsed.message) agentSay(parsed.message);
+          return;
         }
       }
 
@@ -1061,7 +1065,9 @@ Rules:
     action.completedAt = Date.now();
     saveSession();
     updateActionCardStatus(actionId, 'denied');
-    setState('action', 'none');
+    // Only reset action state if no other action is currently active
+    const hasOtherActive = session.actions.some(a => a.id !== actionId && a.status === 'active');
+    if (!hasOtherActive) setState('action', 'none');
     agentSay("No problem — just let me know if you change your mind.");
   }
 

@@ -68,6 +68,21 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     recent.forEach(m => lines.push(`  ${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
     lines.push('');
 
+    // Active form fill — critical: do NOT say form was submitted
+    const activeForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'active');
+    if (activeForm) {
+      const filled = (activeForm.payload?.fields || []).filter(f => f.value);
+      lines.push('CURRENT STATUS: Form fill is IN PROGRESS — the form has NOT been submitted yet.');
+      if (filled.length) {
+        lines.push('FIELDS FILLED SO FAR:');
+        filled.forEach(f => lines.push(`  ${f.label}: ${Array.isArray(f.value) ? f.value.join(', ') : f.value}`));
+      }
+      lines.push('Do NOT congratulate the user or say the form was submitted. Continue helping them fill it in.');
+      lines.push('');
+      return lines.join('\n');
+    }
+
+    // Completed form
     const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
     const deniedForm = (() => {
       const d = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'denied');
@@ -83,7 +98,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       const fields = completedForm.payload.fields.filter(f => f.value);
       if (fields.length) {
         lines.push('USER DETAILS COLLECTED:');
-        fields.forEach(f => lines.push(`  ${f.label}: ${f.value}`));
+        fields.forEach(f => lines.push(`  ${f.label}: ${Array.isArray(f.value) ? f.value.join(', ') : f.value}`));
         lines.push('');
       }
       lines.push('OUTCOME: Contact form submitted successfully.');
