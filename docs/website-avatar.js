@@ -1,6 +1,6 @@
 /**
  * website-avatar.js — Website Avatar by AdVelocity
- * Single script tag deployment. Loads modular architecture.
+ * Single script tag deployment. Fetches config from backend by account ID.
  *
  * Usage:
  * <script src="https://jacobpoddigital.github.io/website-avatar/website-avatar.js"
@@ -21,7 +21,9 @@
   const BASE_URL   = thisScript.src.replace('/website-avatar.js', '');
   const accountId  = thisScript.getAttribute('data-account-id') || '';
 
+  // Backend config endpoint — always this Worker
   const CONFIG_URL = 'https://backend.jacob-e87.workers.dev/config';
+  // OpenAI proxy — always this Worker, never exposed in script tag
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
 
   // ── INJECT WIDGET HTML ───────────────────────────────────────────────────
@@ -88,7 +90,7 @@
   // ── BOOT ────────────────────────────────────────────────────────────────
   async function boot() {
     try {
-      // Fetch config
+      // Fetch config from backend using account ID
       let config = {};
       if (accountId) {
         try {
@@ -102,10 +104,10 @@
           console.warn('[WA] Could not fetch config:', e.message);
         }
       } else {
-        console.warn('[WA] No data-account-id provided');
+        console.warn('[WA] No data-account-id provided on script tag');
       }
 
-      // Set global config
+      // Set global config — proxy URL always comes from our code, never the script tag
       window.WA_CONFIG = {
         elevenlabsAgentId: config.elevenlabsAgentId || '',
         openaiProxyUrl:    PROXY_URL,
@@ -122,31 +124,30 @@
       link.href  = BASE_URL + '/widget.css';
       document.head.appendChild(link);
 
-      // Inject HTML
+      // Inject HTML with agent name from config
       injectHTML(window.WA_CONFIG.agentName);
 
-      // Load modules in dependency order
-      // 1. Discover (builds PAGE_MAP, FORM_MAP, PAGE_CONTEXT)
-      await loadScript(BASE_URL + '/wa-discover.js');
-      
-      // 2. Core (state, session, bus, utilities)
-      await loadScript(BASE_URL + '/wa-core.js');
-      
-      // 3. Modules (can load in parallel - they wait for core:ready)
+      // Load discover + agent in parallel, elevenlabs last
       await Promise.all([
-        loadScript(BASE_URL + '/wa-actions.js'),
-        loadScript(BASE_URL + '/wa-decision.js'),
-        loadScript(BASE_URL + '/wa-forms.js'),
-        loadScript(BASE_URL + '/wa-ui.js')
+        loadScript(BASE_URL + '/core/state.js'),
+        loadScript(BASE_URL + '/core/ai.js'),
+        loadScript(BASE_URL + '/core/utils.js')
       ]);
       
-      // 4. Main orchestrator (waits for all modules via bus)
-      await loadScript(BASE_URL + '/wa-agent.js');
+      await Promise.all([
+        loadScript(BASE_URL + '/features/actions.js'),
+        loadScript(BASE_URL + '/features/bridge.js'),
+        loadScript(BASE_URL + '/features/ui.js')
+      ]);
       
-      // 5. Bridge (last - connects to ElevenLabs)
+      await Promise.all([
+        loadScript(BASE_URL + '/wa-discover.js'),
+        loadScript(BASE_URL + '/wa-agent.js')
+      ]);
+      
       await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
 
-      if (debug) console.log('[WA] All modules loaded from', BASE_URL, '| account:', accountId);
+      if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
 
     } catch(e) {
       console.error('[WA] Failed to load:', e.message);
