@@ -1,14 +1,14 @@
 /**
- * wa-elevenlabs.js — ElevenLabs bridge (text-only mode)
- * Connects to ElevenLabs conversational agent via text.
- * No audio, no microphone, no voice features.
+ * wa-elevenlabs.js — ElevenLabs bridge (text-only / chat mode)
+ * Uses @elevenlabs/client SDK via esm.sh CDN
+ * Connects to ElevenLabs conversational agent in text-only mode.
+ * No audio, no microphone.
+ *
+ * IMPORTANT: In ElevenLabs dashboard → agent Security tab,
+ * ensure "Allow conversation config overrides" is enabled.
  */
 
-import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.14.0/+esm';
-
-if (!Conversation) {
-  console.error('[WA:Bridge] Failed to import Conversation from @elevenlabs/client — check CDN URL');
-}
+import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
 (function () {
 
@@ -17,6 +17,11 @@ if (!Conversation) {
 
   function log  (...a) { if (DEBUG) console.log ('[WA:Bridge]', ...a); }
   function warn (...a) {           console.warn('[WA:Bridge]', ...a); }
+
+  if (!Conversation) {
+    warn('Failed to import Conversation from @elevenlabs/client');
+    return;
+  }
 
   const CONFIG   = window.WA_CONFIG || {};
   const AGENT_ID = CONFIG.elevenlabsAgentId || '';
@@ -46,18 +51,14 @@ if (!Conversation) {
     const s = (() => {
       try { return JSON.parse(sessionStorage.getItem('wa_session') || '{}'); } catch { return {}; }
     })();
-
     if (!s.messages?.length) return null;
 
     const lines = ['SESSION CONTEXT:'];
-
-    // Recent messages
     const recent = s.messages.slice(-8);
     lines.push('RECENT CONVERSATION:');
     recent.forEach(m => lines.push(`  ${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
     lines.push('');
 
-    // Completed form
     const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
     const deniedForm = (() => {
       const d = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'denied');
@@ -112,7 +113,6 @@ if (!Conversation) {
         return `[SYSTEM: The user's last message was: "${lastMsg.text}". Continue the conversation naturally from here.]`;
       }
     }
-
     return null;
   }
 
@@ -120,6 +120,11 @@ if (!Conversation) {
 
   async function connect() {
     if (session) { await disconnect(); return; }
+
+    if (!AGENT_ID) {
+      warn('No agent ID — check backend KV config');
+      return;
+    }
 
     const btn = document.getElementById('wa-connect-btn');
     if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
@@ -130,26 +135,23 @@ if (!Conversation) {
     const pageCtx       = buildPageContext();
     const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
 
-    const sessionConfig = {
-      agentId:   AGENT_ID,
-      overrides: {
-        conversation: { textOnly: true }
-      }
-    };
-
-    if (contextToSend) {
-      sessionConfig.dynamicVariables = { context: contextToSend };
-    }
-
     try {
       session = await Conversation.startSession({
-        ...sessionConfig,
+        agentId: AGENT_ID,
+
+        // Text-only / chat mode — no audio, no mic
+        overrides: {
+          conversation: { textOnly: true }
+        },
+
+        // Inject page + session context as dynamic variable
+        dynamicVariables: contextToSend ? { context: contextToSend } : undefined,
 
         onConnect: () => {
           log('Connected');
           setConnectUI(true);
 
-          // Open panel directly — never via toggleChat (would trigger reconnect loop)
+          // Open panel directly — do NOT call toggleChat (causes reconnect loop)
           const panel = document.getElementById('wa-panel');
           if (panel && !panel.classList.contains('wa-open')) {
             panel.classList.add('wa-open');
@@ -180,7 +182,8 @@ if (!Conversation) {
           if (!msg.message) return;
 
           if (msg.source === 'ai') {
-            if (msg.isFinal === false) return; // ignore tentative
+            // In text-only mode, only handle final messages
+            if (msg.isFinal === false) return;
             const clean = msg.message.replace(/\[[^\]]+\]\s*/g, '').trim();
             if (!clean) return;
             log(`Agent: "${clean.slice(0, 80)}"`);
@@ -203,6 +206,7 @@ if (!Conversation) {
             WA.agentSay('Something went wrong. Please try reconnecting.');
           }
           setConnectUI(false);
+          if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
         },
 
         onStatusChange: (info) => {
@@ -229,8 +233,13 @@ if (!Conversation) {
 
   function sendText(text) {
     if (!session) return false;
-    session.sendUserMessage(text);
-    return true;
+    try {
+      session.sendUserMessage(text);
+      return true;
+    } catch(e) {
+      warn('sendText error:', e.message);
+      return false;
+    }
   }
 
   function isConnected() { return !!session; }
@@ -251,19 +260,11 @@ if (!Conversation) {
 
   WA.bridge = { connect, disconnect, sendText, isConnected };
 
-  // Signal bridge is ready — wrapped so import errors surface visibly
-  try {
-    if (!AGENT_ID) {
-      warn('No agent ID configured — check your account config in the backend KV');
-    }
-    if (WA.bus) {
-      WA.bus.emit('bridge:ready');
-      log('Bridge ready');
-    } else {
-      warn('WA.bus not found — wa-agent.js may not have loaded yet');
-    }
-  } catch(e) {
-    warn('Bridge init error:', e.message);
+  if (WA.bus) {
+    WA.bus.emit('bridge:ready');
+    log('Bridge ready');
+  } else {
+    warn('WA.bus not available — wa-agent.js may not have loaded');
   }
 
 })();
