@@ -276,7 +276,8 @@
     if (navLabel) navLabel.textContent = `Heading to ${label}…`;
     if (overlay)  overlay.classList.add('active');
 
-    // Disconnect bridge before navigation — will reconnect on new page
+    // Disconnect bridge before navigation — intentional, new page will reconnect
+    _queuedMessage = null;
     disconnectBridge();
     setTimeout(() => { window.location.href = url; }, 400);
   }
@@ -332,6 +333,13 @@
     active:  false,  // is a form fill in progress
     action:  null    // the active fill_form action
   };
+
+  // Queued message — sent to Michelle as soon as bridge reconnects
+  // Set when user sends a message while bridge is offline/connecting
+  let _queuedMessage = null;
+
+  // Flag intentional disconnects so onBridgeDisconnected doesn't auto-reconnect
+  let _intentionalDisconnect = false;
 
   async function startFormFill(action) {
     if (formState.active) return;
@@ -736,7 +744,8 @@ Rules:
   function endSession() {
     log('Ending session');
 
-    // Disconnect bridge first
+    // Disconnect bridge first — intentional
+    _queuedMessage = null;
     disconnectBridge();
 
     // Clear all session storage
@@ -1089,27 +1098,15 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
       return;
     }
 
-    // Bridge connecting — queue message, send when ready
-    if (State.connection === 'connecting') {
+    // Bridge connecting or offline — queue message, it will be sent on connect
+    if (WA.bridge) {
+      _queuedMessage = text;
       showTyping();
-      WA.bus.on('state:change', function onConnect(e) {
-        if (e.layer === 'connection' && e.to === 'connected') {
-          WA.bus.off('state:change', onConnect);
-          hideTyping();
-          WA.bridge.sendText(text);
-          WA._lastUserMessage = text;
-          setState('conversation', 'awaiting');
-        }
-        if (e.layer === 'connection' && e.to === 'offline') {
-          WA.bus.off('state:change', onConnect);
-          hideTyping();
-        }
-      });
-      return;
+      if (State.connection === 'offline') {
+        reconnectBridge();
+      }
+      // If already connecting, onBridgeConnected will pick up the queued message
     }
-
-    // Bridge offline — prompt to connect, no fabricated responses
-    agentSay("I'm not connected yet. Click Connect to start a conversation with Michelle.");
   }
 
   function handleKey(e) {
@@ -1151,8 +1148,35 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   // Clean interface for wa-elevenlabs.js — no direct function calls back in.
 
   WA.onBridgeConnecting   = () => { setState('connection', 'connecting'); };
-  WA.onBridgeConnected    = () => { setState('connection', 'connected'); inactivity.onConnect(); };
-  WA.onBridgeDisconnected = () => { setState('connection', 'offline'); setState('conversation', 'idle'); hideTyping(); };
+  WA.onBridgeConnected    = () => {
+    setState('connection', 'connected');
+    inactivity.onConnect();
+    // Send any message the user typed while bridge was offline/connecting
+    if (_queuedMessage && WA.bridge) {
+      const msg = _queuedMessage;
+      _queuedMessage = null;
+      hideTyping();
+      setTimeout(() => {
+        WA.bridge.sendText(msg);
+        WA._lastUserMessage = msg;
+        setState('conversation', 'awaiting');
+      }, 400); // brief delay so Michelle is fully ready
+    }
+  };
+  WA.onBridgeDisconnected = () => {
+    setState('connection', 'offline');
+    setState('conversation', 'idle');
+    hideTyping();
+
+    const wasIntentional = _intentionalDisconnect;
+    _intentionalDisconnect = false; // reset for next time
+
+    // Unexpected drop during active session — reconnect automatically
+    if (!wasIntentional && State.session === 'active' && !formState.active) {
+      log('Unexpected disconnect — auto-reconnecting');
+      setTimeout(reconnectBridge, 1500);
+    }
+  };
   WA.onSpeakingStart = () => { setState('conversation', 'responding'); hideTyping(); };
   WA.onSpeakingStop  = () => { setState('conversation', 'idle'); };
   WA.onAgentMessage       = (text) => { agentSay(text); classifyAgentMessage(WA._lastUserMessage || '', text); };
@@ -1164,6 +1188,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   };
 
   function disconnectBridge() {
+    _intentionalDisconnect = true;
     return WA.bridge ? WA.bridge.disconnect() : Promise.resolve();
   }
 
