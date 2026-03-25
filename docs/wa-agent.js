@@ -408,10 +408,17 @@
     const fields   = formState.action.payload.fields;
     const isResume = userText === '__RESUME__';
 
-    // Build field summary for prompt
-    const fieldSummary = fields.map(f =>
-      `- ${f.label} (name: ${f.name}, type: ${f.type}${f.required ? ', required' : ', optional'}): ${f.value ? '"' + f.value + '"' : 'empty'}`
-    ).join('\n');
+    // Build field summary in DOM order — AI must follow this order strictly
+    const fieldSummary = fields.map((f, idx) => {
+      const val  = f.value
+        ? (Array.isArray(f.value) ? f.value.join(', ') : '"' + f.value + '"')
+        : 'empty';
+      const opts = f.options?.length
+        ? ` | options: [${f.options.map(o => o.value).join(', ')}]`
+        : '';
+      const multi = f.type === 'checkbox' ? ' | multi-select' : (f.type === 'radio' ? ' | single-select' : '');
+      return `${idx + 1}. ${f.label} (name: ${f.name}, type: ${f.type}${f.required ? ', required' : ', optional'}${multi}${opts}): ${val}`;
+    }).join('\n');
 
     // Recent conversation for context
     const recentMsgs = session.messages.slice(-6).map(m =>
@@ -430,20 +437,26 @@ USER JUST SAID: "${isResume ? '(resuming form fill — greet user and ask for ne
 
 Reply with JSON only, no explanation:
 {
-  "action": "fill_field" | "correct_field" | "submit_ready" | "abort" | "ask_again",
+  "action": "fill_field" | "correct_field" | "show_options" | "submit_ready" | "abort" | "ask_again",
   "field_name": "name attribute of field to update, or null",
-  "value": "value to set, or null",
-  "message": "what to say to the user — natural, warm, confirm what was filled and ask for next empty field",
+  "value": "value to set for fill_field/correct_field, or null",
+  "options": ["option1", "option2"] | null,
+  "multi": true | false,
+  "message": "what to say to the user",
   "all_required_filled": true | false
 }
 
 Rules:
 - abort: user wants to stop, cancel, or leave (any phrasing)
-- fill_field: user provided a value for a field
+- fill_field: user provided a value for a plain text/email/tel/textarea field
 - correct_field: user is correcting a previously filled field
-- submit_ready: all required fields are filled and user confirmed or nothing left to ask
+- show_options: field is type checkbox, radio, or select — render options as buttons for user to pick
+- submit_ready: all required fields are filled
 - ask_again: input was unclear or ambiguous
-- After filling a field, message should confirm it and ask for the next empty required field
+- IMPORTANT: Ask for fields strictly in the numbered order listed above — never skip or reorder
+- After filling a field, confirm and ask for the NEXT field in sequence by number
+- For checkbox/radio/select fields: always return show_options — never ask user to type their choice
+- For show_options include field_name and all options from the field definition
 - If all required fields are now filled, set action to submit_ready and all_required_filled to true
 - Never ask for a field that already has a value unless user is correcting it
 - Validate email format, phone must have at least 7 digits — if invalid ask user to correct it`;
@@ -483,6 +496,26 @@ Rules:
         return;
       }
 
+      // ── show_options — render multi/single select card ──────────────────
+      if (parsed.action === 'show_options' && parsed.field_name) {
+        const field = fields.find(f => f.name === parsed.field_name);
+        if (field) {
+          if (parsed.message) agentSay(parsed.message);
+          renderOptionsCard(field, parsed.multi !== false, (selected) => {
+            // User confirmed selection — fill checkboxes in DOM
+            field.value = selected; // array of values
+            fillCheckboxField(field, selected);
+            saveSession();
+            // Tell AI what was selected and continue
+            const summary = selected.length
+              ? `Selected: ${selected.join(', ')}`
+              : '(skipped)';
+            handleFormInputAI(summary);
+          });
+          return;
+        }
+      }
+
       if (parsed.action === 'fill_field' || parsed.action === 'correct_field') {
         const field = fields.find(f => f.name === parsed.field_name);
         if (field && parsed.value) {
@@ -497,8 +530,7 @@ Rules:
         }
       }
 
-      // submit_ready — go to confirmation card, don't agentSay here
-      // completeFormFill handles the summary message
+      // submit_ready — go to confirmation card
       if (parsed.action === 'submit_ready' || parsed.all_required_filled) {
         setTimeout(completeFormFill, 400);
         return;
@@ -770,6 +802,106 @@ Rules:
   }
 
 
+
+  // ─── OPTIONS CARD ────────────────────────────────────────────────────────
+  // Renders a multi/single-select card for checkbox, radio, or select fields.
+  // User taps options to toggle, then confirms or skips.
+
+  function renderOptionsCard(field, multi, onConfirm) {
+    const selected = new Set();
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+
+    const card = document.createElement('div');
+    card.className = 'wa-options-card';
+
+    const label = document.createElement('div');
+    label.className = 'wa-options-label';
+    label.textContent = multi ? 'Select all that apply' : 'Choose one';
+    card.appendChild(label);
+
+    const grid = document.createElement('div');
+    grid.className = 'wa-options-grid';
+
+    const options = field.options || [];
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'wa-option-btn';
+      btn.textContent = opt.label || opt.value;
+      btn.dataset.value = opt.value;
+      btn.onclick = () => {
+        if (!multi) {
+          // Single select — clear others
+          grid.querySelectorAll('.wa-option-btn').forEach(b => b.classList.remove('wa-option-selected'));
+          selected.clear();
+        }
+        if (selected.has(opt.value)) {
+          selected.delete(opt.value);
+          btn.classList.remove('wa-option-selected');
+        } else {
+          selected.add(opt.value);
+          btn.classList.add('wa-option-selected');
+        }
+      };
+      grid.appendChild(btn);
+    });
+    card.appendChild(grid);
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'wa-card-btns';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'wa-btn wa-btn-confirm';
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.onclick = () => {
+      card.remove();
+      onConfirm([...selected]);
+    };
+
+    const skipBtn = document.createElement('button');
+    skipBtn.className = 'wa-btn wa-btn-deny';
+    skipBtn.textContent = 'Skip';
+    skipBtn.onclick = () => {
+      card.remove();
+      onConfirm([]);
+    };
+
+    btnRow.appendChild(confirmBtn);
+    if (!field.required) btnRow.appendChild(skipBtn);
+    card.appendChild(btnRow);
+
+    msgs.appendChild(card);
+    scrollToBottom();
+  }
+
+  // Fill checkbox/radio inputs in the DOM
+  function fillCheckboxField(field, selectedValues) {
+    if (!selectedValues?.length) return;
+    const form = WA.FORM_MAP?.[0]?.formEl;
+    if (!form) return;
+
+    // Uncheck all first
+    const allInputs = form.querySelectorAll(
+      `input[type="checkbox"][name="${field.name}"], input[type="checkbox"][name="${field.name}[]"],` +
+      `input[type="radio"][name="${field.name}"], input[type="radio"][name="${field.name}[]"]`
+    );
+    allInputs.forEach(el => { el.checked = false; });
+
+    // Check selected values
+    selectedValues.forEach(val => {
+      const el = form.querySelector(
+        `input[name="${field.name}"][value="${val}"], input[name="${field.name}[]"][value="${val}"]`
+      );
+      if (el) {
+        el.checked = true;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    // Highlight the group
+    const firstEl = allInputs[0];
+    if (firstEl) firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   // ─── END SESSION ─────────────────────────────────────────────────────────
   // First-class action — clears everything and returns to fresh state.

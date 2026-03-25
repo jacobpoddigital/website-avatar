@@ -87,7 +87,7 @@
   // ─── FORM DISCOVERY ───────────────────────────────────────────────────────
   function discoverForms() {
     const VALID_TAGS  = ['INPUT', 'TEXTAREA', 'SELECT'];
-    const SKIP_TYPES  = ['hidden', 'submit', 'button', 'reset', 'image', 'checkbox', 'radio', 'file'];
+    const SKIP_TYPES  = ['hidden', 'submit', 'button', 'reset', 'image', 'file'];
 
     const realForms = Array.from(document.querySelectorAll('form'));
     const divForms  = realForms.length === 0
@@ -103,21 +103,85 @@
     const found = [];
 
     candidates.forEach((form, i) => {
-      const fields = [];
+      const fields     = [];
+      const seenGroups = new Set(); // track checkbox/radio groups by name
 
+      // Use DOM order — querySelectorAll returns elements in document order
       form.querySelectorAll(VALID_TAGS.join(',')).forEach(el => {
-        if (SKIP_TYPES.includes(el.type)) return;
+        const type = el.type || el.tagName.toLowerCase();
+
+        // ── Checkbox / Radio groups ──────────────────────────────────────────
+        if (type === 'checkbox' || type === 'radio') {
+          const groupName = el.name ? el.name.replace(/\[\]$/, '') : null;
+          if (!groupName) return;
+          if (seenGroups.has(groupName)) return; // already processed this group
+          seenGroups.add(groupName);
+
+          // Collect all options in this group
+          const groupEls = Array.from(
+            form.querySelectorAll(`input[type="${type}"][name="${el.name}"], input[type="${type}"][name="${groupName}[]"]`)
+          );
+          if (!groupEls.length) return;
+
+          const options = groupEls.map(opt => {
+            // Try to get label from parent label element
+            const parentLabel = opt.closest('label');
+            const optLabel = parentLabel
+              ? parentLabel.textContent.trim()
+              : (opt.nextElementSibling?.textContent?.trim() || opt.value);
+            return { value: opt.value, label: optLabel };
+          });
+
+          // Group label — look for a label preceding the group
+          const wrap = el.closest('.wpcf7-form-control-wrap') || el.closest('fieldset') || el.parentElement;
+          let groupLabel = null;
+          if (wrap) {
+            const prev = wrap.previousElementSibling;
+            if (prev) groupLabel = prev.textContent.trim();
+            if (!groupLabel) {
+              const parentEl = wrap.parentElement;
+              if (parentEl) {
+                const labelEl = parentEl.querySelector('label');
+                if (labelEl) groupLabel = labelEl.textContent.trim();
+              }
+            }
+          }
+          if (!groupLabel) groupLabel = groupName.replace(/[-_]/g, ' ');
+
+          fields.push({
+            id:       null,
+            name:     groupName,
+            label:    groupLabel.replace(/[*:\s]+$/, '').trim(),
+            type:     type === 'radio' ? 'radio' : 'checkbox',
+            required: el.required || el.getAttribute('aria-required') === 'true',
+            options,          // array of { value, label }
+            value:    null    // will be array of selected values
+          });
+          return;
+        }
+
+        // ── Standard fields ──────────────────────────────────────────────────
+        if (SKIP_TYPES.includes(type)) return;
         if (!el.id && !el.name && !el.placeholder) return;
 
         const label = resolveLabel(el);
 
+        // Handle SELECT options
+        let options = null;
+        if (el.tagName === 'SELECT') {
+          options = Array.from(el.options)
+            .filter(o => o.value)
+            .map(o => ({ value: o.value, label: o.text.trim() }));
+        }
+
         fields.push({
-          id: el.id || null,
-          name: el.name || null,
+          id:       el.id || null,
+          name:     el.name || null,
           label,
-          type: el.type || el.tagName.toLowerCase(),
+          type:     type,
           required: el.required || el.getAttribute('aria-required') === 'true',
-          value: null
+          options,
+          value:    null
         });
       });
 
@@ -125,7 +189,7 @@
         found.push({
           index: i,
           formEl: form,
-          isCF7: form.classList.contains('wpcf7-form'),
+          isCF7:  form.classList.contains('wpcf7-form'),
           fields
         });
       }
@@ -201,7 +265,8 @@
         console.group(`  Form ${f.index}${f.isCF7 ? ' [CF7]' : ''}${f.formEl.id ? ' #' + f.formEl.id : ''}`);
         f.fields.forEach(field => {
           const id = field.id ? `id=${field.id}` : `name=${field.name}`;
-          console.log(`    ${id} → "${field.label}"${field.required ? ' *' : ''}`);
+          const opts = field.options?.length ? ` [${field.options.map(o => o.value).join(', ')}]` : '';
+          console.log(`    ${id} → "${field.label}"${field.required ? ' *' : ''} (${field.type})${opts}`);
         });
         console.groupEnd();
       });
