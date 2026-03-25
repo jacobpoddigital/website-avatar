@@ -1,12 +1,10 @@
 /**
  * website-avatar.js — Website Avatar by AdVelocity
- * Single script tag deployment. Loads all dependencies automatically.
- * 
+ * Single script tag deployment. Fetches config from backend by account ID.
+ *
  * Usage:
- * <script src="https://YOUR_R2_URL/website-avatar.js"
- *         data-agent-id="agent_xxx"
- *         data-proxy-url="https://backend.jacob-e87.workers.dev/classify"
- *         data-debug="false">
+ * <script src="https://jacobpoddigital.github.io/website-avatar/website-avatar.js"
+ *         data-account-id="acct_poddigital">
  * </script>
  */
 
@@ -19,26 +17,19 @@
   }
   window._waLoaded = true;
 
-  // ── READ CONFIG FROM SCRIPT TAG ATTRIBUTES ──────────────────────────────
-  const thisScript  = document.currentScript;
-  const BASE_URL    = thisScript.src.replace('/website-avatar.js', '');
-  const agentId     = thisScript.getAttribute('data-agent-id')    || '';
-  const proxyUrl    = thisScript.getAttribute('data-proxy-url')   || '';
-  const debug       = thisScript.getAttribute('data-debug')       === 'true';
-  const primaryColor = thisScript.getAttribute('data-color')      || '#c84b2f';
+  const thisScript = document.currentScript;
+  const BASE_URL   = thisScript.src.replace('/website-avatar.js', '');
+  const accountId  = thisScript.getAttribute('data-account-id') || '';
 
-  // ── INJECT WA_CONFIG BEFORE SCRIPTS LOAD ────────────────────────────────
-  window.WA_CONFIG = {
-    elevenlabsAgentId: agentId,
-    openaiProxyUrl:    proxyUrl,
-    primaryColor:      primaryColor,
-    debug:             debug
-  };
+  // Backend config endpoint — always this Worker
+  const CONFIG_URL = 'https://backend.jacob-e87.workers.dev/config';
+  // OpenAI proxy — always this Worker, never exposed in script tag
+  const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
 
   // ── INJECT WIDGET HTML ───────────────────────────────────────────────────
-  // All injection happens inside boot() — after DOMContentLoaded, never blocking
-  function injectHTML() {
-    // Page transition overlay
+  function injectHTML(agentName) {
+    const name = agentName || 'Website Avatar';
+
     if (!document.getElementById('wa-transition')) {
       const overlay = document.createElement('div');
       overlay.id        = 'wa-transition';
@@ -46,7 +37,6 @@
       document.body.appendChild(overlay);
     }
 
-    // Chat bubble
     if (!document.getElementById('wa-bubble')) {
       const bubble = document.createElement('button');
       bubble.id        = 'wa-bubble';
@@ -55,7 +45,6 @@
       document.body.appendChild(bubble);
     }
 
-    // Chat panel
     if (!document.getElementById('wa-panel')) {
       const panel = document.createElement('div');
       panel.id        = 'wa-panel';
@@ -64,7 +53,7 @@
           <div class="wa-header-info">
             <div class="wa-avatar" id="wa-avatar">A<div id="wa-avatar-ring"></div></div>
             <div>
-              <h4>Website Avatar</h4>
+              <h4>${name}</h4>
               <span id="wa-status-label">Offline</span>
             </div>
           </div>
@@ -82,53 +71,81 @@
       `;
       document.body.appendChild(panel);
 
-      // Wire up events after HTML is in DOM
-      panel.querySelector('.wa-close').onclick        = () => WebsiteAvatar.toggleChat();
-      panel.querySelector('#wa-mic-btn').onclick      = () => WebsiteAvatar.bridge?.toggleMic();
-      panel.querySelector('#wa-connect-btn').onclick  = () => WebsiteAvatar.bridge?.connect();
-      panel.querySelector('#wa-send').onclick         = () => WebsiteAvatar.sendMessage();
-      panel.querySelector('#wa-input').onkeydown      = (e) => WebsiteAvatar.handleKey(e);
+      panel.querySelector('.wa-close').onclick       = () => WebsiteAvatar.toggleChat();
+      panel.querySelector('#wa-mic-btn').onclick     = () => WebsiteAvatar.bridge?.toggleMic();
+      panel.querySelector('#wa-connect-btn').onclick = () => WebsiteAvatar.bridge?.connect();
+      panel.querySelector('#wa-send').onclick        = () => WebsiteAvatar.sendMessage();
+      panel.querySelector('#wa-input').onkeydown     = (e) => WebsiteAvatar.handleKey(e);
     }
   }
 
   // ── LOAD SCRIPTS ────────────────────────────────────────────────────────
   function loadScript(src, isModule) {
     return new Promise((resolve, reject) => {
-      const s    = document.createElement('script');
-      s.src      = src;
-      s.defer    = true;
-      s.onload   = resolve;
-      s.onerror  = () => reject(new Error('Failed to load: ' + src));
+      const s   = document.createElement('script');
+      s.src     = src;
+      s.defer   = true;
+      s.onload  = resolve;
+      s.onerror = () => reject(new Error('Failed to load: ' + src));
       if (isModule) s.type = 'module';
       document.head.appendChild(s);
     });
   }
 
+  // ── BOOT ────────────────────────────────────────────────────────────────
   async function boot() {
     try {
-      // Inject CSS here — after DOMContentLoaded, never blocking render
+      // Fetch config from backend using account ID
+      let config = {};
+      if (accountId) {
+        try {
+          const res = await fetch(`${CONFIG_URL}?id=${accountId}`);
+          if (res.ok) {
+            config = await res.json();
+          } else {
+            console.warn('[WA] Config not found for account:', accountId);
+          }
+        } catch(e) {
+          console.warn('[WA] Could not fetch config:', e.message);
+        }
+      } else {
+        console.warn('[WA] No data-account-id provided on script tag');
+      }
+
+      // Set global config — proxy URL always comes from our code, never the script tag
+      window.WA_CONFIG = {
+        elevenlabsAgentId: config.elevenlabsAgentId || '',
+        openaiProxyUrl:    PROXY_URL,
+        agentName:         config.agentName         || 'Website Avatar',
+        primaryColor:      config.primaryColor       || '#c84b2f',
+        debug:             config.debug              || false
+      };
+
+      const debug = window.WA_CONFIG.debug;
+
+      // Inject CSS
       const link = document.createElement('link');
       link.rel   = 'stylesheet';
       link.href  = BASE_URL + '/widget.css';
       document.head.appendChild(link);
 
-      injectHTML();
+      // Inject HTML with agent name from config
+      injectHTML(window.WA_CONFIG.agentName);
 
-      // Load discover + agent in parallel — both are independent of each other
-      // elevenlabs must come last as it depends on WA.bus from agent
+      // Load discover + agent in parallel, elevenlabs last
       await Promise.all([
         loadScript(BASE_URL + '/wa-discover.js'),
         loadScript(BASE_URL + '/wa-agent.js')
       ]);
       await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
 
-      if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL);
+      if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
+
     } catch(e) {
       console.error('[WA] Failed to load:', e.message);
     }
   }
 
-  // Wait for DOMContentLoaded — never block page render
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
   } else {

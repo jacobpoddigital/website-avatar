@@ -58,9 +58,12 @@
   function handleStateChange(layer, value) {
     const sendBtn = document.getElementById('wa-send');
     if (!sendBtn) return;
-    // In voice mode — disable while agent speaking or action active
-    // In text mode — only disable while action active (user can type while agent speaks)
-    const blocked = State.action === 'active' ||
+    // Block send only when:
+    // — a non-form-fill action is active (navigation etc)
+    // — speaking in voice mode
+    // Never block during form fill — user needs to type answers
+    const nonFormFillActive = State.action === 'active' && !formState.active;
+    const blocked = nonFormFillActive ||
                     (State.conversation === 'responding' && WA._voiceMode);
     sendBtn.disabled = blocked;
     sendBtn.title    = blocked ? 'Please wait…' : '';
@@ -75,7 +78,35 @@
   function loadSession() {
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const s = JSON.parse(raw);
+        // Sanitise session on load — fix any state left by unexpected page changes
+        const now = Date.now();
+
+        // Mark any abandoned active fill_form as denied
+        // (page navigated away mid-fill — don't resume automatically)
+        (s.actions || []).forEach(a => {
+          if (a.type === 'fill_form' && a.status === 'active') {
+            a.status      = 'denied';
+            a.completedAt = now;
+          }
+        });
+
+        // Clear activeFormActionId — no auto-resume on page load
+        // User must explicitly ask to fill the form again
+        if (s.activeFormActionId) {
+          s.activeFormActionId = null;
+        }
+
+        // Clear stale pendingOnArrival if navigate_then_fill already complete
+        if (s.pendingOnArrival) {
+          const alreadyArrived = (s.actions || []).some(
+            a => a.type === 'navigate_then_fill' && a.status === 'complete'
+          );
+          if (alreadyArrived) delete s.pendingOnArrival;
+        }
+        return s;
+      }
     } catch(e) { warn('Failed to load session', e); }
     return freshSession();
   }
@@ -1152,7 +1183,8 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     setState('connection', 'connected');
     inactivity.onConnect();
     // Send any message the user typed while bridge was offline/connecting
-    if (_queuedMessage && WA.bridge) {
+    // But not during form fill — form fill talks to OpenAI not the bridge
+    if (_queuedMessage && WA.bridge && !formState.active) {
       const msg = _queuedMessage;
       _queuedMessage = null;
       hideTyping();
@@ -1160,7 +1192,13 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
         WA.bridge.sendText(msg);
         WA._lastUserMessage = msg;
         setState('conversation', 'awaiting');
-      }, 400); // brief delay so Michelle is fully ready
+      }, 400);
+    } else if (_queuedMessage && formState.active) {
+      // Form fill is active — route queued message through AI not bridge
+      const msg = _queuedMessage;
+      _queuedMessage = null;
+      hideTyping();
+      handleFormInputAI(msg);
     }
   };
   WA.onBridgeDisconnected = () => {
@@ -1172,9 +1210,12 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     _intentionalDisconnect = false; // reset for next time
 
     // Unexpected drop during active session — reconnect automatically
+    // But not during form fill — form fill is text/AI only, bridge not needed
     if (!wasIntentional && State.session === 'active' && !formState.active) {
-      log('Unexpected disconnect — auto-reconnecting');
+      log('Unexpected disconnect — auto-reconnecting in 1500ms');
       setTimeout(reconnectBridge, 1500);
+    } else if (!wasIntentional && formState.active) {
+      log('Disconnect during form fill — suppressed, form fill continues via AI');
     }
   };
   WA.onSpeakingStart = () => { setState('conversation', 'responding'); hideTyping(); };
@@ -1409,9 +1450,9 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     if (isOpen) {
       const badge = document.getElementById('wa-badge');
       if (badge) badge.classList.remove('wa-show');
-      // Connect whenever panel opens and bridge isn't already connected
+      // Connect whenever panel opens — unless form fill is active (AI mode)
       if (WA.bridge && !WA.bridge.isConnected() &&
-          State.connection !== 'connecting') {
+          State.connection !== 'connecting' && !formState.active) {
         reconnectBridge();
       }
     }
