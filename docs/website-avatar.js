@@ -51,7 +51,7 @@
       panel.innerHTML = `
         <div class="wa-header">
           <div class="wa-header-info">
-            <div class="wa-avatar" id="wa-avatar">A<div id="wa-avatar-ring"></div></div>
+            <div class="wa-avatar" id="wa-avatar">A</div>
             <div>
               <h4>${name}</h4>
               <span id="wa-status-label">Offline</span>
@@ -64,7 +64,6 @@
         </div>
         <div class="wa-messages" id="wa-messages"></div>
         <div class="wa-input-row">
-          <button id="wa-mic-btn" class="wa-mic-btn" title="Toggle voice mode">🎤</button>
           <input type="text" id="wa-input" placeholder="Type a message…" />
           <button id="wa-send">Send</button>
         </div>
@@ -72,8 +71,6 @@
       document.body.appendChild(panel);
 
       panel.querySelector('.wa-close').onclick       = () => WebsiteAvatar.toggleChat();
-      panel.querySelector('#wa-mic-btn').onclick     = () => WebsiteAvatar.bridge?.toggleMic();
-      panel.querySelector('#wa-connect-btn').onclick = () => WebsiteAvatar.bridge?.connect();
       panel.querySelector('#wa-send').onclick        = () => WebsiteAvatar.sendMessage();
       panel.querySelector('#wa-input').onkeydown     = (e) => WebsiteAvatar.handleKey(e);
     }

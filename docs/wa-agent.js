@@ -58,13 +58,9 @@
   function handleStateChange(layer, value) {
     const sendBtn = document.getElementById('wa-send');
     if (!sendBtn) return;
-    // Block send only when:
-    // — a non-form-fill action is active (navigation etc)
-    // — speaking in voice mode
+    // Only block send for non-form-fill active actions (navigation etc)
     // Never block during form fill — user needs to type answers
-    const nonFormFillActive = State.action === 'active' && !formState.active;
-    const blocked = nonFormFillActive ||
-                    (State.conversation === 'responding' && WA._voiceMode);
+    const blocked = State.action === 'active' && !formState.active;
     sendBtn.disabled = blocked;
     sendBtn.title    = blocked ? 'Please wait…' : '';
   }
@@ -1105,7 +1101,6 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     if (!text) return;
 
     // Only block send in voice mode while agent is speaking
-    if (State.conversation === 'responding' && WA._voiceMode) return;
 
     if (input) input.value = '';
     inactivity.justConnected = false; // user has spoken — inactivity can now count
@@ -1219,8 +1214,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
       log('Disconnect during form fill — suppressed, form fill continues via AI');
     }
   };
-  WA.onSpeakingStart = () => { setState('conversation', 'responding'); hideTyping(); };
-  WA.onSpeakingStop  = () => { setState('conversation', 'idle'); };
+  // No speaking callbacks in text-only mode
   WA.onAgentMessage       = (text) => { agentSay(text); classifyAgentMessage(WA._lastUserMessage || '', text); };
   WA.onUserMessage        = (text) => {
     inactivity.justConnected = false; // user has spoken — inactivity can now count

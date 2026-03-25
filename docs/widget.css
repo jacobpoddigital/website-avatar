@@ -230,15 +230,6 @@
   display: flex; align-items: center; gap: 6px; padding: 10px 12px;
   border-top: 1px solid var(--wa-glass-border-dim); background: var(--wa-glass-subtle);
 }
-.wa-mic-btn {
-  flex-shrink: 0; width: 32px; height: 32px;
-  background: var(--wa-glass-subtle); border: 1px solid var(--wa-glass-border-dim);
-  border-radius: 50%; font-size: 14px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s, border-color .15s; padding: 0;
-}
-.wa-mic-btn:hover { background: var(--wa-glass-strong); }
-.wa-mic-btn.wa-active { background: rgba(200,75,47,.15); border-color: rgba(200,75,47,.4); }
 #wa-input {
   flex: 1; background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
@@ -275,14 +266,6 @@
   transition: background .15s; 
 }
 .wa-btn-abort:hover { background: rgba(200,75,47,.15); }
-
-/* ── AVATAR SPEAKING RING ────────────────────────────────────────────────────── */
-#wa-avatar-ring {
-  position: absolute; inset: -4px; border-radius: 50%;
-  border: 2px solid rgba(52,199,123,0.5); transform: scale(1);
-  opacity: 0; transition: opacity .3s ease; pointer-events: none;
-}
-#wa-avatar.wa-speaking #wa-avatar-ring { opacity: 1; }
 
 /* ── DEBUG PANEL ─────────────────────────────────────────────────────────────── */
 #wa-debug-panel {
