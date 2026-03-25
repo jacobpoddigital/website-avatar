@@ -105,6 +105,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       try { return new Set(JSON.parse(sessionStorage.getItem(sentKey) || '[]')); } catch { return new Set(); }
     })();
 
+    // Completed form — acknowledge submission
     const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
     if (completedForm && !sent.has(completedForm.id)) {
       sent.add(completedForm.id);
@@ -113,6 +114,28 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       return `[SYSTEM: The contact form was just submitted with: ${fields.map(f => `${f.label}=${f.value}`).join(', ')}. Acknowledge this naturally and ask if there's anything else you can help with.]`;
     }
 
+    // Post-navigation — fire once per page using URL as key
+    const pageKey = `page_${window.location.href}`;
+    if (!sent.has(pageKey)) {
+      sent.add(pageKey);
+      sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
+
+      const lastNav = [...(s.actions || [])]
+        .filter(a => a.type === 'navigate' && a.status === 'complete')
+        .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))[0];
+
+      const recentMsgs = s.messages.slice(-4)
+        .map(m => `${m.role === 'user' ? 'User' : 'You'}: ${m.text}`)
+        .join('\n');
+
+      if (lastNav) {
+        return `[SYSTEM: You just navigated the user to the ${lastNav.payload.targetLabel} page. Welcome them to the page naturally and offer to help them explore it. Recent conversation:\n${recentMsgs}]`;
+      }
+
+      return `[SYSTEM: Continue the conversation naturally. You are now on: ${document.title}. Recent conversation:\n${recentMsgs}]`;
+    }
+
+    // Last message was from user — continue from there
     const lastMsg = s.messages[s.messages.length - 1];
     if (lastMsg?.role === 'user') {
       const key = `user_${lastMsg.ts}`;
@@ -122,6 +145,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         return `[SYSTEM: The user's last message was: "${lastMsg.text}". Continue the conversation naturally from here.]`;
       }
     }
+
     return null;
   }
 
@@ -179,11 +203,17 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             if (typeof WA._openPanelDirect === 'function') WA._openPanelDirect();
           }
 
-          // Send reconnect prompt after session settles
+          // Send reconnect prompt, or trigger first greeting if fresh session
           setTimeout(() => {
-            if (session?.sendUserMessage) {
-              const prompt = buildReconnectPrompt();
-              if (prompt) { log('Reconnect prompt sent'); session.sendUserMessage(prompt); }
+            if (!session?.sendUserMessage) return;
+            const prompt = buildReconnectPrompt();
+            if (prompt) {
+              log('Reconnect prompt sent');
+              session.sendUserMessage(prompt);
+            } else {
+              // Fresh session — send a silent trigger so Michelle greets naturally
+              log('Fresh session — triggering greeting');
+              session.sendUserMessage('[SYSTEM: Greet the user warmly and introduce yourself briefly. Ask how you can help them today.]');
             }
           }, 400);
 
@@ -203,7 +233,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           if (!msg.message) return;
 
           if (msg.source === 'ai') {
-            // In text-only mode, only handle final messages
+            // In text-only mode isFinal may be undefined — only skip if explicitly false
             if (msg.isFinal === false) return;
             const clean = msg.message.replace(/\[[^\]]+\]\s*/g, '').trim();
             if (!clean) return;
