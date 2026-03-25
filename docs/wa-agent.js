@@ -1099,7 +1099,7 @@ Rules:
     return action;
   }
 
-  function proposeAction(type, description, payload) {
+  function proposeAction(type, description, payload, autoOverride) {
     // Guard — only one pending/active action at a time
     const hasActive = session.actions.some(a => ['pending','active'].includes(a.status));
     if (hasActive) {
@@ -1110,8 +1110,11 @@ Rules:
     const handler = ActionRegistry[type];
     const action  = createAction(type, description, payload);
 
-    // Auto-permission actions execute immediately without user confirmation
-    if (handler?.permissionLevel === 'auto') {
+    // Auto if registered as auto OR explicitly overridden by caller
+    const isAuto = autoOverride === true || handler?.permissionLevel === 'auto';
+
+    if (isAuto) {
+      log(`Auto-executing: ${type}`);
       setState('action', 'active');
       action.status    = 'active';
       action.startedAt = Date.now();
@@ -1185,192 +1188,217 @@ Rules:
   // ─── OPENAI CLASSIFICATION ────────────────────────────────────────────────
   // Fires once per agent message from one place. Pre-checks before API call.
 
-  let classifyController = null;
+  // ─── ACTION DECISION ENGINE ──────────────────────────────────────────────
+  // Fires after every agent message. OpenAI reads Michelle's response,
+  // the page context, and conversation history — then decides what to do.
+  // No brittle signal word pre-checks. OpenAI is the brain.
+  //
+  // auto=true  → execute immediately (scroll, highlight)
+  // auto=false → show confirmation card first (navigate, fill_form, click)
 
-  const ACTION_SIGNALS = [
-    'take you', 'taking you', 'head over', 'navigate you', 'send you',
-    "i'll take", "let's go", 'going to the', 'direct you',
-    'get that form', 'form started', 'form ready', 'fill that', 'open that up',
-    'get that booked', 'booking page', 'schedule that',
-    'contact page', 'services page', 'home page', 'homepage',
-    'which one would you like', 'which page', 'let me take',
-    'show you the', 'take a look at', 'check out the', 'visit the',
-    'navigate to', 'go to the', 'bring you to', 'pages about',
-    'page about', 'that page', 'our page'
-  ];
+  let decideController = null;
 
-  const SKIP_CLASSIFICATION = [
-    'are you still there', 'still there', 'you\'re not responding',
+  // Phrases that mean nothing actionable happened — skip the API call entirely
+  const SKIP_PHRASES = [
+    'are you still there', 'still there', "you're not responding",
     'gotten distracted', 'stepped away', 'seems like you',
-    'welcome to the', 'we\'ve arrived', 'we\'re here', 'we\'re now on',
-    'you\'re now on', 'here we are', 'we have arrived',
     'how can i help', 'what can i help', 'what would you like',
-    'is there anything', 'anything else'
+    'is there anything', 'anything else i can help',
+    'let me know if', 'feel free to ask'
   ];
 
-  async function classifyAgentMessage(userMessage, agentMessage) {
+  async function decideActions(userMessage, agentMessage) {
     const lower = agentMessage.toLowerCase();
 
-    // Skip inactivity / greeting messages
-    if (SKIP_CLASSIFICATION.some(p => lower.includes(p))) {
-      log('Classification skipped — matched skip phrase');
+    // Skip inactivity / generic phrases — nothing to act on
+    if (SKIP_PHRASES.some(p => lower.includes(p))) {
+      log('Action decision skipped — generic/inactivity phrase');
       return;
     }
 
-    // Pre-check — only call OpenAI if message looks action-like
-    if (!ACTION_SIGNALS.some(s => lower.includes(s))) {
-      log('Classification skipped — no action signal');
-      return;
-    }
-
-    // Don't classify if action already in progress
+    // Don't overlap with active actions
     if (session.actions.some(a => ['pending','active'].includes(a.status))) {
-      log('Classification skipped — action already active');
+      log('Action decision skipped — action already active');
       return;
     }
 
-    // Cancel previous in-flight request
-    if (classifyController) classifyController.abort();
-    classifyController = new AbortController();
+    // Cancel any in-flight request from previous message
+    if (decideController) decideController.abort();
+    decideController = new AbortController();
 
+    // Build context
     const pages      = getPageMap().map(p => `${p.label}|${p.file}`).join('\n');
     const currentUrl = window.location.href;
-    const userCtx    = userMessage ? `User: "${userMessage}"` : 'User: (silent)';
+    const ctx        = WA.PAGE_CONTEXT;
 
-    // Build semantic page elements context
-    const ctx = WA.PAGE_CONTEXT;
     const pageEls = ctx?.elements?.length
-      ? '\nPAGE ELEMENTS (id|type|text|actions):\n' +
-        ctx.elements.map(e => `${e.id}|${e.type}|${e.text || e.title || ''}|${e.actions.join(',')}`).join('\n')
-      : '';
+      ? ctx.elements.map(e =>
+          `${e.id}|${e.type}|${e.text || e.title || e.number || e.email || ''}|${e.actions.join(',')}`
+        ).join('\n')
+      : 'none';
 
-    const prompt = `Website agent conversation analyser. Reply JSON only.
-Current URL: ${currentUrl}
-Pages (label|url):
-${pages}${pageEls}
-${userCtx}
-Agent: "${agentMessage}"
-JSON: {"action":"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"scroll_to"|"highlight_element"|"none","target_url":"exact url or null","element_id":"wa_el_N or null","element_text":"button/section text or null"}
+    const recentMsgs = session.messages.slice(-4)
+      .map(m => `${m.role === 'user' ? 'User' : 'Michelle'}: ${m.text}`)
+      .join('\n');
+
+    const prompt = `You are deciding what actions a website chat widget should take after the agent spoke.
+
+CURRENT PAGE: ${document.title}
+URL: ${currentUrl}
+
+AVAILABLE PAGES (label|url):
+${pages}
+
+PAGE ELEMENTS (id|type|text/title|available_actions):
+${pageEls}
+
+RECENT CONVERSATION:
+${recentMsgs}
+
+AGENT JUST SAID: "${agentMessage}"
+
+Decide what actions the widget should take now. Reply with JSON only:
+{
+  "actions": [
+    {
+      "type": "scroll_to"|"highlight_element"|"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"none",
+      "auto": true|false,
+      "element_id": "wa_el_N or null",
+      "target_url": "exact url from pages list or null",
+      "reason": "brief reason"
+    }
+  ]
+}
+
 Rules:
-- navigate: agent taking user to a different page
-- fill_form: agent starting contact form (user on contact page)
-- navigate_then_fill: agent going to contact page to fill form
-- click_element: agent about to click a CTA/button on current page
-- scroll_to: agent directing user to a section on current page
-- highlight_element: agent pointing out a specific element (price, phone, email)
-- none: conversation, greeting, or question
-Never target_url=current page. Greetings/questions=none. Be conservative.`;
+- Return empty actions array [] if nothing should happen
+- auto: true = execute immediately without asking (scroll_to, highlight_element)
+- auto: false = show user a confirmation card first (navigate, fill_form, click_element)
+- scroll_to: agent mentioned or implied a section — scroll there automatically
+- highlight_element: agent mentioned a phone number, email, price, or specific element — highlight it
+- navigate: agent is sending user to a different page
+- fill_form: agent is starting the contact form (only if user is already on contact page)
+- navigate_then_fill: agent is sending user to contact page to fill form
+- click_element: agent is about to click a button on behalf of user
+- Only return actions that are clearly implied by what the agent said
+- Never navigate to the current page
+- Maximum 2 actions per response`;
 
     const t0 = Date.now();
-    log('→ Classification request sent');
+    log('→ Action decision request sent');
 
     try {
       const res = await fetch(OPENAI_PROXY, {
         method:  'POST',
-        signal:  classifyController.signal,
+        signal:  decideController.signal,
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt, maxTokens: 60 })
+        body:    JSON.stringify({ prompt, maxTokens: 200 })
       });
 
-      if (!res.ok) { warn('Classification error:', res.status); return; }
+      if (!res.ok) { warn('Action decision error:', res.status); return; }
 
       const data = await res.json();
-      const raw  = data.content || data.choices?.[0]?.message?.content || '';
-      log(`← Classification ${Date.now() - t0}ms:`, raw.trim());
+      const raw  = data.content || '';
+      log(`← Action decision ${Date.now() - t0}ms:`, raw.trim());
 
       let parsed;
       try {
-        const clean = raw.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(clean);
-      } catch(e) { warn('Bad JSON from classifier:', raw); return; }
+        parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+      } catch(e) { warn('Bad JSON from action decision:', raw); return; }
 
-      if (!parsed.action || parsed.action === 'none') return;
+      if (!parsed.actions?.length) return;
 
-      // Double-check still clear
+      // Double-check still clear before executing
       if (session.actions.some(a => ['pending','active'].includes(a.status))) return;
 
-      if (parsed.action === 'fill_form') {
-        proposeAction('fill_form', 'Help you fill out the contact form.', { fields: freshFields() });
-
-      } else if (parsed.action === 'click_element' && parsed.element_id) {
-        const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === parsed.element_id);
-        if (el) {
-          proposeAction('click_element',
-            `Click "${el.text || el.title}" for you.`,
-            { elementId: el.id, elementText: el.text || el.title }
-          );
+      for (const action of parsed.actions) {
+        if (!action.type || action.type === 'none') continue;
+        await executeDecidedAction(action);
+        // Small gap between multiple actions
+        if (parsed.actions.indexOf(action) < parsed.actions.length - 1) {
+          await sleep(300);
         }
-
-      } else if (parsed.action === 'scroll_to' && parsed.element_id) {
-        const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === parsed.element_id);
-        if (el) {
-          proposeAction('scroll_to',
-            `Scroll to "${el.title || el.text}".`,
-            { elementId: el.id, elementTitle: el.title || el.text }
-          );
-        }
-
-      } else if (parsed.action === 'highlight_element' && parsed.element_id) {
-        const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === parsed.element_id);
-        if (el) {
-          proposeAction('highlight_element',
-            `Point out "${el.text || el.title || el.number || el.email}".`,
-            { elementId: el.id, elementText: el.text || el.title || el.number || el.email }
-          );
-        }
-
-      } else if (parsed.action === 'navigate_then_fill') {
-        const contact = getContactPage();
-        if (!contact) return;
-        proposeAction('navigate_then_fill',
-          `Take you to the ${contact.label} and fill out the enquiry form.`,
-          {
-            targetPage:          contact.file,
-            targetLabel:         contact.label,
-            // Fields are empty here — discovered fresh on arrival at contact page
-            nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } }
-          }
-        );
-
-      } else if (parsed.action === 'navigate' && parsed.target_url) {
-        // Guard — don't navigate to current page
-        const targetClean  = parsed.target_url.replace(/\/$/, '');
-        const currentClean = window.location.href.replace(/\/$/, '');
-        if (targetClean === currentClean) {
-          const page = getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
-          agentSay(`You're already on the ${page ? page.label : 'page'} — is there something I can help you with here?`);
-          return;
-        }
-
-        const page  = getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
-        const label = page ? page.label : 'page';
-
-        // If target is contact page — offer choice
-        const contact = getContactPage();
-        if (contact && targetClean === contact.file.replace(/\/$/, '')) {
-          proposeChoiceAction(
-            `Would you like to just visit the ${contact.label}, or go there and fill out the enquiry form?`,
-            [
-              { label: 'Just browse', action: { type: 'navigate', description: `Take you to the ${contact.label}.`, payload: { targetPage: contact.file, targetLabel: contact.label } } },
-              { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${contact.label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: contact.label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } } } } }
-            ]
-          );
-        } else {
-          proposeAction('navigate', `Take you to the ${label}.`, { targetPage: parsed.target_url, targetLabel: label });
-        }
-
-      } else if (parsed.action === 'navigate' && !parsed.target_url) {
-        // Agent wanted to navigate but page not in map
-        const pageList = getPageMap().map(p => p.label).join(', ');
-        agentSay(`I'm not sure which page you mean. Here's what's available: ${pageList}. Which would you like?`);
       }
 
     } catch(e) {
       if (e.name === 'AbortError') {
-        log('Classification cancelled — superseded by new message');
+        log('Action decision cancelled — superseded');
       } else {
-        warn('Classification failed:', e.message);
+        warn('Action decision failed:', e.message);
       }
+    }
+  }
+
+  // Execute a single decided action
+  async function executeDecidedAction(action) {
+    const { type, auto, element_id, target_url } = action;
+
+    const isAuto = auto === true; // respect OpenAI's decision
+
+    if (type === 'scroll_to' || type === 'highlight_element') {
+      const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === element_id);
+      if (!el) return;
+      const label = el.text || el.title || el.number || el.email || element_id;
+      // scroll and highlight are auto by default unless OpenAI says otherwise
+      proposeAction(type, label, {
+        elementId:    el.id,
+        elementText:  label,
+        elementTitle: el.title || el.text || label
+      }, isAuto !== false); // default to auto
+      return;
+    }
+
+    if (type === 'fill_form') {
+      proposeAction('fill_form', 'Help you fill out the contact form.', { fields: freshFields() }, isAuto);
+      return;
+    }
+
+    if (type === 'navigate_then_fill') {
+      const contact = getContactPage();
+      if (!contact) return;
+      proposeAction('navigate_then_fill',
+        `Take you to the ${contact.label} and fill out the enquiry form.`,
+        {
+          targetPage:          contact.file,
+          targetLabel:         contact.label,
+          nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } }
+        },
+        isAuto
+      );
+      return;
+    }
+
+    if (type === 'navigate' && target_url) {
+      const targetClean  = target_url.replace(/\/$/, '');
+      const currentClean = window.location.href.replace(/\/$/, '');
+      if (targetClean === currentClean) return;
+
+      const page    = getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
+      const label   = page ? page.label : 'page';
+      const contact = getContactPage();
+
+      if (contact && targetClean === contact.file.replace(/\/$/, '')) {
+        proposeChoiceAction(
+          `Would you like to just visit the ${contact.label}, or go there and fill out the enquiry form?`,
+          [
+            { label: 'Just browse',   action: { type: 'navigate',           description: `Take you to the ${contact.label}.`,                payload: { targetPage: contact.file, targetLabel: contact.label } } },
+            { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${contact.label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: contact.label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } } } } }
+          ]
+        );
+      } else {
+        proposeAction('navigate', `Take you to the ${label}.`, { targetPage: target_url, targetLabel: label }, isAuto);
+      }
+      return;
+    }
+
+    if (type === 'click_element' && element_id) {
+      const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === element_id);
+      if (!el) return;
+      proposeAction('click_element',
+        `Click "${el.text || el.title}" for you.`,
+        { elementId: el.id, elementText: el.text || el.title },
+        isAuto
+      );
     }
   }
 
@@ -1390,7 +1418,7 @@ Never target_url=current page. Greetings/questions=none. Be conservative.`;
     inactivity.reset();
 
     // Cancel in-flight classification and dismiss pending cards on new message
-    if (classifyController) { classifyController.abort(); classifyController = null; }
+    if (decideController) { decideController.abort(); decideController = null; }
     if (WA.bridge && WA.bridge.isConnected()) dismissPendingActions();
 
     // Form fill takes priority — OpenAI handles all form fill input
@@ -1497,7 +1525,7 @@ Never target_url=current page. Greetings/questions=none. Be conservative.`;
     }
   };
   // No speaking callbacks in text-only mode
-  WA.onAgentMessage       = (text) => { agentSay(text); classifyAgentMessage(WA._lastUserMessage || '', text); };
+  WA.onAgentMessage       = (text) => { agentSay(text); decideActions(WA._lastUserMessage || '', text); };
   WA.onUserMessage        = (text) => {
     inactivity.justConnected = false; // user has spoken — inactivity can now count
     userSay(text);
