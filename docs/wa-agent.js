@@ -1108,8 +1108,9 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     if (State.conversation === 'responding' && WA._voiceMode) return;
 
     if (input) input.value = '';
+    inactivity.justConnected = false; // user has spoken — inactivity can now count
     userSay(text);
-    inactivity.reset(); // text message counts as user activity
+    inactivity.reset();
 
     // Cancel in-flight classification and dismiss pending cards on new message
     if (classifyController) { classifyController.abort(); classifyController = null; }
@@ -1221,7 +1222,12 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   WA.onSpeakingStart = () => { setState('conversation', 'responding'); hideTyping(); };
   WA.onSpeakingStop  = () => { setState('conversation', 'idle'); };
   WA.onAgentMessage       = (text) => { agentSay(text); classifyAgentMessage(WA._lastUserMessage || '', text); };
-  WA.onUserMessage        = (text) => { userSay(text); WA._lastUserMessage = text; inactivity.reset(); };
+  WA.onUserMessage        = (text) => {
+    inactivity.justConnected = false; // user has spoken — inactivity can now count
+    userSay(text);
+    WA._lastUserMessage = text;
+    inactivity.reset();
+  };
   WA.onPreAudioMessage    = (text) => {
     // Text arrived before/during audio — show immediately
     hideTyping();
