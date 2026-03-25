@@ -1142,6 +1142,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   }
 
   function userSay(text) {
+    hideWaitingHint();
     session.messages.push({ role: 'user', text, ts: Date.now() });
     if (State.session === 'fresh') {
       setState('session', 'active');
@@ -1153,6 +1154,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
 
   function agentSay(text) {
     hideTyping();
+    hideWaitingHint();
     session.messages.push({ role: 'agent', text, ts: Date.now() });
     if (State.session === 'fresh') {
       setState('session', 'active');
@@ -1179,6 +1181,8 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   WA.onBridgeConnected    = () => {
     setState('connection', 'connected');
     inactivity.onConnect();
+    // Show waiting hint only if no messages yet — disappears when Michelle responds
+    if (!session.messages.length) showWaitingHint();
     // Send any message the user typed while bridge was offline/connecting
     // But not during form fill — form fill talks to OpenAI not the bridge
     if (_queuedMessage && WA.bridge && !formState.active) {
@@ -1202,6 +1206,7 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     setState('connection', 'offline');
     setState('conversation', 'idle');
     hideTyping();
+    hideWaitingHint();
 
     const wasIntentional = _intentionalDisconnect;
     _intentionalDisconnect = false; // reset for next time
@@ -1288,6 +1293,23 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
 
   let typingEl      = null;
   let tentativeMsgEl = null;
+
+  let waitingHintEl = null;
+
+  function showWaitingHint() {
+    hideWaitingHint();
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+    waitingHintEl = document.createElement('div');
+    waitingHintEl.className = 'wa-waiting-hint';
+    waitingHintEl.textContent = 'Connected — type a message to start…';
+    msgs.appendChild(waitingHintEl);
+    scrollToBottom();
+  }
+
+  function hideWaitingHint() {
+    if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }
+  }
 
   function showTyping() {
     if (typingEl) return;
