@@ -249,6 +249,88 @@
     onComplete: async () => {}
   });
 
+  // CLICK ELEMENT — click a CTA or button on the current page
+  registerAction({
+    type:            'click_element',
+    label:           'Click page element',
+    permissionLevel: 'propose',
+
+    execute: async (action) => {
+      const { elementId, elementText } = action.payload;
+      const ctx = WA.PAGE_CONTEXT;
+      const el  = ctx?._refs?.[elementId];
+      if (!el) throw new Error(`Element ${elementId} not found`);
+      agentSay(`Clicking "${elementText}" for you…`);
+      await sleep(400);
+      el.click();
+    },
+
+    onError: async (err, action) => {
+      agentSay(`I couldn't click that — you can click "${action.payload.elementText}" yourself.`);
+      reconnectBridge();
+    },
+
+    onComplete: async () => {
+      setTimeout(reconnectBridge, 800);
+    }
+  });
+
+  // SCROLL TO — scroll to a named section on the current page
+  registerAction({
+    type:            'scroll_to',
+    label:           'Scroll to section',
+    permissionLevel: 'auto', // no confirmation needed
+
+    execute: async (action) => {
+      const { elementId, elementTitle } = action.payload;
+      const ctx = WA.PAGE_CONTEXT;
+      const el  = ctx?._refs?.[elementId];
+      if (!el) throw new Error(`Section ${elementId} not found`);
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      agentSay(`Scrolled to "${elementTitle}".`);
+    },
+
+    onError: async (err, action) => {
+      agentSay(`I couldn't scroll there — try scrolling down manually.`);
+      reconnectBridge();
+    },
+
+    onComplete: async () => {
+      setTimeout(reconnectBridge, 600);
+    }
+  });
+
+  // HIGHLIGHT ELEMENT — draw attention to an element (price, phone, email etc)
+  registerAction({
+    type:            'highlight_element',
+    label:           'Highlight element',
+    permissionLevel: 'auto',
+
+    execute: async (action) => {
+      const { elementId, elementText } = action.payload;
+      const ctx = WA.PAGE_CONTEXT;
+      const el  = ctx?._refs?.[elementId];
+      if (!el) throw new Error(`Element ${elementId} not found`);
+      // Scroll to it and add a temporary highlight
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const prev = el.style.cssText;
+      el.style.outline        = '3px solid rgba(200,75,47,0.7)';
+      el.style.outlineOffset  = '4px';
+      el.style.borderRadius   = '4px';
+      el.style.transition     = 'outline 0.3s ease';
+      setTimeout(() => { el.style.cssText = prev; }, 3000);
+      agentSay(`Here's ${elementText}.`);
+    },
+
+    onError: async (err, action) => {
+      reconnectBridge();
+    },
+
+    onComplete: async () => {
+      setTimeout(reconnectBridge, 600);
+    }
+  });
+
   // ─── PAGE / FORM HELPERS ──────────────────────────────────────────────────
 
   function getPageMap()    { return WA.PAGE_MAP || []; }
@@ -1025,7 +1107,19 @@ Rules:
       return;
     }
 
-    const action = createAction(type, description, payload);
+    const handler = ActionRegistry[type];
+    const action  = createAction(type, description, payload);
+
+    // Auto-permission actions execute immediately without user confirmation
+    if (handler?.permissionLevel === 'auto') {
+      setState('action', 'active');
+      action.status    = 'active';
+      action.startedAt = Date.now();
+      saveSession();
+      disconnectBridge().then(() => executeAction(action));
+      return;
+    }
+
     setState('action', 'proposed');
     renderActionCard(action);
   }
@@ -1143,14 +1237,29 @@ Rules:
     const currentUrl = window.location.href;
     const userCtx    = userMessage ? `User: "${userMessage}"` : 'User: (silent)';
 
+    // Build semantic page elements context
+    const ctx = WA.PAGE_CONTEXT;
+    const pageEls = ctx?.elements?.length
+      ? '\nPAGE ELEMENTS (id|type|text|actions):\n' +
+        ctx.elements.map(e => `${e.id}|${e.type}|${e.text || e.title || ''}|${e.actions.join(',')}`).join('\n')
+      : '';
+
     const prompt = `Website agent conversation analyser. Reply JSON only.
 Current URL: ${currentUrl}
 Pages (label|url):
-${pages}
+${pages}${pageEls}
 ${userCtx}
 Agent: "${agentMessage}"
-JSON: {"action":"navigate"|"fill_form"|"navigate_then_fill"|"none","target_url":"exact url from list or null"}
-Rules: navigate=agent taking user to different page now; fill_form=agent explicitly starting form AND user already on contact page; navigate_then_fill=going to contact page to fill form; none=conversation/greeting/question. Never target_url=current page. Greetings/questions=none. Be conservative.`;
+JSON: {"action":"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"scroll_to"|"highlight_element"|"none","target_url":"exact url or null","element_id":"wa_el_N or null","element_text":"button/section text or null"}
+Rules:
+- navigate: agent taking user to a different page
+- fill_form: agent starting contact form (user on contact page)
+- navigate_then_fill: agent going to contact page to fill form
+- click_element: agent about to click a CTA/button on current page
+- scroll_to: agent directing user to a section on current page
+- highlight_element: agent pointing out a specific element (price, phone, email)
+- none: conversation, greeting, or question
+Never target_url=current page. Greetings/questions=none. Be conservative.`;
 
     const t0 = Date.now();
     log('→ Classification request sent');
@@ -1182,6 +1291,33 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
 
       if (parsed.action === 'fill_form') {
         proposeAction('fill_form', 'Help you fill out the contact form.', { fields: freshFields() });
+
+      } else if (parsed.action === 'click_element' && parsed.element_id) {
+        const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === parsed.element_id);
+        if (el) {
+          proposeAction('click_element',
+            `Click "${el.text || el.title}" for you.`,
+            { elementId: el.id, elementText: el.text || el.title }
+          );
+        }
+
+      } else if (parsed.action === 'scroll_to' && parsed.element_id) {
+        const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === parsed.element_id);
+        if (el) {
+          proposeAction('scroll_to',
+            `Scroll to "${el.title || el.text}".`,
+            { elementId: el.id, elementTitle: el.title || el.text }
+          );
+        }
+
+      } else if (parsed.action === 'highlight_element' && parsed.element_id) {
+        const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === parsed.element_id);
+        if (el) {
+          proposeAction('highlight_element',
+            `Point out "${el.text || el.title || el.number || el.email}".`,
+            { elementId: el.id, elementText: el.text || el.title || el.number || el.email }
+          );
+        }
 
       } else if (parsed.action === 'navigate_then_fill') {
         const contact = getContactPage();

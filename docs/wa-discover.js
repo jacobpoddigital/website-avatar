@@ -231,6 +231,112 @@
     return label.replace(/[*:\s]+$/, '').trim();
   }
 
+  // ─── PAGE CONTEXT ─────────────────────────────────────────────────────────
+  // Builds a semantic inventory of actionable elements on the current page.
+  // Used by wa-agent.js to give the AI structured context about what it can do.
+  // Elements get stable synthetic IDs (wa_el_N) — independent of DOM IDs.
+
+  function buildPageContext() {
+    const elements = [];
+    let idx = 0;
+    const seen = new Set(); // deduplicate by text+type
+
+    function addEl(el) {
+      const key = el.type + ':' + (el.text || el.title || '');
+      if (seen.has(key)) return;
+      seen.add(key);
+      elements.push({ id: `wa_el_${idx++}`, ...el });
+    }
+
+    // ── CTAs — buttons and prominent links ──────────────────────────────────
+    const CTA_SKIP = /^(menu|nav|close|open|toggle|accept|reject|cookie|search|submit|send|next|prev|back|more|less|show|hide|expand|collapse|\d+)$/i;
+    const CTA_SELECTORS = 'a.btn, a.button, a[class*="btn"], a[class*="button"], button:not([type="submit"]):not([type="reset"]):not(.wa-), input[type="button"]';
+
+    document.querySelectorAll(CTA_SELECTORS).forEach(el => {
+      const text = el.textContent.trim().replace(/\s+/g, ' ');
+      if (!text || text.length < 3 || text.length > 60) return;
+      if (CTA_SKIP.test(text)) return;
+      // Skip if inside our own widget
+      if (el.closest('#wa-panel, #wa-bubble')) return;
+
+      addEl({
+        type:    'button',
+        text,
+        role:    'cta',
+        actions: ['click'],
+        _el:     el   // kept for execution, not sent to AI
+      });
+    });
+
+    // ── Sections — named page sections the user might want to scroll to ─────
+    const SECTION_TAGS = 'h2, h3, [class*="section-title"], [class*="heading"]';
+    document.querySelectorAll(SECTION_TAGS).forEach(el => {
+      const text = el.textContent.trim().replace(/\s+/g, ' ');
+      if (!text || text.length < 3 || text.length > 80) return;
+      if (el.closest('#wa-panel, #wa-bubble, nav, header, footer')) return;
+
+      // Find the scrollable parent section
+      const section = el.closest('section, article, div[id], div[class]') || el.parentElement;
+
+      addEl({
+        type:    'section',
+        title:   text,
+        role:    'content_section',
+        actions: ['scroll'],
+        _el:     section || el
+      });
+    });
+
+    // ── Phone numbers — click to call ────────────────────────────────────────
+    document.querySelectorAll('a[href^="tel:"]').forEach(el => {
+      const number = el.href.replace('tel:', '').trim();
+      const label  = el.textContent.trim() || number;
+      addEl({
+        type:    'phone',
+        text:    label,
+        number,
+        role:    'contact',
+        actions: ['click', 'highlight']
+      });
+    });
+
+    // ── Email addresses — click to email ─────────────────────────────────────
+    document.querySelectorAll('a[href^="mailto:"]').forEach(el => {
+      const email = el.href.replace('mailto:', '').trim();
+      const label = el.textContent.trim() || email;
+      addEl({
+        type:    'email',
+        text:    label,
+        email,
+        role:    'contact',
+        actions: ['highlight']
+      });
+    });
+
+    // ── Videos ───────────────────────────────────────────────────────────────
+    document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"], [class*="video"]').forEach(el => {
+      const title = el.getAttribute('title') || el.getAttribute('aria-label') || 'Video';
+      addEl({
+        type:    'video',
+        title,
+        role:    'media',
+        actions: ['scroll', 'highlight'],
+        _el:     el
+      });
+    });
+
+    // Remove _el before serialising — only used internally for execution
+    const serialisable = elements.map(({ _el, ...rest }) => rest);
+
+    return {
+      page:     document.title,
+      url:      window.location.href,
+      elements: serialisable,
+      // Keep _el references separately for action execution
+      _refs:    elements.reduce((acc, el) => { acc[el.id] = el._el; return acc; }, {})
+    };
+  }
+
   // ─── CF7 EVENT LISTENERS ──────────────────────────────────────────────────
   function registerCF7Listeners() {
     document.addEventListener('wpcf7mailsent', e => WA.bus.emit('form:submitted', { detail: e.detail }));
@@ -251,8 +357,9 @@
 
   // ─── INITIALISATION ───────────────────────────────────────────────────────
   function initDiscovery() {
-    WA.PAGE_MAP = discoverPages();
-    WA.FORM_MAP = discoverForms();
+    WA.PAGE_MAP     = discoverPages();
+    WA.FORM_MAP     = discoverForms();
+    WA.PAGE_CONTEXT = buildPageContext();
     registerCF7Listeners();
 
     if (DEBUG) {
@@ -260,6 +367,14 @@
       console.group(`[WA] 📄 Pages (${WA.PAGE_MAP.length})`);
       WA.PAGE_MAP.forEach(p => console.log(`  "${p.label}" → ${p.file}`));
       console.groupEnd();
+      if (WA.PAGE_CONTEXT?.elements?.length) {
+        console.group(`[WA] 🎯 Page elements (${WA.PAGE_CONTEXT.elements.length})`);
+        WA.PAGE_CONTEXT.elements.forEach(e => {
+          const desc = e.text || e.title || e.number || e.email || '';
+          console.log(`    ${e.id} [${e.type}] "${desc}" → ${e.actions.join(', ')}`);
+        });
+        console.groupEnd();
+      }
       console.group(`[WA] 📋 Forms (${WA.FORM_MAP.length})`);
       WA.FORM_MAP.forEach(f => {
         console.group(`  Form ${f.index}${f.isCF7 ? ' [CF7]' : ''}${f.formEl.id ? ' #' + f.formEl.id : ''}`);
