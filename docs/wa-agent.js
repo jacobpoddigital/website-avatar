@@ -400,7 +400,10 @@
         ? ` | options: [${f.options.map(o => o.value).join(', ')}]`
         : '';
       const multi = f.type === 'checkbox' ? ' | multi-select' : (f.type === 'radio' ? ' | single-select' : '');
-      return `${idx + 1}. ${f.label} (name: ${f.name}, type: ${f.type}${f.required ? ', required' : ', optional'}${multi}${opts}): ${val}`;
+      const typeHint = ['checkbox','radio','select'].includes(f.type)
+        ? ` ⚠️ USE show_options action for this field`
+        : '';
+      return `${idx + 1}. ${f.label} (name: ${f.name}, type: ${f.type}${f.required ? ', required' : ', optional'}${multi}${opts}): ${val}${typeHint}`;
     }).join('\n');
 
     // Recent conversation for context
@@ -501,19 +504,39 @@ Rules:
 
       if (parsed.action === 'fill_field' || parsed.action === 'correct_field') {
         const field = fields.find(f => f.name === parsed.field_name);
-        if (field && parsed.value) {
-          field.value = parsed.value;
-          const el = getFieldElement(field);
-          if (el) {
-            el.classList.add('wa-filling');
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            fillField(el, parsed.value);
+        if (field) {
+          // If AI returned fill_field for a choice field — intercept and show options card
+          if (['checkbox', 'radio', 'select'].includes(field.type) && field.options?.length) {
+            if (parsed.message) agentSay(parsed.message);
+            renderOptionsCard(field, field.type !== 'radio', (selected) => {
+              field.value = selected;
+              if (field.type === 'select') {
+                const el = getFieldElement(field);
+                if (el) { el.value = selected[0] || ''; fillField(el, selected[0] || ''); }
+              } else {
+                fillCheckboxField(field, selected);
+              }
+              saveSession();
+              const summary = selected.length ? `Selected: ${selected.join(', ')}` : '(skipped)';
+              handleFormInputAI(summary);
+            });
+            return;
           }
-          saveSession();
-        } else if (!parsed.value && parsed.field_name) {
-          // AI returned fill_field but no value — treat as ask_again, just show message
-          if (parsed.message) agentSay(parsed.message);
-          return;
+
+          if (parsed.value) {
+            field.value = parsed.value;
+            const el = getFieldElement(field);
+            if (el) {
+              el.classList.add('wa-filling');
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              fillField(el, parsed.value);
+            }
+            saveSession();
+          } else {
+            // AI returned fill_field but no value — just show message and wait
+            if (parsed.message) agentSay(parsed.message);
+            return;
+          }
         }
       }
 
