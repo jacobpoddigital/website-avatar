@@ -1384,9 +1384,9 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     if (isOpen) {
       const badge = document.getElementById('wa-badge');
       if (badge) badge.classList.remove('wa-show');
-      // Only auto-connect if session is active — not on fresh panel open
+      // Connect whenever panel opens and bridge isn't already connected
       if (WA.bridge && !WA.bridge.isConnected() &&
-          State.session === 'active' && session.messages.length > 0) {
+          State.connection !== 'connecting') {
         reconnectBridge();
       }
     }
