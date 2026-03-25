@@ -300,36 +300,99 @@
     }
   });
 
-  // HIGHLIGHT ELEMENT — draw attention to an element (price, phone, email etc)
-  registerAction({
-    type:            'highlight_element',
-    label:           'Highlight element',
-    permissionLevel: 'auto',
+ // HIGHLIGHT ELEMENT — draw attention to an element with universal "invert" sparkles
+ registerAction({
+  type:            'highlight_element',
+  label:           'Highlight element',
+  permissionLevel: 'auto',
 
-    execute: async (action) => {
-      const { elementId, elementText } = action.payload;
-      const ctx = WA.PAGE_CONTEXT;
-      const el  = ctx?._refs?.[elementId];
-      if (!el) throw new Error(`Element ${elementId} not found`);
-      // Scroll to it and add a temporary highlight
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const prev = el.style.cssText;
-      el.style.outline        = '3px solid rgba(200,75,47,0.7)';
-      el.style.outlineOffset  = '4px';
-      el.style.borderRadius   = '4px';
-      el.style.transition     = 'outline 0.3s ease';
-      setTimeout(() => { el.style.cssText = prev; }, 3000);
-      agentSay(`Here's ${elementText}.`);
-    },
+  execute: async (action) => {
+    const { elementId, elementText } = action.payload;
+    const ctx = WA.PAGE_CONTEXT;
+    const el  = ctx?._refs?.[elementId];
+    if (!el) throw new Error(`Element ${elementId} not found`);
 
-    onError: async (err, action) => {
-      reconnectBridge();
-    },
+    // 1. Scroll and prepare
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const rect = el.getBoundingClientRect();
+    const sparkles = [];
+    const sparkleCount = 15;
 
-    onComplete: async () => {
-      setTimeout(reconnectBridge, 600);
+    // 2. Inject CSS for the animation (only once per page session)
+    if (!document.getElementById('ai-sparkle-style')) {
+      const style = document.createElement('style');
+      style.id = 'ai-sparkle-style';
+      style.innerHTML = `
+        @keyframes sparkle-pop {
+          0% { transform: scale(0) translateY(0) rotate(0deg); opacity: 0; }
+          50% { transform: scale(1.2) translateY(-10px) rotate(90deg); opacity: 1; }
+          100% { transform: scale(0) translateY(-20px) rotate(180deg); opacity: 0; }
+        }
+        .ai-sparkle-svg {
+          position: fixed;
+          pointer-events: none;
+          z-index: 10000;
+          fill: white;
+          mix-blend-mode: difference;
+        }
+      `;
+      document.head.appendChild(style);
     }
-  });
+
+    // 3. Create the sparkle burst
+    for (let i = 0; i < sparkleCount; i++) {
+      const star = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      star.setAttribute("viewBox", "0 0 24 24");
+      star.classList.add('ai-sparkle-svg');
+      
+      // Randomize positioning around the element
+      const pad = 15;
+      const x = (rect.left - pad) + Math.random() * (rect.width + pad * 2);
+      const y = (rect.top - pad) + Math.random() * (rect.height + pad * 2);
+      
+      const size = 10 + Math.random() * 12; 
+      const delay = Math.random() * 0.5;   
+      const duration = 0.6 + Math.random() * 0.4;
+
+      star.style.left = `${x}px`;
+      star.style.top = `${y}px`;
+      star.style.width = `${size}px`;
+      star.style.height = `${size}px`;
+      star.style.animation = `sparkle-pop ${duration}s ease-out ${delay}s both`;
+
+      // Modern 4-pointed star path
+      star.innerHTML = `<path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z" />`;
+      
+      document.body.appendChild(star);
+      sparkles.push(star);
+    }
+
+    // 4. Subtle element highlight (invert style)
+    const prevOutline = el.style.outline;
+    const prevOffset  = el.style.outlineOffset;
+    el.style.outline       = '2px solid white';
+    el.style.outlineOffset = '4px';
+    el.style.mixBlendMode  = 'difference';
+
+    // 5. Clean up
+    setTimeout(() => {
+      sparkles.forEach(s => s.remove());
+      el.style.outline       = prevOutline;
+      el.style.outlineOffset = prevOffset;
+      el.style.mixBlendMode  = '';
+    }, 2500);
+
+    agentSay(`Here is the ${elementText}.`);
+  },
+
+  onError: async (err, action) => {
+    reconnectBridge();
+  },
+
+  onComplete: async () => {
+    setTimeout(reconnectBridge, 600);
+  }
+});
 
   // ─── PAGE / FORM HELPERS ──────────────────────────────────────────────────
 
