@@ -88,6 +88,10 @@
     }
   };
 
+  function reconnectBridge() {
+    WA.reconnectBridge();
+  }
+
   // ─── MESSAGE SENDING ──────────────────────────────────────────────────────
   WA.sendMessage = function() {
     const input = document.getElementById('wa-input');

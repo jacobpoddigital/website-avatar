@@ -102,17 +102,57 @@
       WA.renderCard({
         label:   'Choose an action',
         message: description,
-        buttons: options.map((opt) => ({
-          text:   opt.label,
-          style:  'confirm',
-          action: () => {
-            const a = WA.createAction(opt.action.type, opt.action.description, opt.action.payload);
-            a.status    = 'active';
-            a.startedAt = Date.now();
-            WA.saveSession();
-            disconnectBridge().then(() => WA.executeAction(a));
+        buttons: options.map((opt) => {
+          // Extract action details from the option structure
+          const actionDef = opt.action || opt;
+          
+          // Build proper payload based on action type
+          let payload = {};
+          let description = actionDef.reason || opt.label;
+          
+          if (actionDef.type === 'navigate') {
+            const pages = WA.getPageMap();
+            const targetUrl = actionDef.target_url;
+            const page = pages.find(p => p.file.includes(targetUrl) || targetUrl.includes(p.file));
+            payload = {
+              targetPage: page ? page.file : targetUrl,
+              targetLabel: page ? page.label : 'page'
+            };
+          } else if (actionDef.type === 'scroll_to') {
+            const expandedId = actionDef.element_id?.startsWith('wa_el_') 
+              ? actionDef.element_id 
+              : `wa_el_${actionDef.element_id}`;
+            const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
+            if (el) {
+              payload = {
+                elementId: el.id,
+                elementText: el.text || el.title,
+                elementTitle: el.title || el.text
+              };
+            }
+          } else if (actionDef.type === 'fill_form') {
+            payload = { fields: WA.freshFields() };
           }
-        })).concat([{ text: 'No thanks', style: 'deny', action: () => WA.setState('action', 'none') }])
+  
+          return {
+            text: opt.label,
+            style: 'confirm',
+            action: () => {
+              const a = WA.createAction(actionDef.type, description, payload);
+              a.status = 'active';
+              a.startedAt = Date.now();
+              WA.saveSession();
+              disconnectBridge().then(() => WA.executeAction(a));
+            }
+          };
+        }).concat([{ 
+          text: 'No thanks', 
+          style: 'deny', 
+          action: () => {
+            WA.setState('action', 'none');
+            if (WA.reconnectBridge) WA.reconnectBridge();
+          }
+        }])
       });
     };
   
