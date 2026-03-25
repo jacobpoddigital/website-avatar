@@ -382,6 +382,11 @@
     updateAbortButton();
     repopulateFields(action);
 
+    // Explicitly re-enable send button — form fill requires it
+    // (it may have been disabled when action went active before formState.active was set)
+    const sendBtn = document.getElementById('wa-send');
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.title = ''; }
+
     // Kick off AI — do NOT await, the fill_form Promise stays open until finishFormFill
     handleFormInputAI('__RESUME__');
   }
