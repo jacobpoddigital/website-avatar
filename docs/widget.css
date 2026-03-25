@@ -148,7 +148,7 @@
  /* ── MESSAGES ─────────────────────────────────────────────────────────────────── */
  .wa-messages {
    flex: 1; overflow-y: auto; padding: 16px;
-   display: flex; flex-direction: column; gap: 10px; scroll-behaviour: smooth;
+   display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth;
  }
  .wa-messages::-webkit-scrollbar { width: 4px; }
  .wa-messages::-webkit-scrollbar-track { background: transparent; }

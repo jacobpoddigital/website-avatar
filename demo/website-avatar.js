@@ -1,69 +1,138 @@
-// website-avatar.js
-(function() {
-  // Grab the <script> tag that loaded this file
-  const currentScript = document.currentScript;
-  console.log("Website Avatar loader: script started");
+/**
+ * website-avatar.js — Website Avatar by AdVelocity
+ * Single script tag deployment. Loads all dependencies automatically.
+ * 
+ * Usage:
+ * <script src="https://YOUR_R2_URL/website-avatar.js"
+ *         data-agent-id="agent_xxx"
+ *         data-proxy-url="https://backend.jacob-e87.workers.dev/classify"
+ *         data-debug="false">
+ * </script>
+ */
 
-  // Read configuration from data attributes
-  const agentId = currentScript.dataset.agentId || '';
-  const proxyUrl = currentScript.dataset.proxyUrl || '';
-  const debug = currentScript.dataset.debug === 'true';
-  console.log("Website Avatar loader: config read", { agentId, proxyUrl, debug });
+(function () {
 
-  // Base URL for loading other files (same folder as this script)
-  const baseURL = currentScript.src.replace(/website-avatar\.js$/, '');
-  console.log("Website Avatar loader: baseURL =", baseURL);
+  // ── GUARD AGAINST DOUBLE LOADING ────────────────────────────────────────
+  if (window._waLoaded) {
+    console.warn('[WA] website-avatar.js loaded twice — ignoring duplicate');
+    return;
+  }
+  window._waLoaded = true;
 
-  // Inject CSS
-  const css = document.createElement('link');
-  css.rel = 'stylesheet';
-  css.href = `${baseURL}widget.css`;
-  css.onload = () => console.log("Website Avatar loader: widget.css loaded");
-  document.head.appendChild(css);
+  // ── READ CONFIG FROM SCRIPT TAG ATTRIBUTES ──────────────────────────────
+  const thisScript  = document.currentScript;
+  const BASE_URL    = thisScript.src.replace('/website-avatar.js', '');
+  const agentId     = thisScript.getAttribute('data-agent-id')    || '';
+  const proxyUrl    = thisScript.getAttribute('data-proxy-url')   || '';
+  const debug       = thisScript.getAttribute('data-debug')       === 'true';
+  const primaryColor = thisScript.getAttribute('data-color')      || '#c84b2f';
 
-  // Global configuration
+  // ── INJECT WA_CONFIG BEFORE SCRIPTS LOAD ────────────────────────────────
   window.WA_CONFIG = {
     elevenlabsAgentId: agentId,
-    openaiProxyUrl: proxyUrl,
-    debug: debug
+    openaiProxyUrl:    proxyUrl,
+    primaryColor:      primaryColor,
+    debug:             debug
   };
-  console.log("Website Avatar loader: window.WA_CONFIG set", window.WA_CONFIG);
 
-  // Helper to load JS scripts sequentially
-  function loadScript(src, isModule = false) {
-    return new Promise(resolve => {
-      const s = document.createElement('script');
-      s.src = src;
+  // ── INJECT WIDGET HTML ───────────────────────────────────────────────────
+  // All injection happens inside boot() — after DOMContentLoaded, never blocking
+  function injectHTML() {
+    // Page transition overlay
+    if (!document.getElementById('wa-transition')) {
+      const overlay = document.createElement('div');
+      overlay.id        = 'wa-transition';
+      overlay.innerHTML = '<div class="wa-nav-label"></div>';
+      document.body.appendChild(overlay);
+    }
+
+    // Chat bubble
+    if (!document.getElementById('wa-bubble')) {
+      const bubble = document.createElement('button');
+      bubble.id        = 'wa-bubble';
+      bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
+      bubble.onclick   = () => window.WebsiteAvatar && WebsiteAvatar.toggleChat();
+      document.body.appendChild(bubble);
+    }
+
+    // Chat panel
+    if (!document.getElementById('wa-panel')) {
+      const panel = document.createElement('div');
+      panel.id        = 'wa-panel';
+      panel.innerHTML = `
+        <div class="wa-header">
+          <div class="wa-header-info">
+            <div class="wa-avatar" id="wa-avatar">A<div id="wa-avatar-ring"></div></div>
+            <div>
+              <h4>Website Avatar</h4>
+              <span id="wa-status-label">Offline</span>
+            </div>
+          </div>
+          <div class="wa-header-actions">
+            <button id="wa-connect-btn" class="wa-header-btn">Connect</button>
+            <button class="wa-close">×</button>
+          </div>
+        </div>
+        <div class="wa-messages" id="wa-messages"></div>
+        <div class="wa-input-row">
+          <button id="wa-mic-btn" class="wa-mic-btn" title="Toggle voice mode">🎤</button>
+          <input type="text" id="wa-input" placeholder="Type a message…" />
+          <button id="wa-send">Send</button>
+        </div>
+      `;
+      document.body.appendChild(panel);
+
+      // Wire up events after HTML is in DOM
+      panel.querySelector('.wa-close').onclick        = () => WebsiteAvatar.toggleChat();
+      panel.querySelector('#wa-mic-btn').onclick      = () => WebsiteAvatar.bridge?.toggleMic();
+      panel.querySelector('#wa-connect-btn').onclick  = () => WebsiteAvatar.bridge?.connect();
+      panel.querySelector('#wa-send').onclick         = () => WebsiteAvatar.sendMessage();
+      panel.querySelector('#wa-input').onkeydown      = (e) => WebsiteAvatar.handleKey(e);
+    }
+  }
+
+  // ── LOAD SCRIPTS ────────────────────────────────────────────────────────
+  function loadScript(src, isModule) {
+    return new Promise((resolve, reject) => {
+      const s    = document.createElement('script');
+      s.src      = src;
+      s.defer    = true;
+      s.onload   = resolve;
+      s.onerror  = () => reject(new Error('Failed to load: ' + src));
       if (isModule) s.type = 'module';
-      s.onload = () => {
-        console.log(`Website Avatar loader: ${src} loaded`);
-        resolve();
-      };
-      s.onerror = () => {
-        console.error(`Website Avatar loader: failed to load ${src}`);
-        resolve(); // continue on error
-      };
       document.head.appendChild(s);
     });
   }
 
-  // Load all scripts sequentially
-  async function loadScriptsSequentially() {
+  async function boot() {
     try {
-      await loadScript(`${baseURL}wa-discover.js`);
-      await loadScript(`${baseURL}wa-agent.js`);
-      await loadScript(`${baseURL}wa-elevenlabs.js`, true);
-      console.log('Website Avatar loader: all scripts loaded');
-    } catch (err) {
-      console.error('Website Avatar loader: error loading scripts', err);
+      // Inject CSS here — after DOMContentLoaded, never blocking render
+      const link = document.createElement('link');
+      link.rel   = 'stylesheet';
+      link.href  = BASE_URL + '/widget.css';
+      document.head.appendChild(link);
+
+      injectHTML();
+
+      // Load discover + agent in parallel — both are independent of each other
+      // elevenlabs must come last as it depends on WA.bus from agent
+      await Promise.all([
+        loadScript(BASE_URL + '/wa-discover.js'),
+        loadScript(BASE_URL + '/wa-agent.js')
+      ]);
+      await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
+
+      if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL);
+    } catch(e) {
+      console.error('[WA] Failed to load:', e.message);
     }
   }
 
-  // Run when DOM is ready
+  // Wait for DOMContentLoaded — never block page render
   if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', loadScriptsSequentially);
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    loadScriptsSequentially();
+    boot();
   }
 
 })();

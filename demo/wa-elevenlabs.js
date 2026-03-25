@@ -108,7 +108,16 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
     lines.push('');
 
     const completedForm = s.actions.find(a => a.type === 'fill_form' && a.status === 'complete');
-    const deniedForm    = s.actions.find(a => a.type === 'fill_form' && a.status === 'denied');
+    // Only mention denied form if no navigation happened after the denial
+    const deniedForm = (() => {
+      const d = s.actions.find(a => a.type === 'fill_form' && a.status === 'denied');
+      if (!d) return null;
+      const navigatedAfter = s.actions.some(
+        a => a.type === 'navigate' && a.status === 'complete' &&
+             (a.completedAt || 0) > (d.completedAt || 0)
+      );
+      return navigatedAfter ? null : d;
+    })();
 
     if (completedForm) {
       const fields = completedForm.payload.fields.filter(f => f.value);
@@ -246,7 +255,7 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
   // ─── CONNECTION ───────────────────────────────────────────────────────────
 
   async function connect(contextOverride) {
-    if (session) { await disconnect(); return; }
+    if (session) { await disconnect(); return; } // already connected — disconnect
 
     const btn = document.getElementById('wa-connect-btn');
     if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
@@ -265,6 +274,7 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
 
         onConnect: () => {
           log('Connected');
+          WA._voiceMode = isVoiceMode; // expose so agent.js knows current mode
           setConnectUI(true);
 
           if (!isVoiceMode) {
@@ -277,20 +287,13 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
             if (typeof WA.toggleChat === 'function') WA.toggleChat();
           }
 
-          // Inject context then reconnect prompt
-          setTimeout(() => {
-            if (session?.sendContextualUpdate) {
-              session.sendContextualUpdate(contextToSend);
-              log('Context injected');
-            }
-          }, 500);
-
+          // Send reconnect prompt after session settles
           setTimeout(() => {
             if (session?.sendUserMessage) {
               const prompt = buildReconnectPrompt();
               if (prompt) { log('Reconnect prompt sent'); session.sendUserMessage(prompt); }
             }
-          }, 900);
+          }, 600);
 
           if (typeof WA.onBridgeConnected === 'function') WA.onBridgeConnected();
         },
@@ -311,7 +314,7 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
 
             if (msg.isFinal === false) {
               // Tentative — show immediately if no pre-audio message already showing
-              if (!window._wa_tentativeCommitted && typeof WA.showTentativeMessage === 'function') {
+              if (!WA._tentativeCommitted && typeof WA.showTentativeMessage === 'function') {
                 WA.showTentativeMessage(clean);
               }
               return;
@@ -355,12 +358,7 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
         },
 
         onStatusChange: (info) => {
-          if (info.status === 'disconnected') {
-            session = null;
-            setConnectUI(false);
-            setSpeakingUI(false);
-            if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
-          }
+          log('Status:', info.status);
         }
       });
 
@@ -397,17 +395,14 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
 
   function toggleMic() {
     isVoiceMode = !isVoiceMode;
+    WA._voiceMode = isVoiceMode;
     const btn   = document.getElementById('wa-mic-btn');
     if (btn) btn.classList.toggle('wa-active', isVoiceMode);
     if (session?.setMicMuted) session.setMicMuted(!isVoiceMode);
     const label = document.getElementById('wa-status-label');
     if (label && session) label.textContent = isVoiceMode ? 'Listening…' : 'Connected';
-  }
-
-  function sendPageContext() {
-    if (!session?.sendContextualUpdate) return;
-    session.sendContextualUpdate(buildPageContext());
-    log('Page context updated');
+    const input = document.getElementById('wa-input');
+    if (input) input.placeholder = isVoiceMode ? 'Voice mode active…' : 'Type a message…';
   }
 
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
@@ -418,13 +413,13 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
     disconnect,
     sendText,
     isConnected,
-    toggleMic,
-    sendPageContext
+    toggleMic
   };
 
-  // Legacy globals for HTML onclick handlers
-  window.elConnect    = connect;
-  window.elDisconnect = disconnect;
-  window.elToggleMic  = toggleMic;
+  // Signal to wa-agent.js that bridge is ready
+  WA.bus?.emit('bridge:ready');
+  log('Bridge ready');
+
+
 
 })();

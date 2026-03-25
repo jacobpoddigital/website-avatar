@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acme Co — Contact</title>
-<link rel="stylesheet" href="widget.css">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,15 +31,12 @@
   .btn-submit:hover { background: var(--accent); }
   .contact-info h2 { font-family: 'DM Serif Display', serif; margin-bottom: 1rem; }
   .contact-info p { color: var(--mid); line-height: 1.7; margin-bottom: 1.5rem; font-size: .95rem; }
-  #form-success { display: none; background: rgba(209,250,229,.6); backdrop-filter: blur(8px); border: 1px solid rgba(110,231,183,.5); border-radius: 10px; padding: 1.5rem; text-align: center; }
+  #form-success { display: none; background: rgba(209,250,229,.6); border: 1px solid rgba(110,231,183,.5); border-radius: 10px; padding: 1.5rem; text-align: center; }
   #form-success h3 { font-family: 'DM Serif Display', serif; margin-bottom: .5rem; }
   #form-success p { font-size: .875rem; color: #065f46; }
 </style>
 </head>
 <body>
-
-<div id="wa-transition"><div class="wa-nav-label"></div></div>
-
 <nav>
   <div class="logo">Acme Co</div>
   <div>
@@ -48,12 +44,10 @@
     <a href="contact.html" class="active">Contact</a>
   </div>
 </nav>
-
 <div class="page-header">
   <h1>Get in touch.</h1>
   <p>We'd love to hear from you. Fill out the form or reach out directly.</p>
 </div>
-
 <div class="contact-layout">
   <div class="contact-form">
     <h2>Send us a message</h2>
@@ -84,54 +78,5 @@
     <p>Based in London, working everywhere.</p>
   </div>
 </div>
-
-<!-- Debug panel — remove in production -->
-<div id="wa-debug-panel">
-  <h5>SESSION STATE</h5>
-  <pre id="wa-debug-output">Loading…</pre>
-</div>
-
-<!-- Chat bubble -->
-<button id="wa-bubble" onclick="WebsiteAvatar.toggleChat()">
-  💬
-  <div class="wa-badge" id="wa-badge"></div>
-</button>
-
-<!-- Chat panel -->
-<div id="wa-panel">
-  <div class="wa-header">
-    <div class="wa-header-info">
-      <div class="wa-avatar" id="wa-avatar">A<div id="wa-avatar-ring"></div></div>
-      <div>
-        <h4>Acme Assistant</h4>
-        <span id="wa-status-label">Offline</span>
-      </div>
-    </div>
-    <div class="wa-header-actions">
-      <button id="wa-mic-btn" class="wa-header-btn" onclick="WebsiteAvatar.bridge.toggleMic()" title="Toggle mic">🎤</button>
-      <button id="wa-connect-btn" class="wa-header-btn" onclick="WebsiteAvatar.bridge.connect()">Connect</button>
-      <button class="wa-close" onclick="WebsiteAvatar.toggleChat()">×</button>
-    </div>
-  </div>
-  <div class="wa-messages" id="wa-messages"></div>
-  <div class="wa-input-row">
-    <input type="text" id="wa-input" placeholder="Ask me anything…" onkeydown="WebsiteAvatar.handleKey(event)" />
-    <button id="wa-send" onclick="WebsiteAvatar.sendMessage()">Send</button>
-  </div>
-</div>
-
-<!-- Website Avatar config -->
-<script>
-  window.WA_CONFIG = {
-    elevenlabsAgentId: 'agent_5301km0zvkdqf208d3k4kzfyafjx',
-    openaiProxyUrl:    'https://backend.jacob-e87.workers.dev/classify',
-    debug:             true
-  };
-</script>
-
-<script src="wa-discover.js"></script>
-<script src="wa-agent.js"></script>
-<script type="module" src="wa-elevenlabs.js"></script>
-
 </body>
 </html>
