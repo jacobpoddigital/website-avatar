@@ -12,11 +12,18 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
 (function () {
 
-  const WA    = window.WA    || (window.WA = {});
+  const WA    = window.WebsiteAvatar || (window.WebsiteAvatar = {});
   const DEBUG = (window.WA_CONFIG || {}).debug || false;
 
   function log  (...a) { if (DEBUG) console.log ('[WA:Bridge]', ...a); }
   function warn (...a) {           console.warn('[WA:Bridge]', ...a); }
+
+  // ─── STARTUP DIAGNOSTICS ─────────────────────────────────────────────────
+  console.log('[WA:Bridge] Module executing');
+  console.log('[WA:Bridge] Conversation imported:', typeof Conversation);
+  console.log('[WA:Bridge] window.WebsiteAvatar exists:', !!window.WebsiteAvatar);
+  console.log('[WA:Bridge] WA.bus exists:', !!WA.bus);
+  console.log('[WA:Bridge] WA_CONFIG:', JSON.stringify(window.WA_CONFIG || {}));
 
   if (!Conversation) {
     warn('Failed to import Conversation from @elevenlabs/client');
@@ -25,6 +32,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   const CONFIG   = window.WA_CONFIG || {};
   const AGENT_ID = CONFIG.elevenlabsAgentId || '';
+
+  console.log('[WA:Bridge] Agent ID:', AGENT_ID || '(MISSING — check backend KV)');
 
   let session = null;
 
@@ -119,7 +128,13 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── CONNECTION ───────────────────────────────────────────────────────────
 
   async function connect() {
-    if (session) { await disconnect(); return; }
+    console.log('[WA:Bridge] connect() called — session:', !!session, '| agentId:', AGENT_ID);
+
+    if (session) {
+      console.log('[WA:Bridge] Already connected — disconnecting first');
+      await disconnect();
+      return;
+    }
 
     if (!AGENT_ID) {
       warn('No agent ID — check backend KV config');
@@ -135,6 +150,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     const pageCtx       = buildPageContext();
     const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
 
+    console.log('[WA:Bridge] Calling Conversation.startSession...');
+    console.log('[WA:Bridge] Context length:', contextToSend?.length || 0, 'chars');
+
     try {
       session = await Conversation.startSession({
         agentId: AGENT_ID,
@@ -148,6 +166,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         dynamicVariables: contextToSend ? { context: contextToSend } : undefined,
 
         onConnect: () => {
+          console.log('[WA:Bridge] onConnect fired — session established');
           log('Connected');
           setConnectUI(true);
 
@@ -172,6 +191,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onDisconnect: () => {
+          console.log('[WA:Bridge] onDisconnect fired');
           log('Disconnected');
           session = null;
           setConnectUI(false);
@@ -179,6 +199,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onMessage: (msg) => {
+          console.log('[WA:Bridge] onMessage:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
           if (!msg.message) return;
 
           if (msg.source === 'ai') {
@@ -201,6 +222,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onError: (err) => {
+          console.error('[WA:Bridge] onError:', err);
           warn('Error:', err);
           if (typeof WA.agentSay === 'function') {
             WA.agentSay('Something went wrong. Please try reconnecting.');
@@ -210,11 +232,13 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onStatusChange: (info) => {
+          console.log('[WA:Bridge] onStatusChange:', info.status);
           log('Status:', info.status);
         }
       });
 
     } catch (err) {
+      console.error('[WA:Bridge] startSession threw:', err.message, err);
       warn('Connection failed:', err.message);
       if (typeof WA.agentSay === 'function') {
         WA.agentSay('Could not connect. Please check your connection and try again.');
@@ -260,10 +284,13 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   WA.bridge = { connect, disconnect, sendText, isConnected };
 
+  console.log('[WA:Bridge] Reached bridge:ready emit — WA.bus:', !!WA.bus);
   if (WA.bus) {
     WA.bus.emit('bridge:ready');
+    console.log('[WA:Bridge] bridge:ready emitted');
     log('Bridge ready');
   } else {
+    console.error('[WA:Bridge] WA.bus missing — wa-agent.js namespace problem');
     warn('WA.bus not available — wa-agent.js may not have loaded');
   }
 
