@@ -51,14 +51,12 @@
       panel.innerHTML = `
         <div class="wa-header">
           <div class="wa-header-info">
-            <div class="wa-avatar" id="wa-avatar">A</div>
             <div>
               <h4>${name}</h4>
               <span id="wa-status-label">Offline</span>
             </div>
           </div>
           <div class="wa-header-actions">
-            <button id="wa-connect-btn" class="wa-header-btn">Connect</button>
             <button class="wa-close">×</button>
           </div>
         </div>

@@ -203,18 +203,17 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             if (typeof WA._openPanelDirect === 'function') WA._openPanelDirect();
           }
 
-          // Send reconnect prompt, or trigger first greeting if fresh session
+          // Send reconnect prompt if we have session context
+          // On fresh sessions — don't force a greeting, let Michelle respond when user types
           setTimeout(() => {
             if (!session?.sendUserMessage) return;
             const prompt = buildReconnectPrompt();
             if (prompt) {
               log('Reconnect prompt sent');
               session.sendUserMessage(prompt);
-            } else {
-              // Fresh session — send a silent trigger so Michelle greets naturally
-              log('Fresh session — triggering greeting');
-              session.sendUserMessage('[SYSTEM: Greet the user warmly and introduce yourself briefly. Ask how you can help them today.]');
             }
+            // No prompt = fresh session, no messages yet — Michelle stays quiet
+            // until the user initiates
           }, 400);
 
           if (typeof WA.onBridgeConnected === 'function') WA.onBridgeConnected();
@@ -301,12 +300,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── UI ───────────────────────────────────────────────────────────────────
 
   function setConnectUI(connected) {
-    const btn   = document.getElementById('wa-connect-btn');
     const label = document.getElementById('wa-status-label');
-    if (btn) {
-      btn.textContent = connected ? 'Disconnect' : 'Connect';
-      btn.disabled    = false;
-    }
     if (label) label.textContent = connected ? 'Connected' : 'Offline';
   }
 
