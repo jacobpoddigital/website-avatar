@@ -260,6 +260,9 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
     const btn = document.getElementById('wa-connect-btn');
     if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
 
+    // Signal to agent that we are now connecting
+    if (typeof WA.onBridgeConnecting === 'function') WA.onBridgeConnecting();
+
     // Build context — always include page, merge with reconnect if available
     const reconnectCtx = contextOverride || buildReconnectContext();
     const pageCtx      = buildPageContext();

@@ -912,10 +912,14 @@ Rules:
 
   const ACTION_SIGNALS = [
     'take you', 'taking you', 'head over', 'navigate you', 'send you',
-    "i'll take", 'let\'s go', 'going to the', 'direct you',
+    "i'll take", "let's go", 'going to the', 'direct you',
     'get that form', 'form started', 'form ready', 'fill that', 'open that up',
     'get that booked', 'booking page', 'schedule that',
-    'contact page', 'services page', 'home page', 'homepage'
+    'contact page', 'services page', 'home page', 'homepage',
+    'which one would you like', 'which page', 'let me take',
+    'show you the', 'take a look at', 'check out the', 'visit the',
+    'navigate to', 'go to the', 'bring you to', 'pages about',
+    'page about', 'that page', 'our page'
   ];
 
   const SKIP_CLASSIFICATION = [
@@ -1085,12 +1089,27 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
       return;
     }
 
-    // Mock fallback
-    showTyping();
-    setTimeout(() => {
-      hideTyping();
-      mockRespond(text);
-    }, 600);
+    // Bridge connecting — queue message, send when ready
+    if (State.connection === 'connecting') {
+      showTyping();
+      WA.bus.on('state:change', function onConnect(e) {
+        if (e.layer === 'connection' && e.to === 'connected') {
+          WA.bus.off('state:change', onConnect);
+          hideTyping();
+          WA.bridge.sendText(text);
+          WA._lastUserMessage = text;
+          setState('conversation', 'awaiting');
+        }
+        if (e.layer === 'connection' && e.to === 'offline') {
+          WA.bus.off('state:change', onConnect);
+          hideTyping();
+        }
+      });
+      return;
+    }
+
+    // Bridge offline — prompt to connect, no fabricated responses
+    agentSay("I'm not connected yet. Click Connect to start a conversation with Michelle.");
   }
 
   function handleKey(e) {
@@ -1128,66 +1147,10 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   WA.agentSay = agentSay;
   WA.userSay  = userSay;
 
-  function mockRespond(text) {
-    const lower = text.toLowerCase();
-    if (['hello','hi','hey','help'].some(w => lower.includes(w))) {
-      agentSay("Hey! I'm the Website Avatar. I can help you navigate this site or fill out the contact form. What do you need?");
-    } else if (CONTACT_KEYWORDS.some(w => lower.includes(w))) {
-      handleContactIntent();
-    } else if (NAV_KEYWORDS.some(w => lower.includes(w))) {
-      handleNavIntent(text);
-    } else {
-      agentSay("I heard you — connect the voice agent to get full AI responses, or ask me to navigate or fill a form.");
-    }
-  }
-
-  const CONTACT_KEYWORDS = ['contact', 'fill', 'form', 'enquiry', 'inquiry', 'get in touch', 'reach out'];
-  const NAV_KEYWORDS     = ['go to', 'take me', 'navigate', 'show me', 'home', 'homepage'];
-
-  function isNavigationIntent(text) {
-    return NAV_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
-  }
-
-  function handleContactIntent() {
-    if (isOnContactPage()) {
-      proposeAction('fill_form', 'Help you fill out the contact form.', { fields: freshFields() });
-    } else {
-      const contact = getContactPage();
-      if (contact) {
-        proposeAction('navigate_then_fill',
-          `Take you to the ${contact.label} and fill out the enquiry form.`,
-          {
-            targetPage:          contact.file,
-            targetLabel:         contact.label,
-            nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } }
-          }
-        );
-      }
-    }
-  }
-
-  function handleNavIntent(text) {
-    const lower = text.toLowerCase();
-    const pages = getPageMap();
-    // Only navigate if we find a genuine keyword match — no fallback to pages[0]
-    const target = pages.find(p => p.keywords.some(kw => lower.includes(kw)));
-    if (!target) {
-      const pageList = pages.map(p => p.label).join(', ');
-      agentSay(`I'm not sure which page you mean. Available pages: ${pageList}.`);
-      return;
-    }
-    const currentClean = window.location.href.replace(/\/$/, '');
-    const targetClean  = target.file.replace(/\/$/, '');
-    if (currentClean === targetClean) {
-      agentSay(`You're already on the ${target.label}!`);
-      return;
-    }
-    proposeAction('navigate', `Take you to the ${target.label}.`, { targetPage: target.file, targetLabel: target.label });
-  }
-
   // ─── BRIDGE INTERFACE ─────────────────────────────────────────────────────
   // Clean interface for wa-elevenlabs.js — no direct function calls back in.
 
+  WA.onBridgeConnecting   = () => { setState('connection', 'connecting'); };
   WA.onBridgeConnected    = () => { setState('connection', 'connected'); inactivity.onConnect(); };
   WA.onBridgeDisconnected = () => { setState('connection', 'offline'); setState('conversation', 'idle'); hideTyping(); };
   WA.onSpeakingStart = () => { setState('conversation', 'responding'); hideTyping(); };
@@ -1494,15 +1457,11 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
       if (badge) badge.classList.add('wa-show');
     }
 
-    // First visit greeting — only in mock mode (no active session, bridge not connecting)
+    // Fresh visit — show badge to draw attention, Michelle greets when user connects
     if (!hasActiveSession) {
       setTimeout(() => {
-        // By this point bridge would have connected if it was going to — safe to check
-        if (!WA.bridge || !WA.bridge.isConnected()) {
-          agentSay("Hi! I'm your Website Avatar. Connect the voice agent or type to get started.");
-          const badge = document.getElementById('wa-badge');
-          if (badge && !session.isOpen) badge.classList.add('wa-show');
-        }
+        const badge = document.getElementById('wa-badge');
+        if (badge && !session.isOpen) badge.classList.add('wa-show');
       }, 1500);
     }
 
