@@ -118,16 +118,7 @@
     }
   }
 
-  function loadSentPrompts() {
-    try {
-      const raw = sessionStorage.getItem(PROMPTS_KEY);
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch(e) { return new Set(); }
-  }
-
-
-  let session     = loadSession();
-  let sentPrompts = loadSentPrompts();
+  let session = loadSession();
 
   // Expose session for wa-elevenlabs.js to read
   WA.getSession = () => session;
@@ -260,8 +251,8 @@
 
   // ─── PAGE / FORM HELPERS ──────────────────────────────────────────────────
 
-  function getPageMap()    { return WA.PAGE_MAP || window.PAGE_MAP || []; }
-  function getFormMap()    { return WA.FORM_MAP || window.FORM_MAP || []; }
+  function getPageMap()    { return WA.PAGE_MAP || []; }
+  function getFormMap()    { return WA.FORM_MAP || []; }
 
   function getContactPage() {
     return getPageMap().find(p =>
@@ -271,14 +262,6 @@
     ) || null;
   }
 
-  function resolveTargetPage(text) {
-    const lower = (text || '').toLowerCase();
-    const pages = getPageMap();
-    for (const page of pages) {
-      if (page.keywords.some(kw => lower.includes(kw))) return page;
-    }
-    return pages[0] || null;
-  }
 
   function freshFields() {
     const forms = getFormMap();
@@ -433,7 +416,7 @@ ${fieldSummary}
 RECENT CONVERSATION:
 ${recentMsgs}
 
-USER JUST SAID: "${isResume ? '(resuming form fill — greet user and ask for next empty required field)' : userText}"
+USER JUST SAID: "${isResume ? '(continuing form fill — do NOT greet again, just ask for the next empty required field in sequence)' : userText}"
 
 Reply with JSON only, no explanation:
 {
@@ -470,7 +453,7 @@ Rules:
         method:  'POST',
         signal:  formAIController.signal,
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt, maxTokens: 120 })
+        body:    JSON.stringify({ prompt, maxTokens: 250 })
       });
 
       if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
@@ -555,7 +538,7 @@ Rules:
   function completeFormFill() {
     if (!formState.action) return;
     const fields  = formState.action.payload.fields;
-    const missing = fields.filter(f => f.required && (!f.value || !f.value.trim()));
+    const missing = fields.filter(f => f.required && (!f.value || (Array.isArray(f.value) ? !f.value.length : !f.value.trim())));
 
     // Safety net — max 2 retries to prevent infinite loop
     if (missing.length) {
@@ -924,8 +907,6 @@ Rules:
     // Reset session object — isOpen false so panel stays closed on next load
     session = freshSession();
     session.isOpen = false;
-    sentPrompts = new Set();
-
     // Reset form state
     resetFormState();
 
@@ -937,9 +918,6 @@ Rules:
 
     // Reset inactivity
     inactivity.reset();
-
-    // Clear 11labs sent prompts
-    WA._sentReconnectPrompts = new Set();
 
     // Clear UI messages
     const msgs = document.getElementById('wa-messages');
@@ -1082,7 +1060,9 @@ Rules:
       }
     });
     saveSession();
-    setState('action', 'none');
+    // Only reset action state if no active action — form fill manages its own state
+    const hasActive = session.actions.some(a => a.status === 'active');
+    if (!hasActive) setState('action', 'none');
   }
 
   // ─── OPENAI CLASSIFICATION ────────────────────────────────────────────────
@@ -1305,11 +1285,6 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     }
     saveSession();
 
-    // Skip DOM render if bridge already showed this message
-    if (WA._tentativeCommitted) {
-      WA._tentativeCommitted = false;
-      return;
-    }
     appendMessage('agent', text);
   }
 
@@ -1370,12 +1345,6 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     WA._lastUserMessage = text;
     inactivity.reset();
   };
-  WA.onPreAudioMessage    = (text) => {
-    // Text arrived before/during audio — show immediately
-    hideTyping();
-    showTentativeMessage(text);
-  };
-
   function disconnectBridge() {
     _intentionalDisconnect = true;
     return WA.bridge ? WA.bridge.disconnect() : Promise.resolve();
@@ -1419,8 +1388,8 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
       // Don't disconnect if action or form fill is in progress
       if (['active','proposed'].includes(State.action)) return;
       if (formState.active) return;
-      // First message after connect is Michelle's greeting — don't count it
-      if (this.justConnected) { this.justConnected = false; return; }
+      // justConnected stays true until user speaks — don't count inactivity before that
+      if (this.justConnected) return;
       this.rounds++;
       log(`Inactivity: ${this.rounds}/${this.max}`);
       if (this.rounds >= this.max) {
@@ -1435,8 +1404,6 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   // ─── UI ───────────────────────────────────────────────────────────────────
 
   let typingEl      = null;
-  let tentativeMsgEl = null;
-
   let waitingHintEl = null;
 
   function showWaitingHint() {
@@ -1467,30 +1434,8 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     if (typingEl) { typingEl.remove(); typingEl = null; }
   }
 
-  function showTentativeMessage(text) {
-    if (!tentativeMsgEl) {
-      tentativeMsgEl = document.createElement('div');
-      tentativeMsgEl.className = 'wa-msg wa-agent wa-tentative';
-      const msgs = document.getElementById('wa-messages');
-      if (msgs) { msgs.appendChild(tentativeMsgEl); }
-    }
-    tentativeMsgEl.textContent = text;
-    scrollToBottom();
-  }
-
-  function commitTentativeMessage(text) {
-    if (tentativeMsgEl) {
-      tentativeMsgEl.classList.remove('wa-tentative');
-      tentativeMsgEl.textContent = text;
-      tentativeMsgEl = null;
-      WA._tentativeCommitted = true;
-      return true;
-    }
-    return false;
-  }
-
-  WA.showTentativeMessage  = showTentativeMessage;
-  WA.commitTentativeMessage = commitTentativeMessage;
+  // Note: ElevenLabs text-only mode supports streaming via onAgentChatResponsePart
+  // — could be wired up here for word-by-word text rendering in future
 
   function appendMessage(role, text) {
     const el = document.createElement('div');
