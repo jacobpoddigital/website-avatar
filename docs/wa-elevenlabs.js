@@ -277,17 +277,24 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
 
         onConnect: () => {
           log('Connected');
-          WA._voiceMode = isVoiceMode; // expose so agent.js knows current mode
+          WA._voiceMode = isVoiceMode;
           setConnectUI(true);
 
+          // Mute mic immediately in text mode — prevents audio worklet
+          // from sending data on the socket before it's ready (causes CLOSING error)
           if (!isVoiceMode) {
-            setTimeout(() => { if (session?.setMicMuted) session.setMicMuted(true); }, 300);
+            if (session?.setMicMuted) session.setMicMuted(true);
+            // Belt-and-braces retry in case session isn't fully bound yet
+            setTimeout(() => { if (session?.setMicMuted) session.setMicMuted(true); }, 100);
           }
 
-          // Open panel
+          // Open panel directly — never via toggleChat which would trigger reconnectBridge
           const panel = document.getElementById('wa-panel');
           if (panel && !panel.classList.contains('wa-open')) {
-            if (typeof WA.toggleChat === 'function') WA.toggleChat();
+            panel.classList.add('wa-open');
+            const badge = document.getElementById('wa-badge');
+            if (badge) badge.classList.remove('wa-show');
+            if (typeof WA._openPanelDirect === 'function') WA._openPanelDirect();
           }
 
           // Send reconnect prompt after session settles

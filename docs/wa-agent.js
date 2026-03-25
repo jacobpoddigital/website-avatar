@@ -366,11 +366,12 @@
   };
 
   // Queued message — sent to Michelle as soon as bridge reconnects
-  // Set when user sends a message while bridge is offline/connecting
   let _queuedMessage = null;
 
   // Flag intentional disconnects so onBridgeDisconnected doesn't auto-reconnect
   let _intentionalDisconnect = false;
+
+
 
   async function startFormFill(action) {
     if (formState.active) return;
@@ -1209,10 +1210,9 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
     const wasIntentional = _intentionalDisconnect;
     _intentionalDisconnect = false; // reset for next time
 
-    // Unexpected drop during active session — reconnect automatically
-    // But not during form fill — form fill is text/AI only, bridge not needed
+    // Unexpected drop during active session — reconnect after brief delay
     if (!wasIntentional && State.session === 'active' && !formState.active) {
-      log('Unexpected disconnect — auto-reconnecting in 1500ms');
+      log('Unexpected disconnect — reconnecting in 1500ms');
       setTimeout(reconnectBridge, 1500);
     } else if (!wasIntentional && formState.active) {
       log('Disconnect during form fill — suppressed, form fill continues via AI');
@@ -1551,6 +1551,13 @@ Rules: navigate=agent taking user to different page now; fill_form=agent explici
   // ─── EXPOSE PUBLIC API ────────────────────────────────────────────────────
 
   WA.toggleChat     = toggleChat;
+  // Used by bridge to open panel without triggering reconnect
+  WA._openPanelDirect = () => {
+    session.isOpen = true;
+    saveSession();
+    scrollToBottom();
+    updateSessionButton();
+  };
   WA.sendMessage    = sendMessage;
   WA.handleKey      = handleKey;
   WA.confirmAction  = confirmAction;
