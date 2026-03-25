@@ -11,14 +11,23 @@
     // ─── MESSAGING ────────────────────────────────────────────────────────────
     WA.userSay = function(text) {
       WA.session.messages.push({ role: 'user', text, ts: Date.now() });
+      if (WA.State.session === 'fresh') {
+        WA.setState('session', 'active');
+        if (WA.updateSessionButton) WA.updateSessionButton();
+      }
       WA.saveSession();
       renderMessage('user', text);
     };
   
     WA.agentSay = function(text) {
-      WA.session.messages.push({ role: 'assistant', text, ts: Date.now() });
+      WA.hideTyping();
+      WA.session.messages.push({ role: 'agent', text, ts: Date.now() });
+      if (WA.State.session === 'fresh') {
+        WA.setState('session', 'active');
+        if (WA.updateSessionButton) WA.updateSessionButton();
+      }
       WA.saveSession();
-      renderMessage('assistant', text);
+      renderMessage('agent', text);
     };
   
     function renderMessage(role, text) {
@@ -347,6 +356,87 @@
       WA.agentSay("Action cancelled. What would you like to do?");
       setTimeout(() => WA.reconnectBridge(), 600);
     }
+  
+    // ─── END SESSION & UPDATE SESSION BUTTON ──────────────────────────────────
+    WA.endSession = function() {
+      WA.log('Ending session');
+  
+      // Disconnect bridge first — intentional
+      if (WA.bridge && WA.bridge.isConnected()) {
+        WA.bridge.disconnect();
+      }
+  
+      // Clear all session storage
+      try { sessionStorage.removeItem(WA.SESSION_KEY); } catch(e) {}
+      try { sessionStorage.removeItem(WA.PROMPTS_KEY); } catch(e) {}
+  
+      // Reset session object
+      WA.session = { messages: [], actions: [], activeFormActionId: null, isOpen: false };
+      
+      // Reset form state
+      if (WA.formState) {
+        WA.formState.active = false;
+        WA.formState.action = null;
+      }
+  
+      // Reset state machine
+      WA.State.connection   = 'offline';
+      WA.State.conversation = 'idle';
+      WA.State.action       = 'none';
+      WA.State.session      = 'fresh';
+  
+      // Clear UI messages
+      const msgs = document.getElementById('wa-messages');
+      if (msgs) msgs.innerHTML = '';
+  
+      // Remove buttons
+      const endBtn   = document.getElementById('wa-end-session-btn');
+      const abortBtn = document.getElementById('wa-abort-btn');
+      if (endBtn)   endBtn.remove();
+      if (abortBtn) abortBtn.remove();
+  
+      // Close the panel
+      const panel = document.getElementById('wa-panel');
+      if (panel) panel.classList.remove('wa-open');
+  
+      // Show greeting
+      setTimeout(() => {
+        if (msgs) {
+          const el = document.createElement('div');
+          el.className   = 'wa-msg wa-agent';
+          el.textContent = 'Session ended. Open the chat to start a new conversation.';
+          msgs.appendChild(el);
+        }
+      }, 300);
+  
+      WA.saveSession();
+      if (WA.renderDebug) WA.renderDebug();
+      WA.log('Session ended — fresh state restored');
+    };
+  
+    WA.updateSessionButton = function() {
+      const existing = document.getElementById('wa-end-session-btn');
+      const panel    = document.getElementById('wa-panel');
+      if (!panel) return;
+  
+      const hasSession = WA.session.messages.length > 0;
+  
+      if (hasSession && !existing) {
+        const btn = document.createElement('button');
+        btn.id        = 'wa-end-session-btn';
+        btn.className = 'wa-btn-end-session';
+        btn.textContent = 'End session';
+        btn.title     = 'Clear conversation and start fresh';
+        btn.onclick   = () => {
+          if (confirm('End this session and clear the conversation?')) WA.endSession();
+        };
+        const inputRow = panel.querySelector('.wa-input-row');
+        if (inputRow) panel.insertBefore(btn, inputRow);
+        else panel.appendChild(btn);
+      } else if (!hasSession && existing) {
+        existing.remove();
+      }
+    };
   
     // ─── PANEL CONTROL ────────────────────────────────────────────────────────
     WA.openPanel = function() {

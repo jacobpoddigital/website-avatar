@@ -416,7 +416,7 @@ Rules:
         method:  'POST',
         signal:  formAIController.signal,
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt, maxTokens: 120 })
+        body:    JSON.stringify({ prompt, maxTokens: 350 })
       });
 
       if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
