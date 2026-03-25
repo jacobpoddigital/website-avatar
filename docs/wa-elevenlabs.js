@@ -4,7 +4,11 @@
  * No audio, no microphone, no voice features.
  */
 
-import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
+import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.14.0/+esm';
+
+if (!Conversation) {
+  console.error('[WA:Bridge] Failed to import Conversation from @elevenlabs/client — check CDN URL');
+}
 
 (function () {
 
@@ -247,10 +251,19 @@ import { Conversation } from 'https://cdn.skypack.dev/@elevenlabs/client';
 
   WA.bridge = { connect, disconnect, sendText, isConnected };
 
-  // Signal bridge is ready
-  if (WA.bus) {
-    WA.bus.emit('bridge:ready');
-    log('Bridge ready');
+  // Signal bridge is ready — wrapped so import errors surface visibly
+  try {
+    if (!AGENT_ID) {
+      warn('No agent ID configured — check your account config in the backend KV');
+    }
+    if (WA.bus) {
+      WA.bus.emit('bridge:ready');
+      log('Bridge ready');
+    } else {
+      warn('WA.bus not found — wa-agent.js may not have loaded yet');
+    }
+  } catch(e) {
+    warn('Bridge init error:', e.message);
   }
 
 })();
