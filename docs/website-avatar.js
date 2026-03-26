@@ -61,9 +61,6 @@
               <span id="wa-status-label">Offline</span>
             </div>
           </div>
-          <div class="wa-header-actions">
-            <button class="wa-close">×</button>
-          </div>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
         <div class="wa-input-row">
@@ -73,7 +70,6 @@
       `;
       document.body.appendChild(panel);
 
-      panel.querySelector('.wa-close').onclick = () => WebsiteAvatar.toggleChat();
       panel.querySelector('#wa-send').onclick  = () => WebsiteAvatar.sendMessage();
       panel.querySelector('#wa-input').onkeydown = (e) => WebsiteAvatar.handleKey(e);
     }

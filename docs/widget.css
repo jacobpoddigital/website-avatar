@@ -127,17 +127,6 @@
   vertical-align: middle; animation: waOnlinePulse 3s ease-in-out infinite;
 }
 
-.wa-header-actions { display: flex; align-items: center; gap: 6px; }
-
-.wa-close {
-  background: var(--wa-glass-subtle); border: 1px solid var(--wa-glass-border-dim);
-  border-radius: 50%; width: 26px; height: 26px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; cursor: pointer; color: var(--wa-text-mid); line-height: 1;
-  transition: background .15s, color .15s; padding: 0;
-}
-.wa-close:hover { background: var(--wa-glass-strong); color: var(--wa-text); }
-
 /* ── MESSAGES ─────────────────────────────────────────────────────────────────── */
 .wa-messages {
   flex: 1; overflow-y: auto; padding: 16px;
