@@ -150,7 +150,7 @@
         return `${p.label}|${path}`;
       }).join('\n');
   
-      const currentUrl = window.location.href;
+      const currentUrl = window.location.pathname;  // Just the path, e.g. /contact/
       const ctx        = pageContext;
   
       const pageEls = ctx?.elements?.length
@@ -212,9 +212,8 @@
   - auto:true = execute now (scroll_to automatically)
   - auto:false = confirm first (navigate, fill_form, click_element)
   - element_id uses compressed format (5 not wa_el_5)
-  - CRITICAL: If knowledge context has target_page that differs from current URL, you MUST use navigate action (not scroll_to)
-  - After navigation, if knowledge context has section info, you can scroll_to that section
-  - Use scroll_to only when content exists on the CURRENT page
+  - If target_page matches current URL (both are paths), use scroll_to. If different, use navigate.
+  - Use scroll_to only when already on the target page
   - Max 2 actions`;
   
       const t0 = Date.now();
