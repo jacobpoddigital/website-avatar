@@ -312,6 +312,11 @@
       // Extract nested subsections from ul > li structures
       const subsections = extractSubsections(section.headingEl);
       
+      // Debug: Log if subsections are found
+      if (subsections && subsections.length > 0) {
+        if (WA.DEBUG) console.log(`[WA:Discover] Found ${subsections.length} subsections for "${section.heading}"`);
+      }
+      
       return {
         heading: section.heading,
         level: section.level,
@@ -636,6 +641,14 @@
             console.log(`    Tokens (Original): ${original}`);
             console.log(`    Tokens (Compressed): ${compressed}`);
             console.log(`    Reduction: ${reduction}%`);
+            
+            // Show subsections if present
+            if (e.subsections && e.subsections.length > 0) {
+              console.log(`    ✨ Subsections: ${e.subsections.length}`);
+              e.subsections.forEach((sub, idx) => {
+                console.log(`       ${idx + 1}. ${sub.title} (${sub.tokens} tokens)`);
+              });
+            }
           });
           
           const overallReduction = totalOriginal > 0 
