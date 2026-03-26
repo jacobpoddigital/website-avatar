@@ -308,7 +308,7 @@
         text:    label,
         number,
         role:    'contact',
-        actions: ['click', 'highlight'],
+        actions: ['click'],
         _el:     el
       });
     });
@@ -322,7 +322,7 @@
         text:    label,
         email,
         role:    'contact',
-        actions: ['highlight'],
+        actions: [],
         _el:     el
       });
     });
@@ -334,7 +334,7 @@
         type:    'video',
         title,
         role:    'media',
-        actions: ['scroll', 'highlight'],
+        actions: ['scroll'],
         _el:     el
       });
     });

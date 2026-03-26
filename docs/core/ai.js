@@ -198,7 +198,7 @@
   {
     "actions": [
       {
-        "type": "scroll_to"|"highlight_element"|"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"none",
+        "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"none",
         "auto": true|false,
         "element_id": "N or null",
         "target_url": "exact url from pages list or null",
@@ -209,11 +209,12 @@
   
   RULES:
   - Empty [] if no action needed
-  - auto:true = execute now (scroll_to, highlight_element)
+  - auto:true = execute now (scroll_to automatically)
   - auto:false = confirm first (navigate, fill_form, click_element)
   - element_id uses compressed format (5 not wa_el_5)
   - If knowledge context suggests a target_page, strongly consider navigate action
-  - If knowledge context has section info, prefer scroll_to or highlight_element to that section
+  - If knowledge context has section info, use scroll_to to that section (scroll includes sparkle highlight)
+  - Use scroll_to for any intent to show/highlight/point to content on current page
   - Max 2 actions`;
   
       const t0 = Date.now();

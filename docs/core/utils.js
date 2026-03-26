@@ -109,7 +109,7 @@
             100% { transform: scale(0) translateY(-20px) rotate(180deg); opacity: 0; }
           }
           .ai-sparkle-svg {
-            position: fixed; pointer-events: none; z-index: 10000;
+            position: fixed; pointer-events: none; z-index: 999999999999;
             fill: white; mix-blend-mode: difference;
           }
         `;

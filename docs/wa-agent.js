@@ -548,16 +548,16 @@
     const { type, auto, element_id, target_url } = action;
     const isAuto = auto === true;
 
-    if (type === 'scroll_to' || type === 'highlight_element') {
+    if (type === 'scroll_to') {
       const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
       const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
       if (!el) return;
       const label = el.text || el.title || el.number || el.email || element_id;
-      WA.proposeAction(session, type, label, {
+      WA.proposeAction(session, 'scroll_to', label, {
         elementId:    el.id,
         elementText:  label,
         elementTitle: el.title || el.text || label
-      }, isAuto !== false);
+      }, isAuto !== false); // scroll_to is auto by default
       return;
     }
 

@@ -153,7 +153,7 @@
       }
     });
   
-    // SCROLL TO
+    // SCROLL TO (with sparkle highlight effect)
     registerAction({
       type:            'scroll_to',
       label:           'Scroll to section',
@@ -164,92 +164,14 @@
         const ctx = WA.PAGE_CONTEXT;
         const el  = ctx?._refs?.[elementId];
         if (!el) throw new Error(`Section ${elementId} not found`);
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         await WA.sleep(600);
         if (WA.spawnSparkles) WA.spawnSparkles(el);
-        if (WA.agentSay) WA.agentSay(`Scrolled to "${elementTitle}".`);
+        if (WA.agentSay) WA.agentSay(`Here's the ${elementTitle}.`);
       },
   
       onError: async (err, action) => {
         if (WA.agentSay) WA.agentSay(`I couldn't scroll there — try scrolling down manually.`);
-        if (WA.reconnectBridge) WA.reconnectBridge();
-      },
-  
-      onComplete: async () => {
-        setTimeout(() => { if (WA.reconnectBridge) WA.reconnectBridge(); }, 600);
-      }
-    });
-  
-    // HIGHLIGHT ELEMENT
-    registerAction({
-      type:            'highlight_element',
-      label:           'Highlight element',
-      permissionLevel: 'auto',
-  
-      execute: async (action) => {
-        const { elementId, elementText } = action.payload;
-        const ctx = WA.PAGE_CONTEXT;
-        const el  = ctx?._refs?.[elementId];
-        if (!el) throw new Error(`Element ${elementId} not found`);
-  
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const rect = el.getBoundingClientRect();
-        const sparkles = [];
-        const sparkleCount = 15;
-  
-        if (!document.getElementById('ai-sparkle-style')) {
-          const style = document.createElement('style');
-          style.id = 'ai-sparkle-style';
-          style.innerHTML = `
-            @keyframes sparkle-pop {
-              0% { transform: scale(0) translateY(0) rotate(0deg); opacity: 0; }
-              50% { transform: scale(1.2) translateY(-10px) rotate(90deg); opacity: 1; }
-              100% { transform: scale(0) translateY(-20px) rotate(180deg); opacity: 0; }
-            }
-            .ai-sparkle-svg {
-              position: fixed;
-              pointer-events: none;
-              z-index: 10000;
-              fill: white;
-              mix-blend-mode: difference;
-            }
-          `;
-          document.head.appendChild(style);
-        }
-  
-        for (let i = 0; i < sparkleCount; i++) {
-          const star = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          star.setAttribute("viewBox", "0 0 24 24");
-          star.classList.add('ai-sparkle-svg');
-          
-          const pad = 15;
-          const x = (rect.left - pad) + Math.random() * (rect.width + pad * 2);
-          const y = (rect.top - pad) + Math.random() * (rect.height + pad * 2);
-          
-          const size = 10 + Math.random() * 12; 
-          const delay = Math.random() * 0.5;   
-          const duration = 0.6 + Math.random() * 0.4;
-  
-          star.style.left = `${x}px`;
-          star.style.top = `${y}px`;
-          star.style.width = `${size}px`;
-          star.style.height = `${size}px`;
-          star.style.animation = `sparkle-pop ${duration}s ease-out ${delay}s both`;
-  
-          star.innerHTML = `<path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z" />`;
-          
-          document.body.appendChild(star);
-          sparkles.push(star);
-        }
-  
-        setTimeout(() => {
-          sparkles.forEach(s => s.remove());
-        }, 2500);
-  
-        if (WA.agentSay) WA.agentSay(`Here is the ${elementText}.`);
-      },
-  
-      onError: async (err, action) => {
         if (WA.reconnectBridge) WA.reconnectBridge();
       },
   
