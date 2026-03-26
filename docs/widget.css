@@ -270,6 +270,7 @@
   padding: 8px 14px; font-size: 13px; font-weight: 500;
    cursor: pointer;
   transition: opacity .2s, transform .15s; white-space: nowrap;
+  height: 37.5px;
 }
 #wa-send:hover    { opacity: .85; }
 #wa-send:active   { transform: scale(.96); }
