@@ -150,7 +150,7 @@
         return `${p.label}|${path}`;
       }).join('\n');
   
-      const currentUrl = window.location.pathname;  // Just the path, e.g. /contact/
+      const currentUrl = window.location.pathname; 
       const ctx        = pageContext;
   
       const pageEls = ctx?.elements?.length

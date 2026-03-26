@@ -22,7 +22,9 @@
       if (prev === value) return;
       State[layer] = value;
       if (WA.DEBUG) console.log(`[WA] State [${layer}]: ${prev} → ${value}`, context || '');
-      WA.bus.emit('state:change', { layer, from: prev, to: value, context });
+      if (WA.bus && typeof WA.bus.emit === 'function') {
+        WA.bus.emit('state:change', { layer, from: prev, to: value, context });
+      }
       handleStateChange(layer, value, context);
     }
   
