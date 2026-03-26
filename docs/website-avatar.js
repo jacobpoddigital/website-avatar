@@ -46,7 +46,11 @@
       } else {
         bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
       }
-      bubble.onclick   = () => window.WebsiteAvatar && WebsiteAvatar.toggleChat();
+      bubble.onclick   = () => {
+        if (window.WebsiteAvatar && window.WebsiteAvatar.toggleChat) {
+          window.WebsiteAvatar.toggleChat();
+        }
+      };
       document.body.appendChild(bubble);
     }
 
