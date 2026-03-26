@@ -326,57 +326,84 @@
   }
   
   // ─── SUBSECTION EXTRACTOR ─────────────────────────────────────────────────
-  function extractSubsections(headingEl) {
+  function extractSubsections(parentHeadingEl) {
     const subsections = [];
     
-    // Find the parent container that holds both heading and content
-    const container = headingEl.closest('section, article, div[class*="section"], div[class*="content"], .content, .box-list-item');
+    // Find the content container after this heading
+    const container = parentHeadingEl.parentElement;
     if (!container) return subsections;
     
-    // Look for ul > li structures within this container
-    const lists = container.querySelectorAll('ul');
+    // Look for child headings that are nested under this section
+    const childHeadings = [];
+    let currentEl = parentHeadingEl.nextElementSibling;
     
-    lists.forEach(ul => {
-      // Only process if this list is a direct child or within the content area
-      const listItems = ul.querySelectorAll(':scope > li');
+    // Traverse siblings until we hit another heading of same/higher level or run out
+    const parentLevel = parseInt(parentHeadingEl.tagName[1]);
+    
+    while (currentEl) {
+      // Stop if we hit a heading of same or higher level
+      if (currentEl.tagName && currentEl.tagName.match(/^H[1-6]$/)) {
+        const level = parseInt(currentEl.tagName[1]);
+        if (level <= parentLevel) break;
+      }
       
-      listItems.forEach(li => {
-        // Look for heading within li (h3, h4, etc)
-        const heading = li.querySelector('h3, h4, h5, h6');
-        if (!heading) return;
+      // Find h3, h4, h5, h6 AND .heading elements within this sibling
+      if (currentEl.querySelectorAll) {
+        const tagHeadings = currentEl.querySelectorAll('h3, h4, h5, h6');
+        const classHeadings = currentEl.querySelectorAll('.heading, [class*="title"]:not(.post-meta)');
         
-        const title = heading.textContent.trim();
-        
-        // Extract link if present
-        const link = heading.querySelector('a');
-        const url = link ? link.href : null;
-        
-        // Get description - look for p tags or direct text after heading
-        let description = '';
-        const paragraphs = li.querySelectorAll('p');
-        if (paragraphs.length > 0) {
-          description = Array.from(paragraphs)
-            .map(p => p.textContent.trim())
-            .filter(Boolean)
-            .join(' ');
-        }
-        
-        if (!description || description.length < 20) return;
-        
-        // Compress the description
-        const compressedDesc = summarise(description);
-        const tokens = estimateTokens(compressedDesc);
-        
-        subsections.push({
-          title,
-          url,
-          description: compressedDesc,
-          tokens
+        tagHeadings.forEach(h => childHeadings.push(h));
+        classHeadings.forEach(h => {
+          // Only add if it's not already captured as a tag heading
+          if (!h.tagName.match(/^H[1-6]$/)) {
+            childHeadings.push(h);
+          }
         });
+      }
+      
+      currentEl = currentEl.nextElementSibling;
+    }
+    
+    // Process each child heading + its content
+    childHeadings.forEach(heading => {
+      const title = heading.textContent.trim();
+      if (!title || title.length < 3) return;
+      
+      // Get link if heading contains or is wrapped by one
+      const link = heading.querySelector('a') || heading.closest('a');
+      const url = link ? link.href : null;
+      
+      // Gather content: look at siblings and children of the heading's parent container
+      let description = '';
+      const headingContainer = heading.closest('li, .box-list-item, [class*="item"], [class*="card"], div');
+      
+      if (headingContainer) {
+        // Get all paragraphs within this container, skip metadata
+        const paragraphs = headingContainer.querySelectorAll('p:not(.post-meta p)');
+        description = Array.from(paragraphs)
+          .map(p => p.textContent.trim())
+          .filter(p => p.length > 20 && !p.startsWith('By ')) // Skip author/date lines
+          .join(' ');
+      }
+      
+      if (!description || description.length < 20) return;
+      
+      const compressedDesc = summarise(description);
+      subsections.push({
+        title,
+        url,
+        description: compressedDesc,
+        tokens: estimateTokens(compressedDesc)
       });
     });
     
-    return subsections;
+    // Deduplicate by title
+    const seen = new Set();
+    return subsections.filter(sub => {
+      if (seen.has(sub.title)) return false;
+      seen.add(sub.title);
+      return true;
+    });
   }
 
   // ─── PAGE CONTEXT WITH SEMANTIC SECTIONS ──────────────────────────────────
@@ -653,11 +680,13 @@
     initDiscovery();
   }
 
-  // Run once on DOM ready
+  // Run once on DOM ready with delay for dynamic content (Swiper, etc)
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', runDiscovery);
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(runDiscovery, 1000);
+    });
   } else {
-    runDiscovery();
+    setTimeout(runDiscovery, 1000);
   }
 
 })();
