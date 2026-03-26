@@ -49,7 +49,7 @@
 
 /* ── BUBBLE ──────────────────────────────────────────────────────────────────── */
 #wa-bubble {
-  position: fixed; bottom: 32px; right: 32px; z-index: 999999999999;
+  position: fixed; bottom: 32px; left: 32px; z-index: 999999999999;
   width: 54px; height: 54px; border-radius: 50%;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
@@ -57,17 +57,38 @@
   font-size: 22px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--wa-shadow);
-  transition: transform .2s ease, background .2s ease, box-shadow .2s ease;
+  transition: transform .2s ease, background .2s ease, box-shadow .2s ease, opacity .3s ease;
   padding: 0;
-  mix-blend-mode: difference;
 }
+
+/* Apply blend mode via pseudo-element for background only */
+#wa-bubble::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--wa-glass-strong);
+  backdrop-filter: var(--wa-blur);
+  -webkit-backdrop-filter: var(--wa-blur);
+  mix-blend-mode: difference;
+  z-index: -1;
+}
+
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
 #wa-bubble:active { transform: scale(0.95); }
+
+/* Hide bubble when greeting is visible */
+#wa-bubble.wa-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.8);
+}
 
 /* Bubble avatar image */
 .wa-bubble-avatar {
   width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-  mix-blend-mode: normal; /* Reset blend mode for avatar image */
+  position: relative;
+  z-index: 1;
 }
 
 .wa-badge {
@@ -89,7 +110,7 @@
 
 /* ── PANEL ───────────────────────────────────────────────────────────────────── */
 #wa-panel {
-  position: fixed; bottom: 104px; right: 32px; z-index: 999999999999;
+  position: fixed; bottom: 104px; left: 32px; z-index: 999999999999;
   width: 360px; max-height: 520px;
   background: var(--wa-glass-bg);
   backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
@@ -97,16 +118,30 @@
   border-radius: 20px; box-shadow: var(--wa-shadow);
   display: flex; flex-direction: column; overflow: hidden;
   transform: translateY(16px) scale(0.97); opacity: 0; pointer-events: none;
-  transform-origin: bottom right;
+  transform-origin: bottom left;
   transition: transform .3s cubic-bezier(0.34,1.30,0.64,1), opacity .25s ease;
-  mix-blend-mode: difference;
 }
+
+/* Apply blend mode via pseudo-element for background only */
+#wa-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: var(--wa-glass-bg);
+  backdrop-filter: var(--wa-blur);
+  -webkit-backdrop-filter: var(--wa-blur);
+  mix-blend-mode: difference;
+  z-index: -1;
+  pointer-events: none;
+}
+
 #wa-panel.wa-open { transform: translateY(0) scale(1); opacity: 1; pointer-events: all; }
 
-/* Reset blend mode for images and specific elements inside panel */
-#wa-panel .wa-header-avatar,
-#wa-panel img {
-  mix-blend-mode: normal;
+/* Ensure content is above the blend layer */
+#wa-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── HEADER ──────────────────────────────────────────────────────────────────── */
@@ -314,7 +349,6 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s ease;
-  mix-blend-mode: difference;
 }
 
 #wa-greeting.wa-greeting-visible {
@@ -328,7 +362,6 @@
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  mix-blend-mode: normal; /* Overlay should use normal blend */
 }
 
 .wa-greeting-container {
@@ -337,7 +370,6 @@
   flex-direction: column;
   align-items: center;
   animation: waGreetingSlideIn 0.6s cubic-bezier(0.34, 1.20, 0.64, 1);
-  mix-blend-mode: difference;
 }
 
 @keyframes waGreetingSlideIn {
@@ -361,7 +393,8 @@
   box-shadow: var(--wa-shadow), 0 0 0 8px var(--wa-glass-subtle);
   margin-bottom: 20px;
   background: var(--wa-glass-strong);
-  mix-blend-mode: normal; /* Reset for avatar image */
+  position: relative;
+  z-index: 1;
 }
 
 /* Speech bubble */
@@ -377,6 +410,19 @@
   box-shadow: var(--wa-shadow);
   margin-bottom: 24px;
   animation: waGreetingBubble 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.2s backwards;
+}
+
+/* Apply blend mode to bubble background only */
+.wa-greeting-bubble::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: var(--wa-glass-bg);
+  backdrop-filter: var(--wa-blur);
+  -webkit-backdrop-filter: var(--wa-blur);
+  mix-blend-mode: difference;
+  z-index: -1;
 }
 
 @keyframes waGreetingBubble {
@@ -403,6 +449,7 @@
   border-right: 14px solid transparent;
   border-top: 14px solid var(--wa-glass-bg);
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+  z-index: 1;
 }
 
 .wa-greeting-bubble p {
@@ -411,6 +458,9 @@
   line-height: 1.6;
   color: var(--wa-text);
   text-align: center;
+  position: relative;
+  z-index: 1;
+  mix-blend-mode: difference;
 }
 
 /* Action buttons container */
@@ -445,6 +495,20 @@
   transition: all 0.2s ease;
   box-shadow: var(--wa-shadow-sm);
   min-width: 160px;
+  position: relative;
+}
+
+/* Apply blend mode to button background only */
+.wa-greeting-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: var(--wa-glass-strong);
+  backdrop-filter: var(--wa-blur-light);
+  -webkit-backdrop-filter: var(--wa-blur-light);
+  mix-blend-mode: difference;
+  z-index: -1;
 }
 
 .wa-greeting-btn:hover {
@@ -462,6 +526,9 @@
   font-weight: 600;
   color: var(--wa-text);
   letter-spacing: 0.02em;
+  position: relative;
+  z-index: 1;
+  mix-blend-mode: difference;
 }
 
 /* Close button */
@@ -486,6 +553,19 @@
   transition: all 0.2s ease;
   box-shadow: var(--wa-shadow-sm);
   animation: waGreetingClose 0.4s cubic-bezier(0.34, 1.30, 0.64, 1) 0.5s backwards;
+}
+
+/* Apply blend mode to close button background */
+.wa-greeting-close::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--wa-glass-strong);
+  backdrop-filter: var(--wa-blur-light);
+  -webkit-backdrop-filter: var(--wa-blur-light);
+  mix-blend-mode: difference;
+  z-index: -1;
 }
 
 @keyframes waGreetingClose {

@@ -49,10 +49,15 @@
         if (!this.shouldShow()) return;
         
         const greeting = document.getElementById('wa-greeting');
+        const bubble = document.getElementById('wa-bubble');
         if (!greeting) return;
   
         setTimeout(() => {
           greeting.classList.add('wa-greeting-visible');
+          // Hide bubble while greeting is showing
+          if (bubble) {
+            bubble.classList.add('wa-hidden');
+          }
         }, delay);
       },
   
@@ -61,9 +66,17 @@
        */
       hide() {
         const greeting = document.getElementById('wa-greeting');
+        const bubble = document.getElementById('wa-bubble');
         if (!greeting) return;
         
         greeting.classList.remove('wa-greeting-visible');
+        
+        // Show bubble after greeting is dismissed
+        if (bubble) {
+          setTimeout(() => {
+            bubble.classList.remove('wa-hidden');
+          }, 200);
+        }
         
         // Remove from DOM after animation completes
         setTimeout(() => {
@@ -100,6 +113,14 @@
        * Initialize - called from main widget
        */
       init() {
+        // Hide bubble initially if greeting will show
+        if (this.shouldShow()) {
+          const bubble = document.getElementById('wa-bubble');
+          if (bubble) {
+            bubble.classList.add('wa-hidden');
+          }
+        }
+        
         this.attachEventListeners();
         this.show();
       },
