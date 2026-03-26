@@ -5,8 +5,8 @@
 
  /* ── TOKENS ─────────────────────────────────────────────────────────────────── */
  :root {
-  --wa-glass-bg:        rgba(255,255,255,0.18);
-  --wa-glass-strong:    rgba(255,255,255,0.28);
+  --wa-glass-bg:        rgba(255,255,255,0.5);
+  --wa-glass-strong:    rgba(255,255,255,0.78);
   --wa-glass-subtle:    rgba(255,255,255,0.10);
   --wa-glass-border:    rgba(255,255,255,0.35);
   --wa-glass-border-dim:rgba(255,255,255,0.18);
