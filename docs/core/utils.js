@@ -99,6 +99,7 @@
     // ─── SPARKLES ─────────────────────────────────────────────────────────────
   
     function spawnSparkles(el) {
+        console.log('✨ Sparkles spawned!', el);
       if (!document.getElementById('ai-sparkle-style')) {
         const style = document.createElement('style');
         style.id = 'ai-sparkle-style';
