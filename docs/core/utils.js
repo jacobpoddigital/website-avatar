@@ -129,18 +129,31 @@
         console.log('Creating', count, 'sparkles at position:', { x: rect.left, y: rect.top, width: rect.width, height: rect.height });
       
         for (let i = 0; i < count; i++) {
-          const star = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          star.setAttribute('viewBox', '0 0 24 24');
-          star.classList.add('ai-sparkle-svg');
-          const x        = (rect.left - 15) + Math.random() * (rect.width + 30);
-          const y        = (rect.top  - 15) + Math.random() * (rect.height + 30);
-          const size     = 10 + Math.random() * 12;
-          const delay    = 1.0 + Math.random() * 0.5;
-          const duration = 1.2 + Math.random() * 0.8;
-          star.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;animation:sparkle-pop ${duration}s ease-out ${delay}s both`;
-          star.innerHTML = `<path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>`;
-          document.body.appendChild(star);
-          stars.push(star);
+        const star = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        star.setAttribute('viewBox', '0 0 24 24');
+        star.classList.add('ai-sparkle-svg');
+        
+        // Clamp to viewport bounds
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        let x = (rect.left - 15) + Math.random() * (rect.width + 30);
+        let y = (rect.top  - 15) + Math.random() * (rect.height + 30);
+        
+        // If element is off-screen, use viewport center instead
+        if (rect.top < 0 || rect.top > viewportHeight || rect.left < 0 || rect.left > viewportWidth) {
+            console.warn('Element off-screen, using viewport center for sparkles');
+            x = (viewportWidth / 2 - 50) + Math.random() * 100;
+            y = (viewportHeight / 2 - 50) + Math.random() * 100;
+        }
+        
+        const size     = 10 + Math.random() * 12;
+        const delay    = 1.0 + Math.random() * 0.5;
+        const duration = 1.2 + Math.random() * 0.8;
+        star.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;animation:sparkle-pop ${duration}s ease-out ${delay}s both`;
+        star.innerHTML = `<path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>`;
+        document.body.appendChild(star);
+        stars.push(star);
         }
       
         console.log('Sparkles appended to body:', stars.length);
