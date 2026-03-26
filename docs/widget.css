@@ -412,19 +412,6 @@
   animation: waGreetingBubble 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.2s backwards;
 }
 
-/* Apply blend mode to bubble background only */
-.wa-greeting-bubble::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 18px;
-  background: var(--wa-glass-bg);
-  backdrop-filter: var(--wa-blur);
-  -webkit-backdrop-filter: var(--wa-blur);
-  mix-blend-mode: difference;
-  z-index: -1;
-}
-
 @keyframes waGreetingBubble {
   from {
     opacity: 0;
@@ -436,22 +423,6 @@
   }
 }
 
-/* Speech bubble tail pointing down to avatar */
-.wa-greeting-bubble::after {
-  content: '';
-  position: absolute;
-  bottom: -12px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 14px solid transparent;
-  border-right: 14px solid transparent;
-  border-top: 14px solid var(--wa-glass-bg);
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
-  z-index: 1;
-}
-
 .wa-greeting-bubble p {
   margin: 0;
   font-size: 15px;
@@ -460,7 +431,6 @@
   text-align: center;
   position: relative;
   z-index: 1;
-  mix-blend-mode: difference;
 }
 
 /* Action buttons container */
@@ -498,19 +468,6 @@
   position: relative;
 }
 
-/* Apply blend mode to button background only */
-.wa-greeting-btn::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 14px;
-  background: var(--wa-glass-strong);
-  backdrop-filter: var(--wa-blur-light);
-  -webkit-backdrop-filter: var(--wa-blur-light);
-  mix-blend-mode: difference;
-  z-index: -1;
-}
-
 .wa-greeting-btn:hover {
   transform: translateY(-2px);
   box-shadow: var(--wa-shadow);
@@ -528,7 +485,6 @@
   letter-spacing: 0.02em;
   position: relative;
   z-index: 1;
-  mix-blend-mode: difference;
 }
 
 /* Close button */
@@ -553,19 +509,6 @@
   transition: all 0.2s ease;
   box-shadow: var(--wa-shadow-sm);
   animation: waGreetingClose 0.4s cubic-bezier(0.34, 1.30, 0.64, 1) 0.5s backwards;
-}
-
-/* Apply blend mode to close button background */
-.wa-greeting-close::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--wa-glass-strong);
-  backdrop-filter: var(--wa-blur-light);
-  -webkit-backdrop-filter: var(--wa-blur-light);
-  mix-blend-mode: difference;
-  z-index: -1;
 }
 
 @keyframes waGreetingClose {
