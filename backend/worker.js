@@ -1,9 +1,3 @@
-/**
- * Cloudflare Worker — Website Avatar by AdVelocity
- * Handles: /config (client config) and /classify (OpenAI proxy)
- * Deploy: wrangler deploy
- */
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -30,7 +24,30 @@ export default {
       return new Response(raw, { headers: cors });
     }
 
-    // ── POST /classify ───────────────────────────────────────────────────
+    // ── POST /config to update settings like avatar_url ─────────────────
+    if (url.pathname === '/config' && request.method === 'POST') {
+      const id = url.searchParams.get('id');
+      if (!id) return json({ error: 'Missing id' }, 400, cors);
+
+      let body;
+      try { body = await request.json(); } catch(e) {
+        return json({ error: 'Invalid JSON' }, 400, cors);
+      }
+
+      // Fetch existing config
+      const raw = await env.CONFIGS.get(id);
+      const config = raw ? JSON.parse(raw) : {};
+
+      // Merge new values
+      const updated = { ...config, ...body };
+
+      // Save back to KV
+      await env.CONFIGS.put(id, JSON.stringify(updated));
+
+      return json(updated, 200, cors);
+    }
+
+    // ── POST /classify (unchanged) ───────────────────────────────────
     if (url.pathname === '/classify' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch(e) {
@@ -40,12 +57,11 @@ export default {
       const { prompt, maxTokens } = body;
       if (!prompt) return json({ error: 'Missing prompt' }, 400, cors);
 
-      // Use default key from Worker secret
       const apiKey = env.OPENAI_KEY;
       if (!apiKey) return json({ error: 'No API key configured' }, 500, cors);
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method:  'POST',
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type':  'application/json'
