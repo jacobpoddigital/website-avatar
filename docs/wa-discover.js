@@ -1,6 +1,7 @@
 /**
- * wa-discover.js — Website Avatar by AdVelocity
- * Site discovery: builds PAGE_MAP and FORM_MAP from the live DOM.
+ * wa-discover-enhanced.js — Website Avatar by AdVelocity
+ * Enhanced site discovery with semantic compression and improved page context.
+ * Builds PAGE_MAP, FORM_MAP, and enriched PAGE_CONTEXT from the live DOM.
  * Runs before wa-agent.js. Exposes results on window.WebsiteAvatar.
  */
 
@@ -9,11 +10,72 @@
   // ─── NAMESPACE ────────────────────────────────────────────────────────────
   window.WebsiteAvatar = window.WebsiteAvatar || {};
   window.WebsiteAvatar.DEBUG = window.WA_CONFIG?.debug || false;
-  const DEBUG = window.WebsiteAvatar.DEBUG; // fix for log/warn
+  const DEBUG = window.WebsiteAvatar.DEBUG;
   const WA = window.WebsiteAvatar;
 
   function log(...args)  { if (DEBUG) console.log('[WA:Discover]', ...args); }
   function warn(...args) { if (DEBUG) console.warn('[WA:Discover]', ...args); }
+
+  // ─── SEMANTIC COMPRESSION ─────────────────────────────────────────────────
+  const LIGHT_STOPWORDS = new Set([
+    "the", "a", "an", "and", "but", "or", "so", "to", "of", "in", "on", "at",
+    "for", "with", "is", "are", "was", "were", "be", "been", "being", "have",
+    "has", "had", "do", "does", "did", "will", "would", "could", "should",
+    "may", "might", "must", "can", "that", "this", "these", "those"
+  ]);
+
+  const KEEP_PREPOSITIONS = new Set(["by", "for", "with", "to", "from", "about"]);
+
+  function estimateTokens(text) {
+    return Math.ceil(text.length / 4);
+  }
+
+  function getFirstSentences(text, count = 2) {
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    return sentences.slice(0, count).join(" ").trim();
+  }
+
+  function smartCompress(sentence) {
+    return sentence
+      .split(/\s+/)
+      .filter(word => {
+        const clean = word.toLowerCase().replace(/[^\w]/g, "");
+        if (!clean) return false;
+        if (KEEP_PREPOSITIONS.has(clean)) return true;
+        return !LIGHT_STOPWORDS.has(clean);
+      })
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function refine(text) {
+    return text
+      .replace(/\b(designed|provides|includes|that|which|offers|features|delivers|ensures)\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function summarise(text, maxLength = 150) {
+    if (!text || text.length < 50) return text;
+    
+    const first = getFirstSentences(text, 2);
+    const compressed = smartCompress(first);
+    const refined = refine(compressed);
+    
+    // If still too long, truncate intelligently
+    if (refined.length > maxLength) {
+      const words = refined.split(/\s+/);
+      let result = "";
+      for (const word of words) {
+        if (result.length + word.length + 1 > maxLength) break;
+        result += (result ? " " : "") + word;
+      }
+      return result + "...";
+    }
+    
+    return refined;
+  }
 
   // ─── FILTERS ──────────────────────────────────────────────────────────────
   const SKIP_HREF = [
@@ -104,9 +166,8 @@
 
     candidates.forEach((form, i) => {
       const fields     = [];
-      const seenGroups = new Set(); // track checkbox/radio groups by name
+      const seenGroups = new Set();
 
-      // Use DOM order — querySelectorAll returns elements in document order
       form.querySelectorAll(VALID_TAGS.join(',')).forEach(el => {
         const type = el.type || el.tagName.toLowerCase();
 
@@ -114,17 +175,15 @@
         if (type === 'checkbox' || type === 'radio') {
           const groupName = el.name ? el.name.replace(/\[\]$/, '') : null;
           if (!groupName) return;
-          if (seenGroups.has(groupName)) return; // already processed this group
+          if (seenGroups.has(groupName)) return;
           seenGroups.add(groupName);
 
-          // Collect all options in this group
           const groupEls = Array.from(
             form.querySelectorAll(`input[type="${type}"][name="${el.name}"], input[type="${type}"][name="${groupName}[]"]`)
           );
           if (!groupEls.length) return;
 
           const options = groupEls.map(opt => {
-            // Try to get label from parent label element
             const parentLabel = opt.closest('label');
             const optLabel = parentLabel
               ? parentLabel.textContent.trim()
@@ -132,7 +191,6 @@
             return { value: opt.value, label: optLabel };
           });
 
-          // Group label — look for a label preceding the group
           const wrap = el.closest('.wpcf7-form-control-wrap') || el.closest('fieldset') || el.parentElement;
           let groupLabel = null;
           if (wrap) {
@@ -154,8 +212,8 @@
             label:    groupLabel.replace(/[*:\s]+$/, '').trim(),
             type:     type === 'radio' ? 'radio' : 'checkbox',
             required: el.required || el.getAttribute('aria-required') === 'true',
-            options,          // array of { value, label }
-            value:    null    // will be array of selected values
+            options,
+            value:    null
           });
           return;
         }
@@ -166,7 +224,6 @@
 
         const label = resolveLabel(el);
 
-        // Handle SELECT options
         let options = null;
         if (el.tagName === 'SELECT') {
           options = Array.from(el.options)
@@ -231,15 +288,60 @@
     return label.replace(/[*:\s]+$/, '').trim();
   }
 
-  // ─── PAGE CONTEXT ─────────────────────────────────────────────────────────
-  // Builds a semantic inventory of actionable elements on the current page.
-  // Used by wa-agent.js to give the AI structured context about what it can do.
-  // Elements get stable synthetic IDs (wa_el_N) — independent of DOM IDs.
+  // ─── SEMANTIC SECTION BUILDER ─────────────────────────────────────────────
+  function buildSemanticSections() {
+    const elements = Array.from(document.body.querySelectorAll("h1, h2, h3, h4, h5, h6, p"));
+    const sections = [];
+    let currentSection = null;
 
+    elements.forEach(el => {
+      // Skip elements inside widget or skip containers
+      if (el.closest('#wa-panel, #wa-bubble')) return;
+      if (el.closest('[class*="cookie"], [class*="consent"], [class*="gdpr"], [class*="newsletter"]')) return;
+
+      if (el.tagName.match(/^H[1-6]$/)) {
+        if (currentSection && currentSection.content.length > 0) {
+          sections.push(currentSection);
+        }
+        currentSection = {
+          heading: el.innerText.trim(),
+          headingEl: el,
+          content: [],
+          level: parseInt(el.tagName[1])
+        };
+      } else if (el.tagName === "P" && currentSection) {
+        const text = el.innerText.trim();
+        if (text.length > 40) {
+          currentSection.content.push(text);
+        }
+      }
+    });
+
+    if (currentSection && currentSection.content.length > 0) {
+      sections.push(currentSection);
+    }
+
+    // Calculate token estimates and create summaries
+    return sections.map(section => {
+      const combinedText = section.content.join(" ");
+      const summary = summarise(combinedText);
+      
+      return {
+        heading: section.heading,
+        level: section.level,
+        summary,
+        originalTokens: estimateTokens(combinedText),
+        compressedTokens: estimateTokens(summary),
+        element: section.headingEl
+      };
+    });
+  }
+
+  // ─── PAGE CONTEXT WITH SEMANTIC SECTIONS ──────────────────────────────────
   function buildPageContext() {
     const elements = [];
     let idx = 0;
-    const seen = new Set(); // deduplicate by text+type
+    const seen = new Set();
 
     function addEl(el) {
       const key = el.type + ':' + (el.text || el.title || '');
@@ -248,11 +350,7 @@
       elements.push({ id: `wa_el_${idx++}`, ...el });
     }
 
-    // ── CTAs — buttons and prominent links ──────────────────────────────────
-    // Skip common cookie/consent/newsletter words and generic UI labels
-    const CTA_SKIP_WORDS = /^(menu|nav|close|open|toggle|search|submit|send|next|prev|back|more|less|show|hide|expand|collapse|\d+|customise|customize|accept|accept all|reject|reject all|save my preferences|necessary|functional|analytics|performance|advertisement|uncategorised|uncategorized|subscribe|sign up|newsletter|manage|manage cookies|manage preferences|cookie|privacy|i agree|agree|decline|got it|ok|okay)$/i;
-
-    // Skip containers that are cookie banners, popups, or newsletter widgets
+    // ── Skip containers ──────────────────────────────────────────────────────
     const SKIP_CONTAINERS = [
       '[class*="cookie"]', '[class*="consent"]', '[class*="gdpr"]',
       '[class*="privacy"]', '[id*="cookie"]', '[id*="consent"]',
@@ -260,46 +358,54 @@
       '[class*="modal"]:not(.wa-)', '[role="dialog"]', '[aria-modal]'
     ].join(', ');
 
+    const CTA_SKIP_WORDS = /^(menu|nav|close|open|toggle|search|submit|send|next|prev|back|more|less|show|hide|expand|collapse|\d+|customise|customize|accept|accept all|reject|reject all|save my preferences|necessary|functional|analytics|performance|advertisement|uncategorised|uncategorized|subscribe|sign up|newsletter|manage|manage cookies|manage preferences|cookie|privacy|i agree|agree|decline|got it|ok|okay)$/i;
+
+    // ── CTAs — buttons and prominent links ───────────────────────────────────
     const CTA_SELECTORS = 'a.btn, a.button, a[class*="btn"], a[class*="button"], button:not([type="submit"]):not([type="reset"]):not(.wa-), input[type="button"]';
 
     document.querySelectorAll(CTA_SELECTORS).forEach(el => {
       const text = el.textContent.trim().replace(/\s+/g, ' ');
       if (!text || text.length < 3 || text.length > 60) return;
       if (CTA_SKIP_WORDS.test(text)) return;
-      // Skip if inside our widget, a cookie banner, or other skip containers
       if (el.closest('#wa-panel, #wa-bubble')) return;
       if (el.closest(SKIP_CONTAINERS)) return;
+
+      // Extract surrounding context for better understanding
+      const parentSection = el.closest('section, article, div[class*="section"], div[class*="content"]');
+      let context = null;
+      if (parentSection) {
+        const heading = parentSection.querySelector('h1, h2, h3, h4, h5, h6');
+        if (heading) context = heading.textContent.trim();
+      }
 
       addEl({
         type:    'button',
         text,
+        context,
         role:    'cta',
         actions: ['click'],
         _el:     el
       });
     });
 
-    // ── Sections — named page sections the user might want to scroll to ─────
-    const SECTION_TAGS = 'h2, h3, [class*="section-title"], [class*="heading"]';
-    document.querySelectorAll(SECTION_TAGS).forEach(el => {
-      const text = el.textContent.trim().replace(/\s+/g, ' ');
-      if (!text || text.length < 3 || text.length > 80) return;
-      if (el.closest('#wa-panel, #wa-bubble, nav, header, footer')) return;
-      if (el.closest(SKIP_CONTAINERS)) return;
-
-      // Find the scrollable parent section
-      const section = el.closest('section, article, div[id], div[class]') || el.parentElement;
+    // ── Semantic sections with compressed content ────────────────────────────
+    const semanticSections = buildSemanticSections();
+    semanticSections.forEach(section => {
+      if (!section.summary || section.summary.length < 10) return;
 
       addEl({
         type:    'section',
-        title:   text,
+        title:   section.heading,
+        summary: section.summary,
+        level:   section.level,
+        tokens:  section.compressedTokens,
         role:    'content_section',
-        actions: ['scroll'],
-        _el:     section || el
+        actions: ['scroll', 'read'],
+        _el:     section.element.closest('section, article, div[id], div[class]') || section.element.parentElement
       });
     });
 
-    // ── Phone numbers — click to call ────────────────────────────────────────
+    // ── Phone numbers ─────────────────────────────────────────────────────────
     document.querySelectorAll('a[href^="tel:"]').forEach(el => {
       const number = el.href.replace('tel:', '').trim();
       const label  = el.textContent.trim() || number;
@@ -313,7 +419,7 @@
       });
     });
 
-    // ── Email addresses — click to email ─────────────────────────────────────
+    // ── Email addresses ───────────────────────────────────────────────────────
     document.querySelectorAll('a[href^="mailto:"]').forEach(el => {
       const email = el.href.replace('mailto:', '').trim();
       const label = el.textContent.trim() || email;
@@ -322,30 +428,68 @@
         text:    label,
         email,
         role:    'contact',
-        actions: [],
+        actions: ['click'],
         _el:     el
       });
     });
 
-    // ── Videos ───────────────────────────────────────────────────────────────
-    document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"], [class*="video"]').forEach(el => {
+    // ── Videos ────────────────────────────────────────────────────────────────
+    document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"], [class*="video-wrapper"], [class*="video-container"]').forEach(el => {
       const title = el.getAttribute('title') || el.getAttribute('aria-label') || 'Video';
+      
+      // Try to find nearby heading for context
+      const parent = el.closest('section, article, div[class*="video"]');
+      let context = null;
+      if (parent) {
+        const heading = parent.querySelector('h1, h2, h3, h4, h5, h6');
+        if (heading) context = heading.textContent.trim();
+      }
+
       addEl({
         type:    'video',
         title,
+        context,
+        role:    'media',
+        actions: ['scroll', 'play'],
+        _el:     el
+      });
+    });
+
+    // ── Images with meaningful alt text ───────────────────────────────────────
+    document.querySelectorAll('img[alt]').forEach(el => {
+      const alt = el.alt.trim();
+      if (!alt || alt.length < 5) return;
+      if (el.closest('#wa-panel, #wa-bubble')) return;
+      if (el.closest(SKIP_CONTAINERS)) return;
+      // Skip icons and decorative images
+      if (el.width < 100 && el.height < 100) return;
+
+      addEl({
+        type:    'image',
+        alt,
         role:    'media',
         actions: ['scroll'],
         _el:     el
       });
     });
 
-    // Remove _el before serialising — only used internally for execution
+    // Remove _el before serialising
     const serialisable = elements.map(({ _el, ...rest }) => rest);
+
+    // Calculate total token efficiency
+    const sectionElements = elements.filter(e => e.type === 'section');
+    const totalTokens = sectionElements.reduce((sum, e) => sum + (e.tokens || 0), 0);
 
     return {
       page:     document.title,
       url:      window.location.href,
       elements: serialisable,
+      metadata: {
+        totalElements: serialisable.length,
+        contentSections: sectionElements.length,
+        estimatedTokens: totalTokens,
+        discoveredAt: new Date().toISOString()
+      },
       // Keep _el references separately for action execution
       _refs:    elements.reduce((acc, el) => { acc[el.id] = el._el; return acc; }, {})
     };
@@ -377,29 +521,51 @@
     registerCF7Listeners();
 
     if (DEBUG) {
-      console.group(`[WA] 🔍 Site discovery — ${window.location.hostname}`);
+      console.group(`[WA] 🔍 Enhanced Site Discovery — ${window.location.hostname}`);
+      
       console.group(`[WA] 📄 Pages (${WA.PAGE_MAP.length})`);
       WA.PAGE_MAP.forEach(p => console.log(`  "${p.label}" → ${p.file}`));
       console.groupEnd();
+      
       if (WA.PAGE_CONTEXT?.elements?.length) {
-        console.group(`[WA] 🎯 Page elements (${WA.PAGE_CONTEXT.elements.length})`);
+        console.group(`[WA] 🎯 Page Elements (${WA.PAGE_CONTEXT.elements.length})`);
+        
+        const byType = WA.PAGE_CONTEXT.elements.reduce((acc, e) => {
+          acc[e.type] = (acc[e.type] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('Element types:', byType);
+        
         WA.PAGE_CONTEXT.elements.forEach(e => {
-          const desc = e.text || e.title || e.number || e.email || '';
-          console.log(`    ${e.id} [${e.type}] "${desc}" → ${e.actions.join(', ')}`);
+          const desc = e.text || e.title || e.summary || e.number || e.email || e.alt || '';
+          const shortDesc = desc.length > 60 ? desc.substring(0, 60) + '...' : desc;
+          const tokens = e.tokens ? ` [${e.tokens} tokens]` : '';
+          const ctx = e.context ? ` (${e.context})` : '';
+          console.log(`  ${e.id} [${e.type}] "${shortDesc}"${tokens}${ctx} → ${e.actions.join(', ')}`);
         });
         console.groupEnd();
+
+        if (WA.PAGE_CONTEXT.metadata) {
+          console.group(`[WA] 📊 Metadata`);
+          console.log('Total elements:', WA.PAGE_CONTEXT.metadata.totalElements);
+          console.log('Content sections:', WA.PAGE_CONTEXT.metadata.contentSections);
+          console.log('Estimated tokens:', WA.PAGE_CONTEXT.metadata.estimatedTokens);
+          console.groupEnd();
+        }
       }
+      
       console.group(`[WA] 📋 Forms (${WA.FORM_MAP.length})`);
       WA.FORM_MAP.forEach(f => {
         console.group(`  Form ${f.index}${f.isCF7 ? ' [CF7]' : ''}${f.formEl.id ? ' #' + f.formEl.id : ''}`);
         f.fields.forEach(field => {
           const id = field.id ? `id=${field.id}` : `name=${field.name}`;
-          const opts = field.options?.length ? ` [${field.options.map(o => o.value).join(', ')}]` : '';
+          const opts = field.options?.length ? ` [${field.options.length} options]` : '';
           console.log(`    ${id} → "${field.label}"${field.required ? ' *' : ''} (${field.type})${opts}`);
         });
         console.groupEnd();
       });
       console.groupEnd();
+      
       console.groupEnd();
     }
   }
