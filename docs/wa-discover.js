@@ -309,16 +309,74 @@
       const combinedText = section.content.join(" ");
       const summary = summarise(combinedText);
       
+      // Extract nested subsections from ul > li structures
+      const subsections = extractSubsections(section.headingEl);
+      
       return {
         heading: section.heading,
         level: section.level,
         summary,
+        subsections,
         originalLength: combinedText.length,
         originalTokens: estimateTokens(combinedText),
         compressedTokens: estimateTokens(summary),
         element: section.headingEl
       };
     });
+  }
+  
+  // ─── SUBSECTION EXTRACTOR ─────────────────────────────────────────────────
+  function extractSubsections(headingEl) {
+    const subsections = [];
+    
+    // Find the parent container that holds both heading and content
+    const container = headingEl.closest('section, article, div[class*="section"], div[class*="content"], .content, .box-list-item');
+    if (!container) return subsections;
+    
+    // Look for ul > li structures within this container
+    const lists = container.querySelectorAll('ul');
+    
+    lists.forEach(ul => {
+      // Only process if this list is a direct child or within the content area
+      const listItems = ul.querySelectorAll(':scope > li');
+      
+      listItems.forEach(li => {
+        // Look for heading within li (h3, h4, etc)
+        const heading = li.querySelector('h3, h4, h5, h6');
+        if (!heading) return;
+        
+        const title = heading.textContent.trim();
+        
+        // Extract link if present
+        const link = heading.querySelector('a');
+        const url = link ? link.href : null;
+        
+        // Get description - look for p tags or direct text after heading
+        let description = '';
+        const paragraphs = li.querySelectorAll('p');
+        if (paragraphs.length > 0) {
+          description = Array.from(paragraphs)
+            .map(p => p.textContent.trim())
+            .filter(Boolean)
+            .join(' ');
+        }
+        
+        if (!description || description.length < 20) return;
+        
+        // Compress the description
+        const compressedDesc = summarise(description);
+        const tokens = estimateTokens(compressedDesc);
+        
+        subsections.push({
+          title,
+          url,
+          description: compressedDesc,
+          tokens
+        });
+      });
+    });
+    
+    return subsections;
   }
 
   // ─── PAGE CONTEXT WITH SEMANTIC SECTIONS ──────────────────────────────────
@@ -377,7 +435,7 @@
     semanticSections.forEach(section => {
       if (!section.summary || section.summary.length < 10) return;
 
-      addEl({
+      const sectionEl = {
         type:    'section',
         title:   section.heading,
         summary: section.summary,
@@ -387,7 +445,14 @@
         role:    'content_section',
         actions: ['scroll', 'read'],
         _el:     section.element.closest('section, article, div[id], div[class]') || section.element.parentElement
-      });
+      };
+      
+      // Add subsections if any exist
+      if (section.subsections && section.subsections.length > 0) {
+        sectionEl.subsections = section.subsections;
+      }
+      
+      addEl(sectionEl);
     });
 
     // ── Phone numbers ─────────────────────────────────────────────────────────

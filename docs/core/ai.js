@@ -166,6 +166,10 @@
               el.title = e.title;
               el.summary = e.summary;
               el.tokens = e.tokens;
+              // Include subsections if present
+              if (e.subsections && e.subsections.length > 0) {
+                el.subsections = e.subsections;
+              }
             } else if (e.context) {
               el.text = e.text || e.title;
               el.context = e.context;
@@ -212,7 +216,7 @@
   ${pageEls}
   
   Element types:
-  - section: has title, summary (compressed content), tokens
+  - section: has title, summary (compressed content), tokens, and may have subsections array with nested items (each with title, url, description, tokens)
   - button: has text, context (parent section name)
   - video: has title, context
   - phone: has number
