@@ -48,16 +48,10 @@
           <p>${greetingMessage}</p>
         </div>
         <div class="wa-greeting-actions">
-          <button class="wa-greeting-btn" data-action="speak">
-            <div class="wa-greeting-btn-icon">🎤</div>
-            <div class="wa-greeting-btn-label">Speak</div>
-          </button>
-          <button class="wa-greeting-btn" data-action="type">
-            <div class="wa-greeting-btn-icon">⌨️</div>
-            <div class="wa-greeting-btn-label">Type</div>
+          <button class="wa-greeting-btn" data-action="start">
+            <div class="wa-greeting-btn-label">Start Chat</div>
           </button>
         </div>
-        <div class="wa-greeting-name">${agentName}</div>
       </div>
     `;
     document.body.appendChild(greeting);

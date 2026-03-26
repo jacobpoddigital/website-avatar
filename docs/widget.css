@@ -403,7 +403,7 @@
 /* Action buttons container */
 .wa-greeting-actions {
   display: flex;
-  gap: 12px;
+  justify-content: center;
   animation: waGreetingActions 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.3s backwards;
 }
 
@@ -420,10 +420,9 @@
 
 .wa-greeting-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px 24px;
+  justify-content: center;
+  padding: 14px 40px;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light);
   -webkit-backdrop-filter: var(--wa-blur-light);
@@ -432,7 +431,7 @@
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: var(--wa-shadow-sm);
-  min-width: 120px;
+  min-width: 160px;
 }
 
 .wa-greeting-btn:hover {
@@ -445,48 +444,11 @@
   transform: translateY(0) scale(0.98);
 }
 
-.wa-greeting-btn-icon {
-  font-size: 28px;
-  line-height: 1;
-}
-
 .wa-greeting-btn-label {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--wa-text);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Name label under avatar */
-.wa-greeting-name {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--wa-glass-strong);
-  backdrop-filter: var(--wa-blur-light);
-  -webkit-backdrop-filter: var(--wa-blur-light);
-  border: 1px solid var(--wa-glass-border);
-  border-radius: 20px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--wa-text);
-  white-space: nowrap;
-  box-shadow: var(--wa-shadow-sm);
-  animation: waGreetingName 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.4s backwards;
-}
-
-@keyframes waGreetingName {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+  letter-spacing: 0.02em;
 }
 
 /* Close button */
@@ -550,17 +512,13 @@
     font-size: 14px;
   }
   
-  .wa-greeting-actions {
-    gap: 10px;
-  }
-  
   .wa-greeting-btn {
-    min-width: 100px;
-    padding: 14px 20px;
+    min-width: 140px;
+    padding: 12px 32px;
   }
   
-  .wa-greeting-btn-icon {
-    font-size: 24px;
+  .wa-greeting-btn-label {
+    font-size: 14px;
   }
   
   .wa-greeting-close {

@@ -72,15 +72,17 @@
       },
   
       /**
-       * Handle "Chat" button - open main widget
+       * Handle "Start Chat" button - open main widget
        */
-      handleChat() {
+      handleStart() {
         this.dismiss();
         this.hide();
         
         // Open the main chat widget
         setTimeout(() => {
-          if (window.WebsiteAvatar && window.WebsiteAvatar.openChat) {
+          if (window.WebsiteAvatar && window.WebsiteAvatar.toggleChat) {
+            window.WebsiteAvatar.toggleChat();
+          } else if (window.WebsiteAvatar && window.WebsiteAvatar.openChat) {
             window.WebsiteAvatar.openChat();
           }
         }, 300);
@@ -92,24 +94,6 @@
       handleClose() {
         this.dismiss();
         this.hide();
-      },
-  
-      /**
-       * Handle speak button (if voice is enabled)
-       */
-      handleSpeak() {
-        this.dismiss();
-        this.hide();
-        
-        setTimeout(() => {
-          if (window.WebsiteAvatar && window.WebsiteAvatar.openChat) {
-            window.WebsiteAvatar.openChat();
-            // Trigger voice if available
-            if (window.WebsiteAvatar.startVoice) {
-              setTimeout(() => window.WebsiteAvatar.startVoice(), 500);
-            }
-          }
-        }, 300);
       },
   
       /**
@@ -127,21 +111,13 @@
         const greeting = document.getElementById('wa-greeting');
         if (!greeting) return;
   
-        const speakBtn = greeting.querySelector('[data-action="speak"]');
-        const typeBtn = greeting.querySelector('[data-action="type"]');
+        const startBtn = greeting.querySelector('[data-action="start"]');
         const closeBtn = greeting.querySelector('[data-action="close"]');
   
-        if (speakBtn) {
-          speakBtn.onclick = (e) => {
+        if (startBtn) {
+          startBtn.onclick = (e) => {
             e.preventDefault();
-            this.handleSpeak();
-          };
-        }
-  
-        if (typeBtn) {
-          typeBtn.onclick = (e) => {
-            e.preventDefault();
-            this.handleChat();
+            this.handleStart();
           };
         }
   
