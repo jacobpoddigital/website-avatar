@@ -57,6 +57,14 @@
   
       // Bridge not ready — wait for bridge:ready event
       if (WA.DEBUG) console.log('[WA] reconnectBridge — waiting for bridge:ready');
+      
+      // Safety check: ensure bus exists before using it
+      if (!WA.bus) {
+        if (WA.DEBUG) console.warn('[WA] reconnectBridge — WA.bus not ready yet, retrying in 100ms');
+        setTimeout(() => reconnectBridge(delay), 100);
+        return;
+      }
+      
       function onReady() {
         WA.bus.off('bridge:ready', onReady);
         setTimeout(() => {
