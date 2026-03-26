@@ -26,6 +26,43 @@
   // OpenAI proxy — always this Worker, never exposed in script tag
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
 
+  // ── INJECT GREETING WIDGET HTML ─────────────────────────────────────────
+  function injectGreeting(config = {}) {
+    if (document.getElementById('wa-greeting')) return;
+
+    const agentName = config.agentName || 'Website Avatar';
+    const avatarUrl = config.avatar_url || '';
+    const greetingMessage = config.greetingMessage || 
+      `Hi, I'm ${config.agentName || 'Mike'} - founder of ${config.businessName || 'Pod Digital'}. This AI version of me is trained on everything we do. Can we have a quick chat?`;
+
+    const greeting = document.createElement('div');
+    greeting.id = 'wa-greeting';
+    greeting.innerHTML = `
+      <div class="wa-greeting-overlay"></div>
+      <div class="wa-greeting-container">
+        <button class="wa-greeting-close" data-action="close" aria-label="Close">
+          ✕
+        </button>
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-greeting-avatar" />` : ''}
+        <div class="wa-greeting-bubble">
+          <p>${greetingMessage}</p>
+        </div>
+        <div class="wa-greeting-actions">
+          <button class="wa-greeting-btn" data-action="speak">
+            <div class="wa-greeting-btn-icon">🎤</div>
+            <div class="wa-greeting-btn-label">Speak</div>
+          </button>
+          <button class="wa-greeting-btn" data-action="type">
+            <div class="wa-greeting-btn-icon">⌨️</div>
+            <div class="wa-greeting-btn-label">Type</div>
+          </button>
+        </div>
+        <div class="wa-greeting-name">${agentName}</div>
+      </div>
+    `;
+    document.body.appendChild(greeting);
+  }
+
   // ── INJECT WIDGET HTML ───────────────────────────────────────────────────
   function injectHTML(agentName, config = {}) {
     const name = agentName || 'Website Avatar';
@@ -110,7 +147,9 @@
         agentName:         config.agentName || 'Website Avatar',
         primaryColor:      config.primaryColor || '#c84b2f',
         debug:             config.debug || false,
-        avatar_url:        config.avatar_url || ''
+        avatar_url:        config.avatar_url || '',
+        greetingMessage:   config.greetingMessage || '',
+        businessName:      config.businessName || ''
       };
       const debug = window.WA_CONFIG.debug;
 
@@ -120,6 +159,7 @@
       document.head.appendChild(link);
 
       injectHTML(window.WA_CONFIG.agentName, config);
+      injectGreeting(config);
 
       // ── Core scripts ──
       await Promise.all([
@@ -131,7 +171,8 @@
       await Promise.all([
         loadScript(BASE_URL + '/features/actions.js'),
         loadScript(BASE_URL + '/features/bridge.js'),
-        loadScript(BASE_URL + '/features/ui.js')
+        loadScript(BASE_URL + '/features/ui.js'),
+        loadScript(BASE_URL + '/features/greeting.js')
       ]);
 
       // ── Discover + agent scripts ──
@@ -141,6 +182,11 @@
       ]);
 
       await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
+
+      // Initialize greeting after all scripts loaded
+      if (window.WebsiteAvatarGreeting) {
+        window.WebsiteAvatarGreeting.init();
+      }
 
       if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
 
