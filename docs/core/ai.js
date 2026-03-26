@@ -212,9 +212,9 @@
   - auto:true = execute now (scroll_to automatically)
   - auto:false = confirm first (navigate, fill_form, click_element)
   - element_id uses compressed format (5 not wa_el_5)
-  - If knowledge context suggests a target_page, strongly consider navigate action
-  - If knowledge context has section info, use scroll_to to that section (scroll includes sparkle highlight)
-  - Use scroll_to for any intent to show/highlight/point to content on current page
+  - CRITICAL: If knowledge context has target_page that differs from current URL, you MUST use navigate action (not scroll_to)
+  - After navigation, if knowledge context has section info, you can scroll_to that section
+  - Use scroll_to only when content exists on the CURRENT page
   - Max 2 actions`;
   
       const t0 = Date.now();
