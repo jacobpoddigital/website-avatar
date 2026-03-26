@@ -24,13 +24,11 @@
     "may", "might", "must", "can", "that", "this", "these", "those"
   ]);
 
-  const KEEP_PREPOSITIONS = new Set(["by", "for", "with", "to", "from", "about"]);
-
   function estimateTokens(text) {
     return Math.ceil(text.length / 4);
   }
 
-  function getFirstSentences(text, count = 2) {
+  function getFirstSentences(text, count = 1) {
     const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
     return sentences.slice(0, count).join(" ").trim();
   }
@@ -40,8 +38,7 @@
       .split(/\s+/)
       .filter(word => {
         const clean = word.toLowerCase().replace(/[^\w]/g, "");
-        if (!clean) return false;
-        if (KEEP_PREPOSITIONS.has(clean)) return true;
+        if (["by", "for", "with", "to"].includes(clean)) return true;
         return !LIGHT_STOPWORDS.has(clean);
       })
       .join(" ")
@@ -51,30 +48,16 @@
 
   function refine(text) {
     return text
-      .replace(/\b(designed|provides|includes|that|which|offers|features|delivers|ensures)\b/gi, "")
+      .replace(/\b(designed|provides|includes|that|which)\b/g, "")
       .replace(/\s+/g, " ")
       .trim();
   }
 
-  function summarise(text, maxLength = 150) {
+  function summarise(text) {
     if (!text || text.length < 50) return text;
-    
-    const first = getFirstSentences(text, 2);
+    const first = getFirstSentences(text, 1);
     const compressed = smartCompress(first);
-    const refined = refine(compressed);
-    
-    // If still too long, truncate intelligently
-    if (refined.length > maxLength) {
-      const words = refined.split(/\s+/);
-      let result = "";
-      for (const word of words) {
-        if (result.length + word.length + 1 > maxLength) break;
-        result += (result ? " " : "") + word;
-      }
-      return result + "...";
-    }
-    
-    return refined;
+    return refine(compressed);
   }
 
   // ─── FILTERS ──────────────────────────────────────────────────────────────
@@ -330,6 +313,7 @@
         heading: section.heading,
         level: section.level,
         summary,
+        originalLength: combinedText.length,
         originalTokens: estimateTokens(combinedText),
         compressedTokens: estimateTokens(summary),
         element: section.headingEl
@@ -399,6 +383,7 @@
         summary: section.summary,
         level:   section.level,
         tokens:  section.compressedTokens,
+        originalTokens: section.originalTokens,
         role:    'content_section',
         actions: ['scroll', 'read'],
         _el:     section.element.closest('section, article, div[id], div[class]') || section.element.parentElement
@@ -536,13 +521,39 @@
         }, {});
         console.log('Element types:', byType);
         
-        WA.PAGE_CONTEXT.elements.forEach(e => {
-          const desc = e.text || e.title || e.summary || e.number || e.email || e.alt || '';
-          const shortDesc = desc.length > 60 ? desc.substring(0, 60) + '...' : desc;
-          const tokens = e.tokens ? ` [${e.tokens} tokens]` : '';
-          const ctx = e.context ? ` (${e.context})` : '';
-          console.log(`  ${e.id} [${e.type}] "${shortDesc}"${tokens}${ctx} → ${e.actions.join(', ')}`);
-        });
+        // Show compression stats for sections
+        const sections = WA.PAGE_CONTEXT.elements.filter(e => e.type === 'section');
+        if (sections.length > 0) {
+          let totalOriginal = 0;
+          let totalCompressed = 0;
+          
+          console.group(`📦 Content Compression (${sections.length} sections)`);
+          sections.forEach((e, i) => {
+            const original = e.originalTokens || 0;
+            const compressed = e.tokens || 0;
+            const reduction = original > 0 ? Math.round((1 - compressed / original) * 100) : 0;
+            
+            totalOriginal += original;
+            totalCompressed += compressed;
+            
+            console.log(`  Section ${i + 1}: ${e.title}`);
+            console.log(`    Summary: ${e.summary}`);
+            console.log(`    Tokens (Original): ${original}`);
+            console.log(`    Tokens (Compressed): ${compressed}`);
+            console.log(`    Reduction: ${reduction}%`);
+          });
+          
+          const overallReduction = totalOriginal > 0 
+            ? Math.round((1 - totalCompressed / totalOriginal) * 100) 
+            : 0;
+          
+          console.log(`\n📊 TOTALS:`);
+          console.log(`  Original Tokens: ${totalOriginal}`);
+          console.log(`  Compressed Tokens: ${totalCompressed}`);
+          console.log(`  Overall Reduction: ${overallReduction}%`);
+          console.groupEnd();
+        }
+        
         console.groupEnd();
 
         if (WA.PAGE_CONTEXT.metadata) {

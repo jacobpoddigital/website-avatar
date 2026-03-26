@@ -154,22 +154,36 @@
       const ctx        = pageContext;
   
       const pageEls = ctx?.elements?.length
-        ? ctx.elements.map(e => {
-            const shortId = e.id.replace('wa_el_', '');
-            const shortActions = e.actions.map(a => a[0]).join(',');
+        ? JSON.stringify(ctx.elements.map(e => {
+            const el = {
+              id: e.id,
+              type: e.type,
+              actions: e.actions
+            };
             
-            let content = '';
+            // Add type-specific content fields
             if (e.summary) {
-              content = e.summary; // Section summaries from enhanced discovery
-            } else if (e.context && (e.text || e.title)) {
-              content = `${e.text || e.title}|${e.context}`; // Button/video with parent section
-            } else {
-              content = e.text || e.title || e.number || e.email || e.alt || '';
+              el.title = e.title;
+              el.summary = e.summary;
+              el.tokens = e.tokens;
+            } else if (e.context) {
+              el.text = e.text || e.title;
+              el.context = e.context;
+            } else if (e.text) {
+              el.text = e.text;
+            } else if (e.title) {
+              el.title = e.title;
+            } else if (e.number) {
+              el.number = e.number;
+            } else if (e.email) {
+              el.email = e.email;
+            } else if (e.alt) {
+              el.alt = e.alt;
             }
             
-            return `${shortId}|${e.type}|${content}|${shortActions}`;
-          }).join('\n')
-        : 'none';
+            return el;
+          }), null, 2)
+        : '[]';
   
       const recentMsgs = recentMessages.map(m => `${m.role === 'user' ? 'U' : 'M'}: ${m.text}`).join('\n');
   
@@ -194,9 +208,16 @@
   AVAILABLE PAGES (label|url):
   ${pages}
   
-  PAGE ELEMENTS (id|type|content|actions):
-  (Sections include compressed summaries, buttons show parent section context)
+  PAGE ELEMENTS (JSON array with full element details):
   ${pageEls}
+  
+  Element types:
+  - section: has title, summary (compressed content), tokens
+  - button: has text, context (parent section name)
+  - video: has title, context
+  - phone: has number
+  - email: has email
+  - image: has alt
   
   RECENT CONVERSATION:
   ${recentMsgs}
@@ -211,7 +232,7 @@
       {
         "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"none",
         "auto": true|false,
-        "element_id": "N or null",
+        "element_id": "wa_el_N or null",
         "target_url": "exact url from pages list or null",
         "reason": "brief reason"
       }
@@ -222,9 +243,9 @@
   - Empty [] if no action needed
   - auto:true = execute now (scroll_to automatically)
   - auto:false = confirm first (navigate, fill_form, click_element)
-  - element_id uses compressed format (5 not wa_el_5)
-  - Sections now include content summaries - verify relevance before suggesting scroll
-  - Buttons show parent section - prefer buttons in relevant context
+  - element_id uses full format (wa_el_5 not just 5)
+  - Sections include summary field - verify relevance before suggesting scroll
+  - Buttons include context field - prefer buttons in relevant context
   - If target_page matches current URL (both are paths), use scroll_to. If different, use navigate.
   - Use scroll_to only when already on the target page
   - Max 2 actions`;
