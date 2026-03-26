@@ -283,7 +283,7 @@
       if (el.closest('[class*="cookie"], [class*="consent"], [class*="gdpr"], [class*="newsletter"]')) return;
 
       if (el.tagName.match(/^H[1-6]$/)) {
-        if (currentSection && currentSection.content.length > 0) {
+        if (currentSection) {
           sections.push(currentSection);
         }
         currentSection = {
@@ -300,7 +300,7 @@
       }
     });
 
-    if (currentSection && currentSection.content.length > 0) {
+    if (currentSection) {
       sections.push(currentSection);
     }
 
@@ -460,12 +460,15 @@
     // ── Semantic sections with compressed content ────────────────────────────
     const semanticSections = buildSemanticSections();
     semanticSections.forEach(section => {
-      if (!section.summary || section.summary.length < 10) return;
+      // Keep sections that have either a summary OR subsections
+      if ((!section.summary || section.summary.length < 10) && (!section.subsections || section.subsections.length === 0)) {
+        return; // Skip sections with no content
+      }
 
       const sectionEl = {
         type:    'section',
         title:   section.heading,
-        summary: section.summary,
+        summary: section.summary || '',
         level:   section.level,
         tokens:  section.compressedTokens,
         originalTokens: section.originalTokens,
