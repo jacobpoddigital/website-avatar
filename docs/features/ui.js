@@ -164,14 +164,33 @@
   
     function toggleChat() {
       const panel = document.getElementById('wa-panel');
+      const bubble = document.getElementById('wa-bubble');
       if (!panel) return;
       const isOpen = panel.classList.toggle('wa-open');
   
       if (isOpen) {
         const badge = document.getElementById('wa-badge');
         if (badge) badge.classList.remove('wa-show');
+        
+        // Swap bubble to close icon
+        if (bubble) {
+          bubble.innerHTML = '×<div class="wa-badge" id="wa-badge"></div>';
+          bubble.classList.add('wa-close-mode');
+        }
+        
         // Trigger reconnect via WA.onPanelOpened if it exists
         if (typeof WA.onPanelOpened === 'function') WA.onPanelOpened();
+      } else {
+        // Swap bubble back to avatar
+        if (bubble) {
+          const avatarUrl = window.WA_CONFIG?.avatar_url || '';
+          if (avatarUrl) {
+            bubble.innerHTML = `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`;
+          } else {
+            bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
+          }
+          bubble.classList.remove('wa-close-mode');
+        }
       }
   
       return isOpen;
@@ -179,8 +198,15 @@
   
     function openPanel() {
       const panel = document.getElementById('wa-panel');
+      const bubble = document.getElementById('wa-bubble');
       if (panel && !panel.classList.contains('wa-open')) {
         panel.classList.add('wa-open');
+        
+        // Swap bubble to close icon
+        if (bubble) {
+          bubble.innerHTML = '×<div class="wa-badge" id="wa-badge"></div>';
+          bubble.classList.add('wa-close-mode');
+        }
       }
     }
   
