@@ -27,7 +27,7 @@
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
 
   // ── INJECT WIDGET HTML ───────────────────────────────────────────────────
-  function injectHTML(agentName, config = {}) {
+  function injectHTML(agentName) {
     const name = agentName || 'Website Avatar';
 
     if (!document.getElementById('wa-transition')) {
@@ -40,33 +40,24 @@
     if (!document.getElementById('wa-bubble')) {
       const bubble = document.createElement('button');
       bubble.id        = 'wa-bubble';
-      const avatarUrl = config.avatar_url || '';
-      if (avatarUrl) {
-        bubble.innerHTML = `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`;
-      } else {
-        bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
-      }
-      bubble.onclick   = () => {
-        if (window.WebsiteAvatar && window.WebsiteAvatar.toggleChat) {
-          window.WebsiteAvatar.toggleChat();
-        }
-      };
+      bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
+      bubble.onclick   = () => window.WebsiteAvatar && WebsiteAvatar.toggleChat();
       document.body.appendChild(bubble);
     }
 
     if (!document.getElementById('wa-panel')) {
       const panel = document.createElement('div');
       panel.id        = 'wa-panel';
-      const avatarUrl = config.avatar_url || '';
-      const avatarHtml = avatarUrl ? `<img src="${avatarUrl}" alt="${name}" class="wa-header-avatar" />` : '';
       panel.innerHTML = `
         <div class="wa-header">
           <div class="wa-header-info">
-            ${avatarHtml}
             <div>
               <h4>${name}</h4>
               <span id="wa-status-label">Offline</span>
             </div>
+          </div>
+          <div class="wa-header-actions">
+            <button class="wa-close">×</button>
           </div>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
@@ -77,6 +68,7 @@
       `;
       document.body.appendChild(panel);
 
+      panel.querySelector('.wa-close').onclick       = () => WebsiteAvatar.toggleChat();
       panel.querySelector('#wa-send').onclick        = () => WebsiteAvatar.sendMessage();
       panel.querySelector('#wa-input').onkeydown     = (e) => WebsiteAvatar.handleKey(e);
     }
@@ -121,8 +113,7 @@
         openaiProxyUrl:    PROXY_URL,
         agentName:         config.agentName         || 'Website Avatar',
         primaryColor:      config.primaryColor       || '#c84b2f',
-        debug:             config.debug              || false,
-        avatar_url:        config.avatar_url         || ''
+        debug:             config.debug              || false
       };
 
       const debug = window.WA_CONFIG.debug;
@@ -133,14 +124,27 @@
       link.href  = BASE_URL + '/widget.css';
       document.head.appendChild(link);
 
-      // Inject HTML with agent name and config
-      injectHTML(window.WA_CONFIG.agentName, config);
+      // Inject HTML with agent name from config
+      injectHTML(window.WA_CONFIG.agentName);
 
       // Load discover + agent in parallel, elevenlabs last
+      await Promise.all([
+        loadScript(BASE_URL + '/core/state.js'),
+        loadScript(BASE_URL + '/core/ai.js'),
+        loadScript(BASE_URL + '/core/utils.js')
+      ]);
+      
+      await Promise.all([
+        loadScript(BASE_URL + '/features/actions.js'),
+        loadScript(BASE_URL + '/features/bridge.js'),
+        loadScript(BASE_URL + '/features/ui.js')
+      ]);
+      
       await Promise.all([
         loadScript(BASE_URL + '/wa-discover.js'),
         loadScript(BASE_URL + '/wa-agent.js')
       ]);
+      
       await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
 
       if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
