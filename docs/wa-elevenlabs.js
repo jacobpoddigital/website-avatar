@@ -364,6 +364,21 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
   }
 
+  function skipTurn() {
+    if (!session?.skipTurn) {
+      warn('skipTurn not available');
+      return false;
+    }
+    try {
+      session.skipTurn();
+      log('Turn skipped');
+      return true;
+    } catch(e) {
+      warn('skipTurn error:', e.message);
+      return false;
+    }
+  }
+
   function isConnected() { return !!session; }
 
   // ─── UI ───────────────────────────────────────────────────────────────────
@@ -375,7 +390,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
 
-  WA.bridge = { connect, disconnect, sendText, isConnected };
+  WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
 
   console.log('[WA:Bridge] Reached bridge:ready emit — WA.bus:', !!WA.bus);
   if (WA.bus) {

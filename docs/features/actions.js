@@ -168,6 +168,9 @@
         await WA.sleep(600);
         if (WA.spawnSparkles) WA.spawnSparkles(el);
         if (WA.agentSay) WA.agentSay(`Here's the ${elementTitle}.`);
+        
+        // Skip turn - prevent disconnect during scroll
+        if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
       },
   
       onError: async (err, action) => {
@@ -218,11 +221,10 @@
         action.status    = 'active';
         action.startedAt = Date.now();
         if (WA.saveSession) WA.saveSession(session);
-        if (WA.disconnectBridge) {
-          WA.disconnectBridge().then(() => executeAction(action, session));
-        } else {
-          executeAction(action, session);
-        }
+        
+        // Skip turn instead of disconnect - stay connected during action
+        if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
+        executeAction(action, session);
         return;
       }
   
@@ -247,11 +249,10 @@
               a.status    = 'active';
               a.startedAt = Date.now();
               if (WA.saveSession) WA.saveSession(session);
-              if (WA.disconnectBridge) {
-                WA.disconnectBridge().then(() => executeAction(a, session));
-              } else {
-                executeAction(a, session);
-              }
+              
+              // Skip turn instead of disconnect - stay connected during action
+              if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
+              executeAction(a, session);
             }
           })).concat([{ text: 'No thanks', style: 'deny', action: () => { if (WA.setState) WA.setState('action', 'none'); } }])
         });
@@ -263,11 +264,10 @@
       if (!action || action.status !== 'pending') return;
       if (WA.setState) WA.setState('action', 'active');
       if (WA.updateActionCardStatus) WA.updateActionCardStatus(actionId, 'active');
-      if (WA.disconnectBridge) {
-        WA.disconnectBridge().then(() => executeAction(action, session));
-      } else {
-        executeAction(action, session);
-      }
+      
+      // Skip turn instead of disconnect - stay connected during action
+      if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
+      executeAction(action, session);
     }
   
     function denyAction(actionId, session) {
