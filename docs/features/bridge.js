@@ -123,10 +123,10 @@
         }
       };
   
-      WA.onAgentMessage = (text) => {
+      WA.onAgentMessage = (text, knowledgeContext) => {
         if (typeof WA.agentSay === 'function') WA.agentSay(text);
         if (typeof WA.handleAgentMessage === 'function') {
-          WA.handleAgentMessage(WA._lastUserMessage || '', text);
+          WA.handleAgentMessage(WA._lastUserMessage || '', text, knowledgeContext);
         }
       };
   

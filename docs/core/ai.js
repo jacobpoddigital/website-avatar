@@ -125,7 +125,7 @@
   
     // ─── ACTION DECISION ENGINE ───────────────────────────────────────────────
   
-    async function decideActions(userMessage, agentMessage, pageContext, recentMessages, actions) {
+    async function decideActions(userMessage, agentMessage, knowledgeContext, pageContext, recentMessages, actions) {
       const lower = agentMessage.toLowerCase();
   
       // Skip generic phrases
@@ -163,6 +163,19 @@
   
       const recentMsgs = recentMessages.map(m => `${m.role === 'user' ? 'U' : 'M'}: ${m.text}`).join('\n');
   
+      // Add knowledge context if available
+      const knowledgeSection = knowledgeContext ? `
+  KNOWLEDGE CONTEXT (from agent's response):
+  Intent: ${knowledgeContext.intent || 'unknown'}
+  Target page: ${knowledgeContext.target_page || 'current page'}
+  Section: ${knowledgeContext.section || 'not specified'}
+  Confidence: ${knowledgeContext.confidence}
+  Keywords: ${knowledgeContext.keywords?.join(', ') || 'none'}
+  Matched text: "${knowledgeContext.matched_text?.slice(0, 100) || ''}..."
+  
+  This context shows what the agent knows about the user's intent. Use it to decide the most appropriate action.
+  ` : '';
+  
       const prompt = `You are deciding what actions a website chat widget should take after the agent spoke.
   
   CURRENT PAGE: ${document.title}
@@ -178,6 +191,8 @@
   ${recentMsgs}
   
   AGENT JUST SAID: "${agentMessage}"
+  
+  ${knowledgeSection}
   
   Reply with JSON only:
   {
@@ -197,6 +212,8 @@
   - auto:true = execute now (scroll_to, highlight_element)
   - auto:false = confirm first (navigate, fill_form, click_element)
   - element_id uses compressed format (5 not wa_el_5)
+  - If knowledge context suggests a target_page, strongly consider navigate action
+  - If knowledge context has section info, prefer scroll_to or highlight_element to that section
   - Max 2 actions`;
   
       const t0 = Date.now();

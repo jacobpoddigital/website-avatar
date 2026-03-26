@@ -520,10 +520,11 @@
 
   // ─── AI DECISION ENGINE ───────────────────────────────────────────────────
 
-  async function handleAgentMessage(userMessage, agentMessage) {
+  async function handleAgentMessage(userMessage, agentMessage, knowledgeContext) {
     const result = await WA.decideActions(
       userMessage,
       agentMessage,
+      knowledgeContext,  // Pass knowledge context from Michelle
       WA.PAGE_CONTEXT,
       session.messages.slice(-4),
       session.actions

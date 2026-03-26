@@ -249,10 +249,64 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           if (msg.source === 'ai') {
             // In text-only mode isFinal may be undefined — only skip if explicitly false
             if (msg.isFinal === false) return;
-            const clean = msg.message.replace(/\[[^\]]+\]\s*/g, '').trim();
-            if (!clean) return;
-            log(`Agent: "${clean.slice(0, 80)}"`);
-            if (typeof WA.onAgentMessage === 'function') WA.onAgentMessage(clean);
+            
+            // Parse knowledge context from JSON if present
+            let knowledgeContext = null;
+            let cleanText = msg.message;
+            
+            try {
+              // Look for JSON block in response (```json ... ```)
+              const jsonMatch = msg.message.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[1]);
+                knowledgeContext = {
+                  intent: parsed.intent || null,
+                  target_page: parsed.page && parsed.page !== 'unknown' ? parsed.page : null,
+                  section: parsed.section && parsed.section !== 'unknown' ? parsed.section : null,
+                  confidence: parsed.confidence || 0.8,
+                  keywords: parsed.keywords || [],
+                  matched_text: parsed.answer || cleanText
+                };
+                // Remove JSON block from display text
+                cleanText = msg.message.replace(/```json[\s\S]*?```/g, '').trim();
+              } else {
+                // Fallback: try to find raw JSON object
+                const rawJsonMatch = msg.message.match(/\{[\s\S]*?"intent"[\s\S]*?\}/);
+                if (rawJsonMatch) {
+                  const parsed = JSON.parse(rawJsonMatch[0]);
+                  knowledgeContext = {
+                    intent: parsed.intent || null,
+                    target_page: parsed.page && parsed.page !== 'unknown' ? parsed.page : null,
+                    section: parsed.section && parsed.section !== 'unknown' ? parsed.section : null,
+                    confidence: parsed.confidence || 0.8,
+                    keywords: parsed.keywords || [],
+                    matched_text: parsed.answer || cleanText
+                  };
+                  // Remove JSON from display text
+                  cleanText = msg.message.replace(/\{[\s\S]*?"intent"[\s\S]*?\}/, '').trim();
+                }
+              }
+            } catch(e) {
+              console.warn('[WA:Bridge] Failed to parse knowledge context:', e);
+            }
+            
+            // Clean up system markers and formatting
+            cleanText = cleanText.replace(/\[[^\]]+\]\s*/g, '').trim();
+            cleanText = cleanText.replace(/^Answer:\s*/i, '').trim();
+            cleanText = cleanText.replace(/^JSON:\s*/i, '').trim();
+            
+            if (!cleanText) return;
+            
+            if (DEBUG) {
+              log(`Agent: "${cleanText.slice(0, 80)}"`);
+              if (knowledgeContext) {
+                log('Knowledge context:', knowledgeContext);
+              }
+            }
+            
+            if (typeof WA.onAgentMessage === 'function') {
+              WA.onAgentMessage(cleanText, knowledgeContext);
+            }
             WA.inactivity?.tick();
           }
 
