@@ -157,7 +157,17 @@
         ? ctx.elements.map(e => {
             const shortId = e.id.replace('wa_el_', '');
             const shortActions = e.actions.map(a => a[0]).join(',');
-            return `${shortId}|${e.type}|${e.text || e.title || e.number || e.email || ''}|${shortActions}`;
+            
+            let content = '';
+            if (e.summary) {
+              content = e.summary; // Section summaries from enhanced discovery
+            } else if (e.context && (e.text || e.title)) {
+              content = `${e.text || e.title}|${e.context}`; // Button/video with parent section
+            } else {
+              content = e.text || e.title || e.number || e.email || e.alt || '';
+            }
+            
+            return `${shortId}|${e.type}|${content}|${shortActions}`;
           }).join('\n')
         : 'none';
   
@@ -184,7 +194,8 @@
   AVAILABLE PAGES (label|url):
   ${pages}
   
-  PAGE ELEMENTS (id|type|text/title|actions):
+  PAGE ELEMENTS (id|type|content|actions):
+  (Sections include compressed summaries, buttons show parent section context)
   ${pageEls}
   
   RECENT CONVERSATION:
@@ -212,6 +223,8 @@
   - auto:true = execute now (scroll_to automatically)
   - auto:false = confirm first (navigate, fill_form, click_element)
   - element_id uses compressed format (5 not wa_el_5)
+  - Sections now include content summaries - verify relevance before suggesting scroll
+  - Buttons show parent section - prefer buttons in relevant context
   - If target_page matches current URL (both are paths), use scroll_to. If different, use navigate.
   - Use scroll_to only when already on the target page
   - Max 2 actions`;
