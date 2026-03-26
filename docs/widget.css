@@ -262,8 +262,8 @@
   padding: 8px 13px; font-size: 13px; 
   color: var(--wa-text); outline: none; transition: border-color .2s, box-shadow .2s;
 }
-#wa-input::placeholder { color: var(--wa-text-light); }
-#wa-input:focus { border-color: #008ee866; box-shadow: 0 0 0 3px rgba(200,75,47,.08); }
+#wa-input::placeholder { color: var(--wa-text); }
+#wa-input:focus { border-color: #008ee866; box-shadow: 0 0 0 3px rgba(200,75,47,.08); transform: initial; }
 #wa-send {
   background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
@@ -319,7 +319,7 @@
 
 /* ── WAITING HINT ────────────────────────────────────────────────────────────── */
 .wa-waiting-hint {
-  text-align: center; font-size: 12px; color: var(--wa-text-light);
+  text-align: center; font-size: 12px; color: var(--wa-text);
   padding: 12px 16px; opacity: 0.7; font-style: italic;
   animation: waMsgIn .3s ease;
 }
