@@ -51,7 +51,7 @@
 #wa-bubble {
   position: fixed; bottom: 32px; left: 32px; z-index: 999999999999;
   width: 54px; height: 54px; border-radius: 50%;
-  background: var(--wa-glass-strong);
+  background: var(--wa-glass-bg);
   backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
   border: 1px solid var(--wa-glass-border);
   font-size: 22px; cursor: pointer;
