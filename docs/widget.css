@@ -17,8 +17,8 @@
   --wa-text:            rgba(20,20,18,0.92);
   --wa-text-mid:        rgba(20,20,18,0.55);
   --wa-text-light:      rgba(20,20,18,0.38);
-  --wa-accent:          #c84b2f;
-  --wa-user-bubble:     rgba(20,20,18,0.82);
+  --wa-accent:          #3C82F6;
+  --wa-user-bubble:     #3C82F6;
   --wa-agent-bubble:    rgba(255,255,255,0.45);
   --wa-action-bg:       rgba(255,248,235,0.65);
   --wa-action-border:   rgba(200,150,80,0.30);
@@ -263,7 +263,7 @@
   color: var(--wa-text); outline: none; transition: border-color .2s, box-shadow .2s;
 }
 #wa-input::placeholder { color: var(--wa-text-light); }
-#wa-input:focus { border-color: rgba(200,75,47,.4); box-shadow: 0 0 0 3px rgba(200,75,47,.08); }
+#wa-input:focus { border-color: #008ee866; box-shadow: 0 0 0 3px rgba(200,75,47,.08); }
 #wa-send {
   background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
