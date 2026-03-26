@@ -106,12 +106,28 @@
     // Simple navigate
     const navAction = session.actions.find(a => a.type === 'navigate' && a.status === 'active');
     if (navAction) {
+      // Mark as complete BEFORE reconnecting so state is ready
       navAction.status      = 'complete';
       navAction.completedAt = Date.now();
       WA.saveSession(session);
-      WA.setState('action', 'complete');
+      
+      // Clear action state so new messages can flow
+      WA.setState('action', 'none');
+      
       WA.openPanel();
-      WA.reconnectBridge();
+      
+      // Reconnect and send arrival prompt
+      setTimeout(() => {
+        WA.reconnectBridge();
+        
+        // Wait for connection, then send arrival message
+        setTimeout(() => {
+          if (WA.bridge && WA.bridge.sendText) {
+            const context = WA.PAGE_CONTEXT?.summary || 'this page';
+            WA.bridge.sendText(`I've arrived at ${context}.`);
+          }
+        }, 1000);
+      }, 100);
       return;
     }
 
