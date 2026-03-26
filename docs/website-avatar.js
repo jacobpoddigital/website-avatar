@@ -27,7 +27,7 @@
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
 
   // ── INJECT WIDGET HTML ───────────────────────────────────────────────────
-  function injectHTML(agentName) {
+  function injectHTML(agentName, config = {}) {
     const name = agentName || 'Website Avatar';
 
     if (!document.getElementById('wa-transition')) {
@@ -129,8 +129,8 @@
       link.href  = BASE_URL + '/widget.css';
       document.head.appendChild(link);
 
-      // Inject HTML with agent name from config
-      injectHTML(window.WA_CONFIG.agentName);
+      // Inject HTML with agent name and config
+      injectHTML(window.WA_CONFIG.agentName, config);
 
       // Load discover + agent in parallel, elevenlabs last
       await Promise.all([
