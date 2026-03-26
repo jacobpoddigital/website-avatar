@@ -127,15 +127,15 @@
         const x        = (rect.left - 15) + Math.random() * (rect.width + 30);
         const y        = (rect.top  - 15) + Math.random() * (rect.height + 30);
         const size     = 10 + Math.random() * 12;
-        const delay    = Math.random() * 0.5;
-        const duration = 0.6 + Math.random() * 0.4;
+        const delay    = 1.0 + Math.random() * 0.5;   // Was: Math.random() * 0.5
+        const duration = 1.2 + Math.random() * 0.8;   // Was: 0.6 + Math.random() * 0.4
         star.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;animation:sparkle-pop ${duration}s ease-out ${delay}s both`;
         star.innerHTML = `<path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>`;
         document.body.appendChild(star);
         stars.push(star);
       }
     
-      setTimeout(() => stars.forEach(s => s.remove()), 2500);
+      setTimeout(() => stars.forEach(s => s.remove()), 5000);  // Was: 2500
     }
   
     // ─── EXPOSE ───────────────────────────────────────────────────────────────
