@@ -346,7 +346,7 @@ Reply with JSON only:
       "element_id": "wa_el_N or null",
       "target_url": "exact url from pages list or null",
       "target_label": "human-readable page/section name",
-      "reason": "brief reason why this action is relevant",
+      "reason": "brief user-friendly message for why this is relevant to the intent",
       "confidence": 0.0-1.0 (how confident you are this matches user intent)
     }
   ]
@@ -359,6 +359,7 @@ RULES:
 - auto:true = execute now (scroll_to automatically)
 - auto:false = confirm first (navigate, fill_form, click_element)
 - target_label REQUIRED for all navigate/scroll actions - use the exact page name or section title
+- reason must be user-friendly
 - element_id uses full format (wa_el_5 not just 5)
 - Sections may have subsections - check subsections array for specific services/offerings
 - When agent mentions a specific service (e.g., "SEO", "Web Design"), look in section subsections
