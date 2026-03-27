@@ -244,6 +244,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   async function connect() {
     console.log('[WA:Bridge] connect() called — session:', !!session, '| agentId:', AGENT_ID);
+  
+    // Block connection if no wc_visitor (cookies not accepted)
+    const userId = getUserId();
+    if (!userId) {
+      console.warn('[WA:Bridge] Cannot connect: cookies not accepted (no wc_visitor)');
+      if (typeof WA.agentSay === 'function') {
+        WA.agentSay('Please accept cookies to start chatting.');
+      }
+      return; // Stop here
+    }
 
     if (session) {
       console.log('[WA:Bridge] Already connected — disconnecting first');
