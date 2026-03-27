@@ -29,8 +29,8 @@
         this.rounds++;
         if (WA.DEBUG) console.log(`[WA] Inactivity: ${this.rounds}/${this.max}`);
         if (this.rounds >= this.max) {
-          if (WA.DEBUG) console.log('[WA] Inactivity disconnect');
-          setTimeout(disconnectBridge, 2000);
+          //if (WA.DEBUG) console.log('[WA] Inactivity disconnect');
+          //setTimeout(disconnectBridge, 2000);
         }
       }
     };

@@ -257,7 +257,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
     if (session) {
       console.log('[WA:Bridge] Already connected — disconnecting first');
-      await disconnect();
+      //await disconnect();
     }
 
     if (!AGENT_ID) {
