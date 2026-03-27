@@ -671,7 +671,7 @@
   async function executeDecidedAction(action) {
     const { type, auto, element_id, target_url } = action;
     const isAuto = auto === true;
-
+  
     if (type === 'scroll_to') {
       const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
       const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
@@ -684,16 +684,16 @@
       }, isAuto !== false); // scroll_to is auto by default
       return;
     }
-
+  
     if (type === 'fill_form') {
       WA.proposeAction(session, 'fill_form', 'Help you fill out the contact form.', { fields: WA.freshFields() }, isAuto);
       return;
     }
-
+  
     if (type === 'navigate_then_fill') {
       const contact = WA.getContactPage();
       if (!contact) return;
-      WA.proposeAction(session, 'navigate_then_fill',
+      const result = await WA.proposeAction(session, 'navigate_then_fill',
         `Take you to the ${contact.label} and fill out the enquiry form.`,
         {
           targetPage:          contact.file,
@@ -702,18 +702,19 @@
         },
         isAuto
       );
-      return;
+      // If validation failed, the reconnect is already scheduled
+      return result;
     }
-
+  
     if (type === 'navigate' && target_url) {
       const targetClean  = target_url.replace(/\/$/, '');
       const currentClean = window.location.href.replace(/\/$/, '');
       if (targetClean === currentClean) return;
-
+  
       const page    = WA.getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
       const label   = page ? page.label : 'page';
       const contact = WA.getContactPage();
-
+  
       if (contact && targetClean === contact.file.replace(/\/$/, '')) {
         WA.proposeChoiceAction(session,
           `Would you like to just visit the ${contact.label}, or go there and fill out the enquiry form?`,
@@ -723,11 +724,13 @@
           ]
         );
       } else {
-        WA.proposeAction(session, 'navigate', `Take you to the ${label}.`, { targetPage: target_url, targetLabel: label }, isAuto);
+        const result = await WA.proposeAction(session, 'navigate', `Take you to the ${label}.`, { targetPage: target_url, targetLabel: label }, isAuto);
+        // If validation failed, reconnect is already scheduled
+        return result;
       }
       return;
     }
-
+  
     if (type === 'click_element' && element_id) {
       const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
       const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);

@@ -216,20 +216,42 @@
     const hasActive = session.actions.some(a => ['pending','active'].includes(a.status));
     if (hasActive) {
       if (WA.DEBUG) console.log('[WA] Action already pending/active — skipping proposal');
-      return;
+      return { failed: false, reason: 'action_already_active' }; // Return status
     }
-
+  
     const handler = ActionRegistry[type];
-
+  
     // For navigate actions, validate URL first
     if (type === 'navigate' && payload?.targetPage) {
       const isValid = await validateUrl(payload.targetPage);
       if (!isValid) {
-        if (WA.DEBUG) console.warn(`[WA] Skipping action — target URL not valid: ${payload.targetPage}`);
-        return; // Skip proposing this action
+        if (WA.DEBUG) console.warn(`[WA] Navigation blocked — 404 detected: ${payload.targetPage}`);
+        
+        // Record the failure in session state
+        session.lastUrlValidationFailure = {
+          targetUrl: payload.targetPage,
+          targetLabel: payload.targetLabel,
+          attemptedAt: Date.now(),
+          userMessage: WA._lastUserMessage || '',
+          agentResponse: session.messages[session.messages.length - 1]?.text || ''
+        };
+        
+        if (WA.saveSession) WA.saveSession(session);
+        
+        // Provide immediate feedback to user
+        if (WA.agentSay) {
+          WA.agentSay(`I tried to find "${payload.targetLabel}" but that page isn't available. Let me suggest an alternative.`);
+        }
+        
+        // Force reconnect after brief delay so agent can see the failure
+        if (WA.reconnectBridge) {
+          setTimeout(() => WA.reconnectBridge(), 1500);
+        }
+        
+        return { failed: true, reason: 'url_validation_failed' }; // Return failure status
       }
     }
-
+  
     const action  = createAction(type, description, payload);
     session.actions.push(action);
     if (WA.saveSession) WA.saveSession(session);
@@ -246,7 +268,7 @@
       // Skip turn instead of disconnect - stay connected during action
       if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
       executeAction(action, session);
-      return;
+      return { failed: false }; // Success
     }
 
     if (WA.setState) WA.setState('action', 'proposed');

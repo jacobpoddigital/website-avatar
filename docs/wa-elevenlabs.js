@@ -61,13 +61,42 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       try { return JSON.parse(sessionStorage.getItem('wa_session') || '{}'); } catch { return {}; }
     })();
     if (!s.messages?.length) return null;
-
+  
     const lines = ['SESSION CONTEXT:'];
     const recent = s.messages.slice(-8);
     lines.push('RECENT CONVERSATION:');
     recent.forEach(m => lines.push(`  ${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
     lines.push('');
-
+  
+    // URL validation failure - report FIRST so agent can immediately act
+    if (s.lastUrlValidationFailure) {
+      const failure = s.lastUrlValidationFailure;
+      const isRecent = Date.now() - failure.attemptedAt < 10000; // Last 10 seconds
+      
+      if (isRecent) {
+        lines.push('⚠️ CRITICAL: NAVIGATION FAILURE DETECTED');
+        lines.push(`Failed URL: ${failure.targetUrl}`);
+        lines.push(`Page label: "${failure.targetLabel}"`);
+        lines.push(`User asked: "${failure.userMessage}"`);
+        lines.push(`You responded: "${failure.agentResponse}"`);
+        lines.push('');
+        lines.push('PROBLEM: The URL you suggested returned a 404 error. The page does not exist.');
+        lines.push('');
+        lines.push('REQUIRED ACTION:');
+        lines.push('1. Check the AVAILABLE PAGES list in your context for valid alternatives');
+        lines.push('2. Suggest a different page that matches the user\'s intent');
+        lines.push('3. If no exact match exists, suggest the closest alternative and explain');
+        lines.push('4. Apologize for the confusion and move forward with a valid suggestion');
+        lines.push('');
+        
+        // Clear the failure after reporting
+        delete s.lastUrlValidationFailure;
+        try {
+          sessionStorage.setItem('wa_session', JSON.stringify(s));
+        } catch(e) {}
+      }
+    }
+  
     // Active form fill — critical: do NOT say form was submitted
     const activeForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'active');
     if (activeForm) {

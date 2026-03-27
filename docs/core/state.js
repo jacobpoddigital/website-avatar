@@ -42,7 +42,13 @@
     const SESSION_KEY = 'wa_session';
   
     function freshSession() {
-      return { messages: [], actions: [], activeFormActionId: null, isOpen: false };
+      return { 
+        messages: [], 
+        actions: [], 
+        activeFormActionId: null, 
+        isOpen: false,
+        lastUrlValidationFailure: null
+      };
     }
   
     function loadSession() {
