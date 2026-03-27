@@ -5,7 +5,9 @@
  */
 
 (function () {
-    const WA = window.WebsiteAvatar || (window.WebsiteAvatar = {});
+  const WA = window.WebsiteAvatar || (window.WebsiteAvatar = {});
+  const CONFIG = window.WA_CONFIG || {};
+  const SESSION_URL = CONFIG.sessionUrl || 'https://backend.jacob-e87.workers.dev/session';
   
     let saveTimeout = null;
     let lastSavedMessageCount = 0;
@@ -70,7 +72,7 @@
       };
   
       try {
-        const response = await fetch('/session', {
+        const response = await fetch(SESSION_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -110,7 +112,7 @@
       }
   
       try {
-        const response = await fetch(`/session?user_id=${userId}`);
+        const response = await fetch(`${SESSION_URL}?user_id=${userId}`);
         
         if (!response.ok) {
           throw new Error(`Session load failed: ${response.status}`);

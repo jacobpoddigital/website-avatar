@@ -25,6 +25,8 @@
   const CONFIG_URL = 'https://backend.jacob-e87.workers.dev/config';
   // OpenAI proxy — always this Worker, never exposed in script tag
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
+  // Session endpoint — always this Worker
+  const SESSION_URL = 'https://backend.jacob-e87.workers.dev/session';
 
   // ── INJECT GREETING WIDGET HTML ─────────────────────────────────────────
   function injectGreeting(config = {}) {
@@ -138,6 +140,7 @@
       window.WA_CONFIG = {
         elevenlabsAgentId: config.elevenlabsAgentId || '',
         openaiProxyUrl:    PROXY_URL,
+        sessionUrl:        SESSION_URL,
         agentName:         config.agentName || 'Website Avatar',
         primaryColor:      config.primaryColor || '#c84b2f',
         debug:             config.debug || false,
