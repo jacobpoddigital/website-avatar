@@ -195,7 +195,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   // ─── CONVERSATION ID CAPTURE ──────────────────────────────────────────────
 
-  async function captureConversationId(session) {
+  async function captureConversationId(sessionObj) {
+    if (!sessionObj) {
+      console.warn('[WA:Bridge] ⚠️ No session object provided to captureConversationId');
+      return null;
+    }
+    
     const props = ['conversationId', 'id', 'sessionId', 'conversation_id'];
     let conversationId = null;
     
@@ -203,7 +208,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     
     // Poll until conversation ID exists (up to 2 seconds)
     for (let i = 0; i < 10; i++) {
-      conversationId = props.map(p => session[p]).find(v => !!v);
+      conversationId = props.map(p => sessionObj[p]).find(v => !!v);
       if (conversationId) {
         console.log('[WA:Bridge] ✅ Found conversation_id on attempt', i + 1);
         break;
@@ -212,7 +217,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
     
     if (!conversationId) {
-      console.log('[WA:Bridge] 📋 Session object keys:', Object.keys(session || {}));
+      console.log('[WA:Bridge] 📋 Session object keys:', Object.keys(sessionObj || {}));
     }
     
     return conversationId;
@@ -272,12 +277,15 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           context: contextToSend || ''
         },
 
-        onConnect: async () => {
+        onConnect: async function() {
           console.log('[WA:Bridge] onConnect fired — session established');
           log('Connected');
           setConnectUI(true);
 
           // ✅ CAPTURE ELEVENLABS CONVERSATION_ID (with polling)
+          // Wait a tick for outer 'session' variable to be assigned
+          await new Promise(res => setTimeout(res, 50));
+          
           const conversationId = await captureConversationId(session);
           
           if (conversationId) {
