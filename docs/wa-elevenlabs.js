@@ -309,21 +309,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         hasUserContext: !!userContext
       });
 
-      session = await Conversation.startSession(conversationConfig);
-      
-      console.log('[WA:Bridge] Session created:', !!session);
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // EVENT HANDLERS
-      // ═══════════════════════════════════════════════════════════════════════
-      
-      session.setEventCallbacks({
+      session = await Conversation.startSession({
+        ...conversationConfig,
+        
+        // Event handlers must be in the config, not set after
         onConnect: () => {
           console.log('[WA:Bridge] ✅ Connected');
           isConnecting = false;
           log('Connected');
           setConnectUI(true);
-
+      
           const panel = document.getElementById('wa-panel');
           if (panel && !panel.classList.contains('wa-open')) {
             panel.classList.add('wa-open');
@@ -331,7 +326,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             if (badge) badge.classList.remove('wa-show');
             if (typeof WA._openPanelDirect === 'function') WA._openPanelDirect();
           }
-
+      
           setTimeout(() => {
             if (!session?.sendUserMessage) return;
             const prompt = buildReconnectPrompt();
@@ -340,10 +335,10 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
               session.sendUserMessage(prompt);
             }
           }, 400);
-
+      
           if (typeof WA.onBridgeConnected === 'function') WA.onBridgeConnected();
         },
-
+      
         onDisconnect: () => {
           console.log('[WA:Bridge] ❌ Disconnected');
           isConnecting = false;
@@ -361,11 +356,11 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             }
           }
         },
-
+      
         onMessage: (msg) => {
           console.log('[WA:Bridge] Message:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
           if (!msg.message) return;
-
+      
           if (msg.source === 'ai') {
             if (msg.isFinal === false) return;
             
@@ -420,7 +415,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             }
             WA.inactivity?.tick();
           }
-
+      
           if (msg.source === 'user') {
             if (msg.isFinal === false) return;
             const text = msg.message.trim();
@@ -429,7 +424,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             }
           }
         },
-
+      
         onError: (err) => {
           console.error('[WA:Bridge] Error:', err);
           isConnecting = false;
@@ -446,12 +441,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             WA.onBridgeDisconnected();
           }
         },
-
+      
         onStatusChange: (info) => {
           console.log('[WA:Bridge] Status:', info.status);
           log('Status:', info.status);
         }
       });
+      
+      console.log('[WA:Bridge] Session created:', !!session);
 
     } catch (err) {
       console.error('[WA:Bridge] Connection failed:', err.message, err);
