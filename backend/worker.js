@@ -88,6 +88,9 @@ export default {
 
       const userId = body?.user_id;
       const conversationId = body?.conversation_id;
+      
+      console.log('[Session] Frontend save:', { userId, conversationId, messageCount: body?.transcript?.length });
+      
       if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
 
       const transcript = JSON.stringify(body.transcript || []);
@@ -106,9 +109,10 @@ export default {
         .bind(userId, conversationId, transcript, analysis)
         .run();
 
+        console.log('[Session] ✅ Saved to DB:', conversationId);
         return json({ message: 'Session saved', conversation_id: conversationId }, 200, cors);
       } catch (err) {
-        console.error('[Worker] /session DB error:', err);
+        console.error('[Session] ❌ DB error:', err);
         return json({ error: 'Database error' }, 500, cors);
       }
     }
@@ -127,32 +131,67 @@ export default {
         .bind(userId)
         .all();
 
+        console.log('[Session] GET for user:', userId, '| found:', results.length);
         return json(results, 200, cors);
       } catch (err) {
-        console.error('[Worker] GET /session DB error:', err);
+        console.error('[Session] GET DB error:', err);
         return json({ error: 'Database error' }, 500, cors);
       }
     }
 
+    // ── POST /webhook/elevenlabs ──────────────────────────
     if (url.pathname === '/webhook/elevenlabs' && request.method === 'POST') {
+      console.log('[Webhook] 🔔 ElevenLabs webhook received');
+      console.log('[Webhook] Headers:', Object.fromEntries(request.headers));
+      
       // Verify HMAC
       const signature = request.headers.get('X-Elevenlabs-Signature');
-      if (!signature) return json({ error: 'Missing signature' }, 403, cors);
+      if (!signature) {
+        console.error('[Webhook] ❌ Missing signature');
+        return json({ error: 'Missing signature' }, 403, cors);
+      }
     
       const bodyText = await request.text();
+      console.log('[Webhook] Body length:', bodyText.length, 'bytes');
+      console.log('[Webhook] Body preview:', bodyText.slice(0, 500));
+      
       const valid = await verifyHmac(bodyText, signature, env.WEBHOOK_SECRET);
-      if (!valid) return json({ error: 'Invalid signature' }, 403, cors);
+      if (!valid) {
+        console.error('[Webhook] ❌ Invalid signature');
+        console.log('[Webhook] Expected secret:', env.WEBHOOK_SECRET ? '(set)' : '(missing)');
+        return json({ error: 'Invalid signature' }, 403, cors);
+      }
+      
+      console.log('[Webhook] ✅ Signature verified');
     
       // Parse JSON after verification
       let body;
-      try { body = JSON.parse(bodyText); } catch(e) {
+      try { 
+        body = JSON.parse(bodyText); 
+      } catch(e) {
+        console.error('[Webhook] ❌ Invalid JSON:', e.message);
         return json({ error: 'Invalid JSON' }, 400, cors);
       }
+      
+      console.log('[Webhook] 📦 Parsed payload:', {
+        conversation_id: body?.conversation_id,
+        event_type: body?.type,
+        has_transcript: !!body?.transcript,
+        transcript_length: body?.transcript?.length,
+        has_analysis: !!body?.analysis,
+        dynamic_vars: body?.conversation_initiation_client_data?.dynamic_variables
+      });
     
       const userId = body?.conversation_initiation_client_data?.dynamic_variables?.user_id;
       const conversationId = body?.conversation_id;
     
-      if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
+      console.log('[Webhook] Extracted:', { userId, conversationId });
+    
+      if (!userId || !conversationId) {
+        console.error('[Webhook] ❌ Missing user_id or conversation_id');
+        console.log('[Webhook] Full body:', JSON.stringify(body, null, 2));
+        return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
+      }
     
       const transcript = JSON.stringify(body.transcript || []);
       const analysis = JSON.stringify(body.analysis || {});
@@ -162,30 +201,42 @@ export default {
           INSERT INTO conversations (user_id, conversation_id, transcript, analysis)
           VALUES (?, ?, ?, ?)
           ON CONFLICT(conversation_id) 
-          DO UPDATE SET transcript = excluded.transcript,
-                        analysis = excluded.analysis,
-                        created_at = CURRENT_TIMESTAMP
+          DO UPDATE SET 
+            transcript = excluded.transcript,
+            analysis = excluded.analysis,
+            created_at = CURRENT_TIMESTAMP
         `).bind(userId, conversationId, transcript, analysis).run();
     
+        console.log('[Webhook] ✅ Session saved:', conversationId);
         return json({ message: 'Session saved', conversation_id: conversationId }, 200, cors);
       } catch(err) {
-        console.error('[Worker] Failed to save session:', err);
+        console.error('[Webhook] ❌ DB error:', err);
         return json({ error: 'Database error' }, 500, cors);
       }
     }
     
-    // HMAC helper
+    // ── HMAC VERIFICATION HELPER ──────────────────────────
     async function verifyHmac(bodyText, signature, secret) {
-      const encoder = new TextEncoder();
-      const keyData = encoder.encode(secret);
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
-      );
-    
-      const sigBuffer = hexToBuffer(signature);
-      const bodyBuffer = encoder.encode(bodyText);
-    
-      return crypto.subtle.verify('HMAC', cryptoKey, sigBuffer, bodyBuffer);
+      if (!secret) {
+        console.error('[HMAC] No webhook secret configured');
+        return false;
+      }
+      
+      try {
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(secret);
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+        );
+      
+        const sigBuffer = hexToBuffer(signature);
+        const bodyBuffer = encoder.encode(bodyText);
+      
+        return crypto.subtle.verify('HMAC', cryptoKey, sigBuffer, bodyBuffer);
+      } catch(e) {
+        console.error('[HMAC] Verification error:', e.message);
+        return false;
+      }
     }
     
     function hexToBuffer(hex) {
