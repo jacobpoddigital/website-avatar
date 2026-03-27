@@ -840,7 +840,16 @@
     const hasNavAction     = session.actions.some(a => a.type === 'navigate' && a.status === 'active');
     const hasFormResume    = !!(session.activeFormActionId &&
                                session.actions.find(a => a.id === session.activeFormActionId && a.status === 'active'));
-
+  
+    // ─── SESSION SYNC DEBUG ───────────────────────────────────────────────────
+    if (WA.DEBUG) {
+      console.log('[WA:Agent] Init state:');
+      console.log('  - Messages:', session.messages.length);
+      console.log('  - Returning user:', !!WA.isReturningUser);
+      console.log('  - User context:', WA.userContext);
+      console.log('  - Previous visit messages:', WA.lastVisitMessageCount || 0);
+    }
+  
     // Restore messages
     const msgs = document.getElementById('wa-messages');
     if (msgs) {
@@ -909,6 +918,18 @@
     WA.setupBridgeCallbacks();
   }
 
+  // ─── ASYNC INIT WRAPPER (FOR SESSION SYNC) ───────────────────────────────
+  async function initWithBackendSession() {
+    // Load backend session first (if wa-session-sync is loaded)
+    if (typeof WA.loadSessionFromBackend === 'function') {
+      await WA.loadSessionFromBackend();
+      if (WA.DEBUG) console.log('[WA:Agent] Backend session loaded before init');
+    }
+
+    // Then proceed with normal init
+    init();
+  }
+
   // ─── EXPOSE PUBLIC API ────────────────────────────────────────────────────
 
   WA.sendMessage         = sendMessage;
@@ -940,9 +961,9 @@
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => waitForPanel(init));
+    document.addEventListener('DOMContentLoaded', () => waitForPanel(initWithBackendSession));
   } else {
-    waitForPanel(init);
+    waitForPanel(initWithBackendSession);
   }
 
 })();

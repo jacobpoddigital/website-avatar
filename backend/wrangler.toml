@@ -2,6 +2,16 @@ name = "backend"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
+# KV namespace you already have
 [[kv_namespaces]]
 binding = "CONFIGS"
 id = "4c0d294800474fe28ba486a34b13c461"
+
+# D1 database binding for sessions
+[[d1_databases]]
+binding = "website_avatar_db"
+database_name = "website-avatar-db"
+database_id = "4b05176c-787a-4cdc-817c-f4ef6917a84f"
+
+[env.production]
+WEBHOOK_SECRET = "wsec_d6c29aa6c67574c03c7cbea90c9c4a6854af1e2088468521f9df1aef87494a94"

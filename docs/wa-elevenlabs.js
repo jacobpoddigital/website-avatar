@@ -18,12 +18,18 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   function log  (...a) { if (DEBUG) console.log ('[WA:Bridge]', ...a); }
   function warn (...a) {           console.warn('[WA:Bridge]', ...a); }
 
+  // ─── USER ID HELPER ──────────────────────────────────────────────────────
+  function getUserId() {
+    return localStorage.getItem('wc_visitor') || null;
+  }
+
   // ─── STARTUP DIAGNOSTICS ─────────────────────────────────────────────────
   console.log('[WA:Bridge] Module executing');
   console.log('[WA:Bridge] Conversation imported:', typeof Conversation);
   console.log('[WA:Bridge] window.WebsiteAvatar exists:', !!window.WebsiteAvatar);
   console.log('[WA:Bridge] WA.bus exists:', !!WA.bus);
   console.log('[WA:Bridge] WA_CONFIG:', JSON.stringify(window.WA_CONFIG || {}));
+  console.log('[WA:Bridge] user_id (wc_visitor):', getUserId());
 
   if (!Conversation) {
     warn('Failed to import Conversation from @elevenlabs/client');
@@ -53,6 +59,47 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         lines.push(`  - ${f.label}${f.required ? ' *' : ''} (${f.name})`);
       });
     }
+    return lines.join('\n');
+  }
+
+  function buildUserContext() {
+    // Build returning user context summary if available
+    if (!WA.userContext || !WA.isReturningUser) return null;
+
+    const ctx = WA.userContext;
+    const lines = [];
+
+    lines.push('═══════════════════════════════════════════');
+    lines.push('🔄 RETURNING VISITOR CONTEXT');
+    lines.push('═══════════════════════════════════════════');
+
+    if (ctx.name) lines.push(`Name: ${ctx.name}`);
+    if (ctx.email) lines.push(`Email: ${ctx.email}`);
+    if (ctx.phone) lines.push(`Phone: ${ctx.phone}`);
+    if (ctx.company) lines.push(`Company: ${ctx.company}`);
+    if (ctx.websiteUrl) lines.push(`Website: ${ctx.websiteUrl}`);
+    if (ctx.businessType) lines.push(`Business Type: ${ctx.businessType}`);
+    if (ctx.currentMarketingApproach) lines.push(`Marketing Approach: ${ctx.currentMarketingApproach}`);
+    if (ctx.mainChallenge) lines.push(`Main Challenge: ${ctx.mainChallenge}`);
+    if (ctx.growthIntent) lines.push(`Growth Intent: ${ctx.growthIntent}`);
+    if (ctx.qualificationStage) lines.push(`Qualification Stage: ${ctx.qualificationStage}`);
+    if (ctx.lastTopic) lines.push(`Last Topic: ${ctx.lastTopic}`);
+
+    if (WA.lastVisitMessageCount) {
+      lines.push(`Previous conversation length: ${WA.lastVisitMessageCount} messages`);
+    }
+
+    lines.push('═══════════════════════════════════════════');
+    lines.push('');
+    lines.push('📋 INSTRUCTIONS:');
+    lines.push('- Greet them naturally using their name if you have it');
+    lines.push('- Reference their previous conversation or challenge naturally');
+    lines.push('- DO NOT re-ask questions you already have answers for');
+    lines.push('- Continue from where you left off');
+    lines.push('- Never say "I have your context" or "according to my records"');
+    lines.push('- Just demonstrate that you remember them naturally');
+    lines.push('═══════════════════════════════════════════');
+
     return lines.join('\n');
   }
 
@@ -201,37 +248,53 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (session) {
       console.log('[WA:Bridge] Already connected — disconnecting first');
       await disconnect();
-      return;
     }
 
     if (!AGENT_ID) {
-      warn('No agent ID — check backend KV config');
+      warn('No agent ID — cannot connect');
+      if (typeof WA.agentSay === 'function') WA.agentSay('Configuration error. Please refresh.');
       return;
     }
 
     const btn = document.getElementById('wa-connect-btn');
-    if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
-
+    if (btn) { btn.textContent = 'Connecting...'; btn.disabled = true; }
     if (typeof WA.onBridgeConnecting === 'function') WA.onBridgeConnecting();
 
-    const reconnectCtx  = buildReconnectContext();
-    const pageCtx       = buildPageContext();
-    const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
-
-    console.log('[WA:Bridge] Calling Conversation.startSession...');
-    console.log('[WA:Bridge] Context length:', contextToSend?.length || 0, 'chars');
-
     try {
+      // Get user_id
+      const userId = getUserId();
+      if (!userId) {
+        console.warn('[WA:Bridge] No wc_visitor found — session will not be saved');
+      }
+
+      // Build context (page + user + session)
+      const pageContext = buildPageContext();
+      const userContext = buildUserContext();
+      const sessionContext = buildReconnectContext();
+
+      const contextParts = [pageContext];
+      if (userContext) contextParts.push(userContext);
+      if (sessionContext) contextParts.push(sessionContext);
+
+      const contextToSend = contextParts.join('\n\n');
+
+      console.log('[WA:Bridge] Starting session with context length:', contextToSend.length);
+      if (DEBUG) console.log('[WA:Bridge] Full context:\n', contextToSend);
+
+      // Build dynamic variables
+      const dynamicVars = { context: contextToSend };
+      if (userId) {
+        dynamicVars.user_id = userId;
+        console.log('[WA:Bridge] Including user_id in dynamic variables:', userId);
+      }
+
       session = await Conversation.startSession({
         agentId: AGENT_ID,
-
-        // Text-only / chat mode — no audio, no mic
-        overrides: {
-          conversation: { textOnly: true }
-        },
-
-        // Inject page + session context as dynamic variable
-        dynamicVariables: contextToSend ? { context: contextToSend } : undefined,
+        clientTools: {},
+        overrides: { agent: { prompt: { prompt: contextToSend } } },
+        
+        // Pass dynamic variables including user_id
+        dynamicVariables: dynamicVars,
 
         onConnect: () => {
           console.log('[WA:Bridge] onConnect fired — session established');
@@ -420,6 +483,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
 
   WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
+  WA.getUserId = getUserId; // Expose for session sync module
 
   console.log('[WA:Bridge] Reached bridge:ready emit — WA.bus:', !!WA.bus);
   if (WA.bus) {
