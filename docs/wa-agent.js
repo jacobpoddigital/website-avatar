@@ -717,10 +717,12 @@
     const validActions = result.actions.filter(a => a.type && a.type !== 'none');
     if (!validActions.length) return;
 
-    // Multiple high-confidence actions → show multi-action card
+    // Multiple high-confidence actions → show multi-action card (never auto)
     const highConfidence = validActions.filter(a => (a.confidence || 0.8) >= 0.7);
     if (highConfidence.length > 1) {
-      renderMultiActionCard(highConfidence);
+      // Force all actions to require confirmation when showing choice card
+      const manualActions = highConfidence.map(a => ({ ...a, auto: false }));
+      renderMultiActionCard(manualActions);
       return;
     }
 
