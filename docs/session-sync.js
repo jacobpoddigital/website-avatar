@@ -140,34 +140,16 @@
   // ─── HOOK INTO MESSAGE FLOW ───────────────────────────────────────────────
 
   function hookIntoMessages() {
-    const originalUserSay = WA.userSay;
-    const originalAgentSay = WA.agentSay;
-
-    if (originalUserSay) {
-      WA.userSay = function(text) {
-        originalUserSay.call(this, text);
-        console.log('[SessionSync] 📝 User message - queuing save');
-        debouncedSave(); // Save after user message
-      };
-    }
-
-    if (originalAgentSay) {
-      WA.agentSay = function(text) {
-        originalAgentSay.call(this, text);
-        console.log('[SessionSync] 📝 Agent message - queuing save');
-        debouncedSave(); // Save after agent message
-      };
-    }
+    // Message hooks disabled - we now save on disconnect only
+    // The full session is sent via onDisconnect in wa-elevenlabs.js
+    
+    console.log('[SessionSync] Message hooks disabled - using disconnect-based saving');
   }
 
   // ─── PAGE UNLOAD HANDLER ──────────────────────────────────────────────────
 
   function setupUnloadHandler() {
     window.addEventListener('beforeunload', () => {
-      // Cancel any pending debounced save
-      clearTimeout(saveTimeout);
-      
-      // Immediate save on page unload (synchronous)
       const userId = getUserId();
       const session = WA.getSession ? WA.getSession() : {};
       
@@ -175,7 +157,6 @@
         return;
       }
 
-      // Use ElevenLabs conversation_id if available
       const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
 
       const payload = {
@@ -184,13 +165,14 @@
         transcript: session.messages,
         analysis: {
           lastSaved: new Date().toISOString(),
-          messageCount: session.messages.length
+          messageCount: session.messages.length,
+          savedVia: 'page_unload'
         }
       };
 
       // Use sendBeacon for reliable unload save
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-      navigator.sendBeacon(SESSION_URL, blob);
+      navigator.sendBeacon('https://backend.jacob-e87.workers.dev/session', blob);
       
       console.log('[SessionSync] 🚪 Page unload - saving via beacon');
     });

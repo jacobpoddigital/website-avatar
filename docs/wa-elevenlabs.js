@@ -327,11 +327,45 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           if (typeof WA.onBridgeConnected === 'function') WA.onBridgeConnected();
         },
 
-        onDisconnect: () => {
+        onDisconnect: async () => {
           console.log('[WA:Bridge] onDisconnect fired');
           log('Disconnected');
           session = null;
           setConnectUI(false);
+          
+          // Send final session data to backend
+          const waSession = WA.getSession ? WA.getSession() : {};
+          const userId = WA.getUserId ? WA.getUserId() : null;
+          
+          if (userId && waSession.elevenlabsConversationId && waSession.messages?.length) {
+            console.log('[WA:Bridge] 💾 Sending final session to backend...');
+            
+            try {
+              const response = await fetch('https://backend.jacob-e87.workers.dev/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  user_id: userId,
+                  conversation_id: waSession.elevenlabsConversationId,
+                  transcript: waSession.messages,
+                  analysis: {
+                    lastSaved: new Date().toISOString(),
+                    messageCount: waSession.messages.length,
+                    disconnectedAt: new Date().toISOString()
+                  }
+                })
+              });
+              
+              if (response.ok) {
+                console.log('[WA:Bridge] ✅ Final session saved on disconnect');
+              } else {
+                console.warn('[WA:Bridge] ⚠️ Failed to save final session:', response.status);
+              }
+            } catch (err) {
+              console.error('[WA:Bridge] ❌ Error saving final session:', err);
+            }
+          }
+          
           if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
         },
 
