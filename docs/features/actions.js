@@ -243,8 +243,8 @@
           WA.agentSay(`I tried to find "${payload.targetLabel}" but that page isn't available. Let me suggest an alternative.`);
         }
         
-        // Force reconnect after brief delay so agent can see the failure
-        if (WA.reconnectBridge) {
+        // Reconnect only if disconnected - if connected, agent will see failure on next turn
+        if (WA.reconnectBridge && WA.bridge && !WA.bridge.isConnected()) {
           setTimeout(() => WA.reconnectBridge(), 1500);
         }
         

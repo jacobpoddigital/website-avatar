@@ -268,15 +268,20 @@
         "auto": true|false,
         "element_id": "wa_el_N or null",
         "target_url": "exact url from pages list or null",
-        "reason": "brief reason"
+        "target_label": "human-readable page/section name",
+        "reason": "brief reason why this action is relevant",
+        "confidence": 0.0-1.0 (how confident you are this matches user intent)
       }
     ]
   }
 
   RULES:
   - Empty [] if no action needed
+  - Return multiple actions when there are several valid options (e.g., "browse product page" AND "add to cart")
+  - Order actions by confidence score (highest first)
   - auto:true = execute now (scroll_to automatically)
   - auto:false = confirm first (navigate, fill_form, click_element)
+  - target_label REQUIRED for all navigate/scroll actions - use the exact page name or section title
   - element_id uses full format (wa_el_5 not just 5)
   - Sections may have subsections - check subsections array for specific services/offerings
   - When agent mentions a specific service (e.g., "SEO", "Web Design"), look in section subsections
@@ -284,7 +289,8 @@
   - Buttons include context field - prefer buttons in relevant context
   - If target_page matches current URL (both are paths), use scroll_to. If different, use navigate.
   - Use scroll_to only when already on the target page
-  - Max 2 actions`;
+  - confidence: 1.0 = perfect match, 0.8 = strong match, 0.6 = possible match, <0.5 = weak/uncertain
+  - Max 4 actions (prioritize quality over quantity)`;
 
       const t0 = Date.now();
       if (WA.DEBUG) console.log('[WA] → Action decision request sent');
@@ -294,7 +300,7 @@
           method:  'POST',
           signal:  decideController.signal,
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ prompt, maxTokens: 200 })
+          body:    JSON.stringify({ prompt, maxTokens: 300 })
         });
 
         if (!res.ok) { 

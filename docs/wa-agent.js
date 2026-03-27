@@ -523,14 +523,68 @@
   // ─── ACTION CARD RENDERING ────────────────────────────────────────────────
 
   function renderActionCard(action) {
+    // Enhanced card with destination context
+    let enhancedMessage = action.description;
+    
+    // Add destination name if available
+    if (action.payload?.targetLabel) {
+      enhancedMessage = `${action.description}\n\n→ Destination: ${action.payload.targetLabel}`;
+    } else if (action.payload?.elementTitle) {
+      enhancedMessage = `${action.description}\n\n→ Section: ${action.payload.elementTitle}`;
+    }
+    
     WA.renderCard({
       label:      'Proposed action',
-      message:    action.description,
+      message:    enhancedMessage,
       actionId:   action.id,
       buttons: [
         { text: "Let's do it", style: 'confirm', action: () => WA.confirmAction(action.id, session) },
         { text: 'No thanks',   style: 'deny',    action: () => WA.denyAction(action.id, session) }
       ]
+    });
+  }
+  
+  function renderMultiActionCard(actions) {
+    // Sort by confidence (if available)
+    const sorted = [...actions].sort((a, b) => 
+      (b.confidence || 0.8) - (a.confidence || 0.8)
+    );
+    
+    // Build button options from actions
+    const buttons = sorted.map(action => {
+      let label = action.description || action.type;
+      
+      // Add destination context to button label
+      if (action.target_label) {
+        label = `${action.target_label}`;
+      }
+      
+      // Add confidence indicator for uncertain actions
+      const conf = action.confidence || 0.8;
+      const indicator = conf < 0.7 ? ' (?)' : '';
+      
+      return {
+        text: label + indicator,
+        style: 'confirm',
+        action: async () => {
+          await executeDecidedAction(action);
+        }
+      };
+    });
+    
+    // Add "No thanks" option
+    buttons.push({ 
+      text: 'No thanks', 
+      style: 'deny', 
+      action: () => { 
+        if (WA.setState) WA.setState('action', 'none');
+      } 
+    });
+    
+    WA.renderCard({
+      label: 'Choose an action',
+      message: 'I found a few options for you:',
+      buttons: buttons
     });
   }
 
@@ -659,50 +713,72 @@
     // Double-check still clear
     if (session.actions.some(a => ['pending','active'].includes(a.status))) return;
 
-    for (const action of result.actions) {
-      if (!action.type || action.type === 'none') continue;
+    // Filter out 'none' actions
+    const validActions = result.actions.filter(a => a.type && a.type !== 'none');
+    if (!validActions.length) return;
+
+    // Multiple high-confidence actions → show multi-action card
+    const highConfidence = validActions.filter(a => (a.confidence || 0.8) >= 0.7);
+    if (highConfidence.length > 1) {
+      renderMultiActionCard(highConfidence);
+      return;
+    }
+
+    // Single action or mixed confidence → execute in sequence
+    for (const action of validActions) {
       await executeDecidedAction(action);
-      if (result.actions.indexOf(action) < result.actions.length - 1) {
+      if (validActions.indexOf(action) < validActions.length - 1) {
         await WA.sleep(300);
       }
     }
   }
 
   async function executeDecidedAction(action) {
-    const { type, auto, element_id, target_url } = action;
+    const { type, auto, element_id, target_url, target_label, reason, confidence } = action;
     const isAuto = auto === true;
   
     if (type === 'scroll_to') {
       const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
       const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
       if (!el) return;
-      const label = el.text || el.title || el.number || el.email || element_id;
-      WA.proposeAction(session, 'scroll_to', label, {
+      
+      // Use target_label from AI if provided, otherwise fallback
+      const label = target_label || el.text || el.title || el.number || el.email || element_id;
+      const description = reason || `Show you the ${label} section`;
+      
+      WA.proposeAction(session, 'scroll_to', description, {
         elementId:    el.id,
         elementText:  label,
-        elementTitle: el.title || el.text || label
+        elementTitle: el.title || el.text || label,
+        confidence:   confidence
       }, isAuto !== false); // scroll_to is auto by default
       return;
     }
   
     if (type === 'fill_form') {
-      WA.proposeAction(session, 'fill_form', 'Help you fill out the contact form.', { fields: WA.freshFields() }, isAuto);
+      const description = reason || 'Help you fill out the contact form';
+      WA.proposeAction(session, 'fill_form', description, { 
+        fields: WA.freshFields(),
+        confidence: confidence
+      }, isAuto);
       return;
     }
   
     if (type === 'navigate_then_fill') {
       const contact = WA.getContactPage();
       if (!contact) return;
+      
+      const description = reason || `Take you to the ${contact.label} and fill out the enquiry form`;
       const result = await WA.proposeAction(session, 'navigate_then_fill',
-        `Take you to the ${contact.label} and fill out the enquiry form.`,
+        description,
         {
           targetPage:          contact.file,
-          targetLabel:         contact.label,
-          nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } }
+          targetLabel:         target_label || contact.label,
+          nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } },
+          confidence:          confidence
         },
         isAuto
       );
-      // If validation failed, the reconnect is already scheduled
       return result;
     }
   
@@ -712,20 +788,24 @@
       if (targetClean === currentClean) return;
   
       const page    = WA.getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
-      const label   = page ? page.label : 'page';
+      const label   = target_label || (page ? page.label : 'page');
       const contact = WA.getContactPage();
   
       if (contact && targetClean === contact.file.replace(/\/$/, '')) {
         WA.proposeChoiceAction(session,
-          `Would you like to just visit the ${contact.label}, or go there and fill out the enquiry form?`,
+          `Would you like to just visit the ${label}, or go there and fill out the enquiry form?`,
           [
-            { label: 'Just browse',   action: { type: 'navigate',           description: `Take you to the ${contact.label}.`,                payload: { targetPage: contact.file, targetLabel: contact.label } } },
-            { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${contact.label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: contact.label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } } } } }
+            { label: 'Just browse',   action: { type: 'navigate',           description: `Take you to the ${label}.`,                payload: { targetPage: contact.file, targetLabel: label } } },
+            { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } } } } }
           ]
         );
       } else {
-        const result = await WA.proposeAction(session, 'navigate', `Take you to the ${label}.`, { targetPage: target_url, targetLabel: label }, isAuto);
-        // If validation failed, reconnect is already scheduled
+        const description = reason || `Take you to the ${label}`;
+        const result = await WA.proposeAction(session, 'navigate', description, { 
+          targetPage: target_url, 
+          targetLabel: label,
+          confidence: confidence
+        }, isAuto);
         return result;
       }
       return;
@@ -735,9 +815,17 @@
       const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
       const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
       if (!el) return;
+      
+      const label = target_label || el.text || el.title;
+      const description = reason || `Click "${label}" for you`;
+      
       WA.proposeAction(session, 'click_element',
-        `Click "${el.text || el.title}" for you.`,
-        { elementId: el.id, elementText: el.text || el.title },
+        description,
+        { 
+          elementId: el.id, 
+          elementText: label,
+          confidence: confidence
+        },
         isAuto
       );
     }
@@ -832,6 +920,7 @@
   WA.abandonFormFill     = abandonFormFill;
   WA.endSession          = endSession;
   WA.renderActionCard    = renderActionCard;
+  WA.renderMultiActionCard = renderMultiActionCard;
   WA.handleAgentMessage  = handleAgentMessage;
   WA.routeFormInput      = routeFormInput;
   WA._lastUserMessage    = '';
