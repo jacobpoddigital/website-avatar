@@ -166,7 +166,8 @@
         loadScript(BASE_URL + '/features/actions.js'),
         loadScript(BASE_URL + '/features/bridge.js'),
         loadScript(BASE_URL + '/features/ui.js'),
-        loadScript(BASE_URL + '/features/greeting.js')
+        loadScript(BASE_URL + '/features/greeting.js'),
+        loadScript(BASE_URL + '/features/session-sync.js') 
       ]);
 
       // ── Discover + agent scripts ──
