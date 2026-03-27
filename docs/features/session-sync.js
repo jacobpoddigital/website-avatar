@@ -1,7 +1,6 @@
 /**
- * wa-session-sync.js — Backend Session Persistence
- * Saves and loads sessions from /session endpoint
- * Maintains user context across visits
+ * session-sync.js — Minimal Backend Session Persistence
+ * Saves conversation to backend, loads on page load
  */
 
 (function () {
@@ -10,58 +9,30 @@
   const SESSION_URL = CONFIG.sessionUrl || 'https://backend.jacob-e87.workers.dev/session';
   
   let saveTimeout = null;
-  let lastSavedMessageCount = 0;
-  let initialized = false;
-  let hasLoadedInitialSession = false; // ← NEW: Track if we've loaded session on page load
 
-  // ─── HELPERS ──────────────────────────────────────────────────────────────
-
+  // ─── GET USER ID ──────────────────────────────────────────────────────────
+  
   function getUserId() {
     return localStorage.getItem('wc_visitor') || null;
   }
 
-  function getConversationId() {
-    const session = WA.getSession ? WA.getSession() : {};
-    if (!session.conversationId) {
-      session.conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      if (WA.saveSession) WA.saveSession(session);
-    }
-    return session.conversationId;
-  }
-
   // ─── SAVE TO BACKEND ──────────────────────────────────────────────────────
 
-  async function saveSessionToBackend(immediate = false) {
+  async function saveSessionToBackend() {
     const userId = getUserId();
     const session = WA.getSession ? WA.getSession() : {};
     
-    if (!userId) {
-      if (WA.DEBUG) console.warn('[WA:SessionSync] No wc_visitor found, cannot save session');
-      return;
-    }
-
-    if (!session.messages || session.messages.length === 0) {
-      if (WA.DEBUG) console.log('[WA:SessionSync] No messages to save');
-      return;
-    }
-
-    // Skip if no new messages since last save
-    if (session.messages.length === lastSavedMessageCount && !immediate) {
-      if (WA.DEBUG) console.log('[WA:SessionSync] No new messages, skipping save');
+    if (!userId || !session.messages || session.messages.length === 0) {
       return;
     }
 
     const payload = {
       user_id: userId,
-      conversation_id: getConversationId(),
+      conversation_id: session.conversationId || `conv_${Date.now()}`,
       transcript: session.messages,
       analysis: {
-        userContext: WA.userContext || {},
-        metadata: {
-          lastSaved: new Date().toISOString(),
-          url: window.location.href,
-          title: document.title
-        }
+        lastSaved: new Date().toISOString(),
+        messageCount: session.messages.length
       }
     };
 
@@ -72,27 +43,19 @@
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        throw new Error(`Session save failed: ${response.status}`);
+      if (response.ok) {
+        console.log('[SessionSync] ✅ Saved:', session.messages.length, 'messages');
+      } else {
+        console.warn('[SessionSync] ⚠️ Save failed with status:', response.status);
       }
-
-      lastSavedMessageCount = session.messages.length;
-      if (WA.DEBUG) console.log('[WA:SessionSync] Session saved to backend', payload.conversation_id);
     } catch (err) {
-      console.error('[WA:SessionSync] Failed to save session:', err);
+      console.error('[SessionSync] ❌ Save failed:', err);
     }
   }
 
   function debouncedSave() {
     clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      saveSessionToBackend(false);
-    }, 5000); // 5 second debounce
-  }
-
-  function immediateSave() {
-    clearTimeout(saveTimeout);
-    return saveSessionToBackend(true);
+    saveTimeout = setTimeout(() => saveSessionToBackend(), 3000);
   }
 
   // ─── LOAD FROM BACKEND ────────────────────────────────────────────────────
@@ -101,7 +64,7 @@
     const userId = getUserId();
     
     if (!userId) {
-      if (WA.DEBUG) console.warn('[WA:SessionSync] No wc_visitor found, cannot load session');
+      console.log('[SessionSync] No user ID, skipping load');
       return null;
     }
 
@@ -109,131 +72,58 @@
       const response = await fetch(`${SESSION_URL}?user_id=${userId}`);
       
       if (!response.ok) {
-        throw new Error(`Session load failed: ${response.status}`);
+        console.log('[SessionSync] No previous session found');
+        return null;
       }
 
       const sessions = await response.json();
       
       if (!sessions || sessions.length === 0) {
-        if (WA.DEBUG) console.log('[WA:SessionSync] No previous sessions found');
+        console.log('[SessionSync] No sessions returned');
         return null;
       }
 
-      const lastSession = sessions[0]; // Most recent
-      if (WA.DEBUG) console.log('[WA:SessionSync] Loaded previous session', lastSession);
-
-      // Parse analysis if it's stringified
-      let analysis = lastSession.analysis;
-      if (typeof analysis === 'string') {
-        try {
-          analysis = JSON.parse(analysis);
-        } catch(e) {
-          console.warn('[WA:SessionSync] Failed to parse analysis JSON');
-        }
-      }
-
-      // Restore user context
-      if (analysis?.userContext) {
-        WA.userContext = analysis.userContext;
-        if (WA.DEBUG) console.log('[WA:SessionSync] Restored user context', WA.userContext);
-      }
-
-      // Parse transcript if it's stringified
+      const lastSession = sessions[0];
+      
+      // Parse transcript
       let transcript = lastSession.transcript;
       if (typeof transcript === 'string') {
-        try {
-          transcript = JSON.parse(transcript);
-        } catch(e) {
-          console.warn('[WA:SessionSync] Failed to parse transcript JSON');
-        }
+        transcript = JSON.parse(transcript);
       }
 
-      // Mark as returning user
-      if (transcript && transcript.length > 0) {
-        WA.isReturningUser = true;
-        WA.lastVisitMessageCount = transcript.length;
-        if (WA.DEBUG) console.log('[WA:SessionSync] Returning user detected, previous messages:', transcript.length);
-      }
-
-      return lastSession;
+      console.log('[SessionSync] ✅ Loaded previous session');
+      console.log('[SessionSync] Messages:', transcript.length);
+      console.log('[SessionSync] Preview:', transcript.slice(0, 3));
+      
+      return {
+        messages: transcript,
+        conversationId: lastSession.conversation_id,
+        lastSaved: lastSession.analysis?.lastSaved
+      };
+      
     } catch (err) {
-      console.error('[WA:SessionSync] Failed to load session:', err);
+      console.error('[SessionSync] ❌ Load failed:', err);
       return null;
     }
   }
 
-  // ─── PAGE UNLOAD HANDLER ──────────────────────────────────────────────────
+  // ─── HOOK INTO MESSAGE FLOW ───────────────────────────────────────────────
 
-  function setupUnloadHandler() {
-    window.addEventListener('beforeunload', () => {
-      const userId = getUserId();
-      const session = WA.getSession ? WA.getSession() : {};
-      
-      if (!userId || !session.messages || session.messages.length === 0) return;
-
-      const payload = JSON.stringify({
-        user_id: userId,
-        conversation_id: getConversationId(),
-        transcript: session.messages,
-        analysis: {
-          userContext: WA.userContext || {},
-          metadata: {
-            lastSaved: new Date().toISOString(),
-            url: window.location.href,
-            title: document.title,
-            unloadSave: true
-          }
-        }
-      });
-
-      navigator.sendBeacon(SESSION_URL, new Blob([payload], { type: 'application/json' }));
-      if (WA.DEBUG) console.log('[WA:SessionSync] Beacon sent on unload');
-    });
-  }
-
-  // ─── INTEGRATE WITH EXISTING FLOW ─────────────────────────────────────────
-
-  function hookIntoMessageFlow() {
+  function hookIntoMessages() {
     const originalUserSay = WA.userSay;
     const originalAgentSay = WA.agentSay;
 
     if (originalUserSay) {
       WA.userSay = function(text) {
         originalUserSay.call(this, text);
-        debouncedSave();
+        debouncedSave(); // Save after user message
       };
     }
 
     if (originalAgentSay) {
       WA.agentSay = function(text) {
         originalAgentSay.call(this, text);
-        debouncedSave();
-      };
-    }
-
-    if (WA.DEBUG) console.log('[WA:SessionSync] Hooked into message flow');
-  }
-
-  function hookIntoDisconnect() {
-    const originalOnDisconnected = WA.onBridgeDisconnected;
-    
-    if (originalOnDisconnected) {
-      WA.onBridgeDisconnected = async function() {
-        //await immediateSave();
-        if (WA.DEBUG) console.log('[WA:SessionSync] Saved on disconnect');
-        originalOnDisconnected.call(this);
-      };
-    }
-  }
-
-  function hookIntoSessionEnd() {
-    const originalEndSession = WA.endSession;
-    
-    if (originalEndSession) {
-      WA.endSession = async function() {
-        //await immediateSave();
-        if (WA.DEBUG) console.log('[WA:SessionSync] Saved on session end');
-        originalEndSession.call(this);
+        debouncedSave(); // Save after agent message
       };
     }
   }
@@ -241,60 +131,42 @@
   // ─── INIT ─────────────────────────────────────────────────────────────────
 
   async function init() {
-    if (initialized) {
-      console.warn('[WA:SessionSync] Already initialized');
-      return;
+    console.log('[SessionSync] Initializing...');
+    
+    // Load previous session
+    const previousSession = await loadSessionFromBackend();
+    
+    if (previousSession) {
+      console.log('[SessionSync] 📦 Session data loaded - ready to use');
+      // Store for potential future use
+      WA._previousSession = previousSession;
     }
-
-    console.log('[WA:SessionSync] Initializing...');
-
-    // Initialize user context object
-    if (!WA.userContext) WA.userContext = {};
-
-    // Only load from backend on initial page load
-    if (!hasLoadedInitialSession) {
-      //await loadSessionFromBackend();
-      hasLoadedInitialSession = true;
-    } else {
-      if (WA.DEBUG) console.log('[WA:SessionSync] Skipping session load (already loaded on page load)');
-    }
-
+    
     // Hook into message flow
-    hookIntoMessageFlow();
-    hookIntoDisconnect();
-    hookIntoSessionEnd();
-
-    // Setup unload handler
-    setupUnloadHandler();
-
-    initialized = true;
-    console.log('[WA:SessionSync] ✅ Initialized');
-    if (WA.DEBUG && WA.isReturningUser) {
-      console.log('[WA:SessionSync] 🔄 Returning user detected');
-      console.log('[WA:SessionSync] User context:', WA.userContext);
-    }
+    hookIntoMessages();
+    
+    console.log('[SessionSync] ✅ Ready');
   }
 
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
   WA.getUserId = getUserId;
-  WA.saveSessionToBackend = immediateSave;
   WA.loadSessionFromBackend = loadSessionFromBackend;
+  WA.saveSessionToBackend = saveSessionToBackend;
 
-  // Wait for WA.getSession to be available before initializing
-  function waitForSession() {
-    if (typeof WA.getSession === 'function' && typeof WA.saveSession === 'function') {
+  // Wait for WA to be ready
+  function waitForWA() {
+    if (typeof WA.getSession === 'function' && typeof WA.userSay === 'function') {
       init();
     } else {
-      setTimeout(waitForSession, 100);
+      setTimeout(waitForWA, 100);
     }
   }
 
-  // Auto-init when ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', waitForSession);
+    document.addEventListener('DOMContentLoaded', waitForWA);
   } else {
-    waitForSession();
+    waitForWA();
   }
 
 })();

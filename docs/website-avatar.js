@@ -25,6 +25,8 @@
   const CONFIG_URL = 'https://backend.jacob-e87.workers.dev/config';
   // OpenAI proxy — always this Worker, never exposed in script tag
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
+  // Session sync endpoint — always this Worker
+  const SESSION_URL = 'https://backend.jacob-e87.workers.dev/session';
 
   // ── INJECT GREETING WIDGET HTML ─────────────────────────────────────────
   function injectGreeting(config = {}) {
@@ -121,72 +123,100 @@
 
   // ── BOOT ────────────────────────────────────────────────────────────────
   async function boot() {
-    try {
-      let config = {};
-      if (accountId) {
-        try {
-          const res = await fetch(`${CONFIG_URL}?id=${accountId}`);
-          if (res.ok) config = await res.json();
-          else console.warn('[WA] Config not found for account:', accountId);
-        } catch(e) {
-          console.warn('[WA] Could not fetch config:', e.message);
-        }
+    // ── WAIT FOR VISITOR ID ──────────────────────────────────────────────
+    function waitForVisitorId(callback, attempts = 0) {
+      const visitorId = localStorage.getItem('wc_visitor');
+      
+      if (visitorId) {
+        console.log('[WA] ✅ Visitor ID found:', visitorId);
+        callback();
+      } else if (attempts < 50) { // 5 seconds max (50 × 100ms)
+        setTimeout(() => waitForVisitorId(callback, attempts + 1), 100);
       } else {
-        console.warn('[WA] No data-account-id provided on script tag');
+        console.warn('[WA] ⚠️ Visitor ID not found after 5s, loading anyway');
+        callback();
       }
-
-      window.WA_CONFIG = {
-        elevenlabsAgentId: config.elevenlabsAgentId || '',
-        openaiProxyUrl:    PROXY_URL,
-        agentName:         config.agentName || 'Website Avatar',
-        primaryColor:      config.primaryColor || '#c84b2f',
-        debug:             config.debug || false,
-        avatar_url:        config.avatar_url || '',
-        greetingMessage:   config.greetingMessage || '',
-        businessName:      config.businessName || ''
-      };
-      const debug = window.WA_CONFIG.debug;
-
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = BASE_URL + '/widget.css';
-      document.head.appendChild(link);
-
-      injectHTML(window.WA_CONFIG.agentName, config);
-      injectGreeting(config);
-
-      // ── Core scripts ──
-      await Promise.all([
-        loadScript(BASE_URL + '/core/state.js'),
-        loadScript(BASE_URL + '/core/ai.js'),
-        loadScript(BASE_URL + '/core/utils.js')
-      ]);
-
-      await Promise.all([
-        loadScript(BASE_URL + '/features/actions.js'),
-        loadScript(BASE_URL + '/features/bridge.js'),
-        loadScript(BASE_URL + '/features/ui.js'),
-        loadScript(BASE_URL + '/features/greeting.js')
-      ]);
-
-      // ── Discover + agent scripts ──
-      await Promise.all([
-        loadScript(BASE_URL + '/wa-discover.js'),
-        loadScript(BASE_URL + '/wa-agent.js')
-      ]);
-
-      await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
-
-      // Initialize greeting after all scripts loaded
-      if (window.WebsiteAvatarGreeting) {
-        window.WebsiteAvatarGreeting.init();
-      }
-
-      if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
-
-    } catch(e) {
-      console.error('[WA] Failed to load:', e.message);
     }
+
+    function initWidget() {
+      loadWidgetScripts();
+    }
+
+    async function loadWidgetScripts() {
+      try {
+        let config = {};
+        if (accountId) {
+          try {
+            const res = await fetch(`${CONFIG_URL}?id=${accountId}`);
+            if (res.ok) config = await res.json();
+            else console.warn('[WA] Config not found for account:', accountId);
+          } catch(e) {
+            console.warn('[WA] Could not fetch config:', e.message);
+          }
+        } else {
+          console.warn('[WA] No data-account-id provided on script tag');
+        }
+
+        window.WA_CONFIG = {
+          elevenlabsAgentId: config.elevenlabsAgentId || '',
+          openaiProxyUrl:    PROXY_URL,
+          sessionUrl:        SESSION_URL,
+          agentName:         config.agentName || 'Website Avatar',
+          primaryColor:      config.primaryColor || '#c84b2f',
+          debug:             config.debug || false,
+          avatar_url:        config.avatar_url || '',
+          greetingMessage:   config.greetingMessage || '',
+          businessName:      config.businessName || ''
+        };
+        const debug = window.WA_CONFIG.debug;
+
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = BASE_URL + '/widget.css';
+        document.head.appendChild(link);
+
+        injectHTML(window.WA_CONFIG.agentName, config);
+        injectGreeting(config);
+
+        // ── Core scripts ──
+        await Promise.all([
+          loadScript(BASE_URL + '/core/state.js'),
+          loadScript(BASE_URL + '/core/ai.js'),
+          loadScript(BASE_URL + '/core/utils.js')
+        ]);
+
+        await Promise.all([
+          loadScript(BASE_URL + '/features/actions.js'),
+          loadScript(BASE_URL + '/features/bridge.js'),
+          loadScript(BASE_URL + '/features/ui.js'),
+          loadScript(BASE_URL + '/features/greeting.js')
+        ]);
+
+        // ── Discover + agent scripts ──
+        await Promise.all([
+          loadScript(BASE_URL + '/wa-discover.js'),
+          loadScript(BASE_URL + '/wa-agent.js')
+        ]);
+
+        await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
+
+        // ── Session sync script ──
+        await loadScript(BASE_URL + '/session-sync.js');
+
+        // Initialize greeting after all scripts loaded
+        if (window.WebsiteAvatarGreeting) {
+          window.WebsiteAvatarGreeting.init();
+        }
+
+        if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
+
+      } catch(e) {
+        console.error('[WA] Failed to load:', e.message);
+      }
+    }
+
+    // Start by waiting for visitor ID
+    waitForVisitorId(initWidget);
   }
 
   if (document.readyState === 'loading') {
