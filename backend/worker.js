@@ -1,11 +1,15 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    
+    // Get origin from request for CORS
+    const origin = request.headers.get('Origin') || '*';
 
     const cors = {
-      'Access-Control-Allow-Origin':  '*',
+      'Access-Control-Allow-Origin':  origin,  // Use actual origin instead of wildcard
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Credentials': 'true',  // Allow credentials for sendBeacon
       'Content-Type':                 'application/json'
     };
 
@@ -139,68 +143,6 @@ export default {
       }
     }
 
-    // ── POST /webhook/elevenlabs ──────────────────────────
-    if (url.pathname === '/webhook/elevenlabs' && request.method === 'POST') {
-      console.log('[Webhook] 🔔 ElevenLabs webhook received');
-      console.log('[Webhook] Headers:', Object.fromEntries(request.headers));
-      
-      const bodyText = await request.text();
-      console.log('[Webhook] Body length:', bodyText.length, 'bytes');
-      console.log('[Webhook] Body preview:', bodyText.slice(0, 500));
-    
-      // Parse JSON
-      let body;
-      try { 
-        body = JSON.parse(bodyText); 
-      } catch(e) {
-        console.error('[Webhook] ❌ Invalid JSON:', e.message);
-        return json({ error: 'Invalid JSON' }, 400, cors);
-      }
-      
-      console.log('[Webhook] 📦 Parsed payload:', {
-        conversation_id: body?.conversation_id,
-        event_type: body?.type,
-        has_transcript: !!body?.transcript,
-        transcript_length: body?.transcript?.length,
-        has_analysis: !!body?.analysis,
-        has_user_id: !!body?.user_id,
-        dynamic_vars: body?.conversation_initiation_client_data?.dynamic_variables
-      });
-    
-      // Extract data - support both simple and nested formats
-      const userId = body?.user_id || body?.conversation_initiation_client_data?.dynamic_variables?.user_id;
-      const conversationId = body?.conversation_id;
-    
-      console.log('[Webhook] Extracted:', { userId, conversationId });
-    
-      if (!userId || !conversationId) {
-        console.error('[Webhook] ❌ Missing user_id or conversation_id');
-        console.log('[Webhook] Full body:', JSON.stringify(body, null, 2));
-        return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
-      }
-    
-      const transcript = JSON.stringify(body.transcript || []);
-      const analysis = JSON.stringify(body.analysis || {});
-    
-      try {
-        await env.website_avatar_db.prepare(`
-          INSERT INTO conversations (user_id, conversation_id, transcript, analysis)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(conversation_id) 
-          DO UPDATE SET 
-            transcript = excluded.transcript,
-            analysis = excluded.analysis,
-            created_at = CURRENT_TIMESTAMP
-        `).bind(userId, conversationId, transcript, analysis).run();
-    
-        console.log('[Webhook] ✅ Session saved:', conversationId);
-        return json({ message: 'Session saved', conversation_id: conversationId }, 200, cors);
-      } catch(err) {
-        console.error('[Webhook] ❌ DB error:', err);
-        return json({ error: 'Database error' }, 500, cors);
-      }
-    }
-    
     return json({ error: 'Not found' }, 404, cors);
   }
 };
