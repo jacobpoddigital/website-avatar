@@ -234,16 +234,18 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       session = await Conversation.startSession({
         agentId: AGENT_ID,
 
-        // ✅ PASS METADATA TO ELEVENLABS
+        // ✅ PASS METADATA TO ELEVENLABS (for their analytics)
         metadata: {
-          user_id: metadata.user_id,
           session_id: metadata.session_id,
           message_count: metadata.message_count,
           timestamp: new Date().toISOString()
         },
 
-        // Inject page + session context as dynamic variable
-        dynamicVariables: contextToSend ? { context: contextToSend } : undefined,
+        // ✅ PASS USER_ID AND CONTEXT VIA DYNAMIC VARIABLES (more reliable)
+        dynamicVariables: {
+          user_id: metadata.user_id,
+          context: contextToSend || ''
+        },
 
         onConnect: () => {
           console.log('[WA:Bridge] onConnect fired — session established');
@@ -251,13 +253,42 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           setConnectUI(true);
 
           // ✅ CAPTURE ELEVENLABS CONVERSATION_ID
-          if (session?.conversationId) {
+          // Try multiple possible property names
+          const conversationId = session?.conversationId || 
+                                session?.id || 
+                                session?.sessionId ||
+                                session?.conversation_id;
+
+          console.log('[WA:Bridge] 🔍 Checking for conversation_id...');
+          console.log('[WA:Bridge] session.conversationId:', session?.conversationId);
+          console.log('[WA:Bridge] session.id:', session?.id);
+          console.log('[WA:Bridge] session.sessionId:', session?.sessionId);
+          console.log('[WA:Bridge] session keys:', Object.keys(session || {}));
+
+          if (conversationId) {
             const waSession = WA.getSession ? WA.getSession() : {};
-            waSession.elevenlabsConversationId = session.conversationId;
+            waSession.elevenlabsConversationId = conversationId;
             if (WA.saveSession) WA.saveSession(waSession);
-            console.log('[WA:Bridge] 💾 Captured ElevenLabs conversation_id:', session.conversationId);
+            console.log('[WA:Bridge] ✅ Captured ElevenLabs conversation_id:', conversationId);
           } else {
-            console.log('[WA:Bridge] ⚠️ No conversationId found on session object');
+            console.log('[WA:Bridge] ⚠️ No conversationId found - will retry in 500ms');
+            
+            // Delayed check - sometimes the ID appears after connection
+            setTimeout(() => {
+              const delayedId = session?.conversationId || 
+                               session?.id || 
+                               session?.sessionId ||
+                               session?.conversation_id;
+              
+              if (delayedId) {
+                const waSession = WA.getSession ? WA.getSession() : {};
+                waSession.elevenlabsConversationId = delayedId;
+                if (WA.saveSession) WA.saveSession(waSession);
+                console.log('[WA:Bridge] ✅ Captured ElevenLabs conversation_id (delayed):', delayedId);
+              } else {
+                console.log('[WA:Bridge] ⚠️ Still no conversationId - will use fallback on save');
+              }
+            }, 500);
           }
 
           // Open panel directly — do NOT call toggleChat (causes reconnect loop)
