@@ -525,18 +525,18 @@
   function renderActionCard(action) {
     // Enhanced card with destination context
     let enhancedMessage = action.description;
-    
+  
     // Add destination name if available
     if (action.payload?.targetLabel) {
-      enhancedMessage = `${action.description}\n\n→ Destination: ${action.payload.targetLabel}`;
+      enhancedMessage = `${action.description}\n\nDestination: **${action.payload.targetLabel}**`;
     } else if (action.payload?.elementTitle) {
-      enhancedMessage = `${action.description}\n\n→ Section: ${action.payload.elementTitle}`;
+      enhancedMessage = `${action.description}\n\nSection: **${action.payload.elementTitle}**`;
     }
-    
+  
     WA.renderCard({
-      label:      'Proposed action',
-      message:    enhancedMessage,
-      actionId:   action.id,
+      label:    'Proposed action',
+      message:  enhancedMessage,
+      actionId: action.id,
       buttons: [
         { text: "Let's do it", style: 'confirm', action: () => WA.confirmAction(action.id, session) },
         { text: 'No thanks',   style: 'deny',    action: () => WA.denyAction(action.id, session) }
