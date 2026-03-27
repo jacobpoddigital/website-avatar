@@ -259,39 +259,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       const conversationConfig = {
         agentId: AGENT_ID,
         
-        // Audio configuration - MUST be explicitly disabled for text-only
-        audio: {
-          input: {
-            enabled: false,  // ← CRITICAL: Disable audio input
-            sampleRate: 16000 // Keep default but unused
-          },
-          output: {
-            enabled: false   // ← CRITICAL: Disable audio output
-          }
-        },
-        
-        // Text-only mode
-        mode: 'text',
-        
         // Custom client tools
         clientTools: clientTools.length > 0 ? { tools: clientTools } : undefined,
-        
-        // Conversation overrides
-        overrides: {
-          agent: {
-            firstMessage: null,
-            prompt: {
-              prompt: [
-                pageContext,
-                userContext,
-                reconnectContext
-              ].filter(Boolean).join('\n\n')
-            }
-          },
-          tts: {
-            voiceId: CONFIG.elevenlabsVoiceId || undefined
-          }
-        },
         
         // Session metadata
         metadata: {
