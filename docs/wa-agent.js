@@ -534,13 +534,121 @@
     });
   }
 
+  // ─── CONTEXT FILTERING (INTENT-AWARE) ─────────────────────────────────────
+
+  function normalise(text) {
+    return (text || "")
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function scoreElement(el, ctx) {
+    let score = 0;
+
+    const keywords = (ctx?.keywords || []).map(normalise);
+    const targetSection = normalise(ctx?.section || "");
+
+    const haystack = normalise(
+      (el.title || "") + " " +
+      (el.summary || "") + " " +
+      (el.text || "")
+    );
+
+    // keyword match
+    keywords.forEach(k => {
+      if (haystack.includes(k)) score += 5;
+    });
+
+    // strong section match
+    if (targetSection && el.title && normalise(el.title).includes(targetSection)) {
+      score += 20;
+    }
+
+    // subsection relevance
+    if (el.subsections) {
+      el.subsections.forEach(sub => {
+        const subText = normalise(sub.title + " " + sub.description);
+        keywords.forEach(k => {
+          if (subText.includes(k)) score += 3;
+        });
+      });
+    }
+
+    // CTA context boost
+    if (el.context) {
+      const ctxText = normalise(el.context);
+      keywords.forEach(k => {
+        if (ctxText.includes(k)) score += 2;
+      });
+    }
+
+    return score;
+  }
+
+  function filterPageContext(pageContext, knowledge) {
+    if (!pageContext?.elements || !knowledge) return pageContext;
+
+    const scored = pageContext.elements.map(el => ({
+      ...el,
+      _score: scoreElement(el, knowledge)
+    }));
+
+    const filtered = scored
+      .filter(el => el._score > 0)
+      .sort((a, b) => b._score - a._score)
+      .slice(0, 12); // limit size
+
+    return {
+      ...pageContext,
+      elements: filtered
+    };
+  }
+
+  function debugFilteredContext(full, filtered, knowledge) {
+    if (!WA.DEBUG) return;
+
+    console.group('[WA] 🧠 Context Filtering');
+
+    console.log('Intent:', knowledge?.intent);
+    console.log('Keywords:', knowledge?.keywords);
+    console.log('Section:', knowledge?.section);
+
+    console.group(`📦 FULL (${full.elements.length})`);
+    full.elements.forEach(e => {
+      console.log(`${e.type}: ${e.title || e.text}`);
+    });
+    console.groupEnd();
+
+    console.group(`🎯 FILTERED (${filtered.elements.length})`);
+    filtered.elements.forEach(e => {
+      console.log(`${e.type}: ${e.title || e.text} (score: ${e._score})`);
+      if (e.subsections) {
+        e.subsections.forEach(sub => {
+          console.log(`   ↳ ${sub.title}`);
+        });
+      }
+    });
+    console.groupEnd();
+
+    console.groupEnd();
+  }
+
   // ─── AI DECISION ENGINE ───────────────────────────────────────────────────
 
   async function handleAgentMessage(userMessage, agentMessage, knowledgeContext) {
+    // Apply intent-aware filtering
+    const filteredContext = filterPageContext(WA.PAGE_CONTEXT, knowledgeContext);
+
+    // Debug full vs filtered
+    debugFilteredContext(WA.PAGE_CONTEXT, filteredContext, knowledgeContext);
+
     const result = await WA.decideActions(
       userMessage,
       agentMessage,
-      knowledgeContext,  // Pass knowledge context from Michelle
+      knowledgeContext,
+      filteredContext,
       WA.PAGE_CONTEXT,
       session.messages.slice(-4),
       session.actions
