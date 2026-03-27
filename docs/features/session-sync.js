@@ -219,7 +219,7 @@
     
     if (originalOnDisconnected) {
       WA.onBridgeDisconnected = async function() {
-        await immediateSave();
+        //await immediateSave();
         if (WA.DEBUG) console.log('[WA:SessionSync] Saved on disconnect');
         originalOnDisconnected.call(this);
       };
@@ -231,7 +231,7 @@
     
     if (originalEndSession) {
       WA.endSession = async function() {
-        await immediateSave();
+        //await immediateSave();
         if (WA.DEBUG) console.log('[WA:SessionSync] Saved on session end');
         originalEndSession.call(this);
       };
@@ -253,7 +253,7 @@
 
     // Only load from backend on initial page load
     if (!hasLoadedInitialSession) {
-      await loadSessionFromBackend();
+      //await loadSessionFromBackend();
       hasLoadedInitialSession = true;
     } else {
       if (WA.DEBUG) console.log('[WA:SessionSync] Skipping session load (already loaded on page load)');
