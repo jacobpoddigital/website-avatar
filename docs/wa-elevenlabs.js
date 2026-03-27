@@ -330,42 +330,63 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         onDisconnect: async () => {
           console.log('[WA:Bridge] onDisconnect fired');
           log('Disconnected');
-          session = null;
-          setConnectUI(false);
           
-          // Send final session data to backend
+          // Send final session data to backend BEFORE clearing session
           const waSession = WA.getSession ? WA.getSession() : {};
           const userId = WA.getUserId ? WA.getUserId() : null;
           
+          console.log('[WA:Bridge] Disconnect save check:', {
+            hasUserId: !!userId,
+            hasConversationId: !!waSession.elevenlabsConversationId,
+            messageCount: waSession.messages?.length || 0
+          });
+          
           if (userId && waSession.elevenlabsConversationId && waSession.messages?.length) {
             console.log('[WA:Bridge] 💾 Sending final session to backend...');
+            
+            const payload = {
+              user_id: userId,
+              conversation_id: waSession.elevenlabsConversationId,
+              transcript: waSession.messages,
+              analysis: {
+                lastSaved: new Date().toISOString(),
+                messageCount: waSession.messages.length,
+                disconnectedAt: new Date().toISOString()
+              }
+            };
+            
+            console.log('[WA:Bridge] Payload:', {
+              user_id: payload.user_id,
+              conversation_id: payload.conversation_id,
+              messageCount: payload.transcript.length
+            });
             
             try {
               const response = await fetch('https://backend.jacob-e87.workers.dev/session', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  user_id: userId,
-                  conversation_id: waSession.elevenlabsConversationId,
-                  transcript: waSession.messages,
-                  analysis: {
-                    lastSaved: new Date().toISOString(),
-                    messageCount: waSession.messages.length,
-                    disconnectedAt: new Date().toISOString()
-                  }
-                })
+                body: JSON.stringify(payload)
               });
               
+              console.log('[WA:Bridge] Response status:', response.status);
+              
               if (response.ok) {
-                console.log('[WA:Bridge] ✅ Final session saved on disconnect');
+                const result = await response.json();
+                console.log('[WA:Bridge] ✅ Final session saved on disconnect:', result);
               } else {
-                console.warn('[WA:Bridge] ⚠️ Failed to save final session:', response.status);
+                const error = await response.text();
+                console.warn('[WA:Bridge] ⚠️ Failed to save final session:', response.status, error);
               }
             } catch (err) {
               console.error('[WA:Bridge] ❌ Error saving final session:', err);
             }
+          } else {
+            console.log('[WA:Bridge] Skipping save - missing data');
           }
           
+          // Now clear session and update UI
+          session = null;
+          setConnectUI(false);
           if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
         },
 
