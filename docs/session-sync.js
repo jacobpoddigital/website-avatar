@@ -16,25 +16,55 @@
     return localStorage.getItem('wc_visitor') || null;
   }
 
+  // ─── GET CONVERSATION METADATA ────────────────────────────────────────────
+
+  function getConversationMetadata() {
+    const userId = getUserId();
+    const session = WA.getSession ? WA.getSession() : {};
+    
+    return {
+      user_id: userId || 'anonymous',
+      session_id: Date.now().toString(),
+      message_count: session.messages?.length || 0,
+      has_active_session: (session.messages?.length || 0) > 0
+    };
+  }
+
   // ─── SAVE TO BACKEND ──────────────────────────────────────────────────────
 
   async function saveSessionToBackend() {
     const userId = getUserId();
     const session = WA.getSession ? WA.getSession() : {};
     
-    if (!userId || !session.messages || session.messages.length === 0) {
+    if (!userId) {
+      console.log('[SessionSync] ⚠️ No user ID - skipping save');
+      return;
+    }
+    
+    if (!session.messages || session.messages.length === 0) {
+      console.log('[SessionSync] ⚠️ No messages - skipping save');
       return;
     }
 
+    // Get conversation_id from ElevenLabs (stored in session) or generate fallback
+    // ElevenLabs bridge should set session.elevenlabsConversationId when it connects
+    const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
+
     const payload = {
       user_id: userId,
-      conversation_id: session.conversationId || `conv_${Date.now()}`,
+      conversation_id: conversationId,
       transcript: session.messages,
       analysis: {
         lastSaved: new Date().toISOString(),
         messageCount: session.messages.length
       }
     };
+
+    console.log('[SessionSync] 💾 Saving session...', {
+      userId,
+      messageCount: session.messages.length,
+      conversationId: conversationId
+    });
 
     try {
       const response = await fetch(SESSION_URL, {
@@ -116,6 +146,7 @@
     if (originalUserSay) {
       WA.userSay = function(text) {
         originalUserSay.call(this, text);
+        console.log('[SessionSync] 📝 User message - queuing save');
         debouncedSave(); // Save after user message
       };
     }
@@ -123,9 +154,46 @@
     if (originalAgentSay) {
       WA.agentSay = function(text) {
         originalAgentSay.call(this, text);
+        console.log('[SessionSync] 📝 Agent message - queuing save');
         debouncedSave(); // Save after agent message
       };
     }
+  }
+
+  // ─── PAGE UNLOAD HANDLER ──────────────────────────────────────────────────
+
+  function setupUnloadHandler() {
+    window.addEventListener('beforeunload', () => {
+      // Cancel any pending debounced save
+      clearTimeout(saveTimeout);
+      
+      // Immediate save on page unload (synchronous)
+      const userId = getUserId();
+      const session = WA.getSession ? WA.getSession() : {};
+      
+      if (!userId || !session.messages || session.messages.length === 0) {
+        return;
+      }
+
+      // Use ElevenLabs conversation_id if available
+      const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
+
+      const payload = {
+        user_id: userId,
+        conversation_id: conversationId,
+        transcript: session.messages,
+        analysis: {
+          lastSaved: new Date().toISOString(),
+          messageCount: session.messages.length
+        }
+      };
+
+      // Use sendBeacon for reliable unload save
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      navigator.sendBeacon(SESSION_URL, blob);
+      
+      console.log('[SessionSync] 🚪 Page unload - saving via beacon');
+    });
   }
 
   // ─── INIT ─────────────────────────────────────────────────────────────────
@@ -145,12 +213,23 @@
     // Hook into message flow
     hookIntoMessages();
     
+    // Setup page unload handler
+    setupUnloadHandler();
+    
     console.log('[SessionSync] ✅ Ready');
+    console.log('[SessionSync] User ID:', getUserId());
+    
+    // Log metadata when first message is sent
+    setTimeout(() => {
+      const metadata = getConversationMetadata();
+      console.log('[SessionSync] 📋 Conversation Metadata:', metadata);
+    }, 1000);
   }
 
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
   WA.getUserId = getUserId;
+  WA.getConversationMetadata = getConversationMetadata;
   WA.loadSessionFromBackend = loadSessionFromBackend;
   WA.saveSessionToBackend = saveSessionToBackend;
 

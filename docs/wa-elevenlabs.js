@@ -225,11 +225,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       session = await Conversation.startSession({
         agentId: AGENT_ID,
 
-        // Text-only / chat mode — no audio, no mic
-        overrides: {
-          conversation: { textOnly: true }
-        },
-
         // Inject page + session context as dynamic variable
         dynamicVariables: contextToSend ? { context: contextToSend } : undefined,
 
