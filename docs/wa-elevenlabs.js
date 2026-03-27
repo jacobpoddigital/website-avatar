@@ -7,7 +7,7 @@
  * - Prevents audio worklet interference in text-only mode
  */
 
-import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
+import { Conversation } from 'https://esm.sh/@elevenlabs/client@latest';
 
 (function () {
 
