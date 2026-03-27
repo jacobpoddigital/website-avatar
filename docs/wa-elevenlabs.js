@@ -214,6 +214,15 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
     if (typeof WA.onBridgeConnecting === 'function') WA.onBridgeConnecting();
 
+    // ✅ GET SESSION METADATA
+    const metadata = WA.getConversationMetadata ? WA.getConversationMetadata() : {
+      user_id: 'anonymous',
+      session_id: Date.now().toString(),
+      message_count: 0
+    };
+
+    console.log('[WA:Bridge] 🔗 Connecting with metadata:', metadata);
+
     const reconnectCtx  = buildReconnectContext();
     const pageCtx       = buildPageContext();
     const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
@@ -225,6 +234,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       session = await Conversation.startSession({
         agentId: AGENT_ID,
 
+        // ✅ PASS METADATA TO ELEVENLABS
+        metadata: {
+          user_id: metadata.user_id,
+          session_id: metadata.session_id,
+          message_count: metadata.message_count,
+          timestamp: new Date().toISOString()
+        },
+
         // Inject page + session context as dynamic variable
         dynamicVariables: contextToSend ? { context: contextToSend } : undefined,
 
@@ -232,6 +249,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           console.log('[WA:Bridge] onConnect fired — session established');
           log('Connected');
           setConnectUI(true);
+
+          // ✅ CAPTURE ELEVENLABS CONVERSATION_ID
+          if (session?.conversationId) {
+            const waSession = WA.getSession ? WA.getSession() : {};
+            waSession.elevenlabsConversationId = session.conversationId;
+            if (WA.saveSession) WA.saveSession(waSession);
+            console.log('[WA:Bridge] 💾 Captured ElevenLabs conversation_id:', session.conversationId);
+          } else {
+            console.log('[WA:Bridge] ⚠️ No conversationId found on session object');
+          }
 
           // Open panel directly — do NOT call toggleChat (causes reconnect loop)
           const panel = document.getElementById('wa-panel');
