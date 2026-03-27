@@ -126,21 +126,14 @@ Rules:
   // ─── KNOWLEDGE CONTEXT PARSER ─────────────────────────────────────────────
 
   function parseKnowledgeIntent(knowledgeContext, pageMap) {
-    // Guard: No knowledge context at all
-    if (!knowledgeContext) return null;
-    
-    // Guard: Knowledge context exists but intent is missing - SKIP everything
-    if (!knowledgeContext.intent) {
-      if (WA.DEBUG) console.warn('[WA] Knowledge context missing intent - no action needed');
-      return { actions: [] }; // ← Returns empty actions, OpenAI NOT called
-    }
+    if (!knowledgeContext || !knowledgeContext.intent) return null;
     
     const { intent, target_page, section, confidence } = knowledgeContext;
     
     // Only trust high-confidence knowledge context
     if ((confidence || 0) < 0.8) {
       if (WA.DEBUG) console.log('[WA] Knowledge context confidence too low:', confidence);
-      return null; // ← Still falls through to OpenAI for low confidence
+      return null;
     }
     
     // ──────────────────────────────────────────────────────────────────────

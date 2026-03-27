@@ -25,8 +25,6 @@
   const CONFIG_URL = 'https://backend.jacob-e87.workers.dev/config';
   // OpenAI proxy — always this Worker, never exposed in script tag
   const PROXY_URL  = 'https://backend.jacob-e87.workers.dev/classify';
-  // Session endpoint — always this Worker
-  const SESSION_URL = 'https://backend.jacob-e87.workers.dev/session';
 
   // ── INJECT GREETING WIDGET HTML ─────────────────────────────────────────
   function injectGreeting(config = {}) {
@@ -124,93 +122,67 @@
   // ── BOOT ────────────────────────────────────────────────────────────────
   async function boot() {
     try {
-      // Check if wc_visitor already exists
-      if (localStorage.getItem('wc_visitor')) {
-        initializeWidget();
-        return;
+      let config = {};
+      if (accountId) {
+        try {
+          const res = await fetch(`${CONFIG_URL}?id=${accountId}`);
+          if (res.ok) config = await res.json();
+          else console.warn('[WA] Config not found for account:', accountId);
+        } catch(e) {
+          console.warn('[WA] Could not fetch config:', e.message);
+        }
+      } else {
+        console.warn('[WA] No data-account-id provided on script tag');
       }
 
-      // Listen for localStorage changes (when cookies accepted in same window)
-      window.addEventListener('storage', function onStorageChange(e) {
-        if (e.key === 'wc_visitor' && e.newValue) {
-          window.removeEventListener('storage', onStorageChange);
-          initializeWidget();
-        }
-      });
+      window.WA_CONFIG = {
+        elevenlabsAgentId: config.elevenlabsAgentId || '',
+        openaiProxyUrl:    PROXY_URL,
+        agentName:         config.agentName || 'Website Avatar',
+        primaryColor:      config.primaryColor || '#c84b2f',
+        debug:             config.debug || false,
+        avatar_url:        config.avatar_url || '',
+        greetingMessage:   config.greetingMessage || '',
+        businessName:      config.businessName || ''
+      };
+      const debug = window.WA_CONFIG.debug;
 
-      // Fallback: check every 1 second (storage event doesn't always fire in same tab)
-      const checkInterval = setInterval(() => {
-        if (localStorage.getItem('wc_visitor')) {
-          clearInterval(checkInterval);
-          initializeWidget();
-        }
-      }, 1000);
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = BASE_URL + '/widget.css';
+      document.head.appendChild(link);
 
-      async function initializeWidget() {
-        let config = {};
-        if (accountId) {
-          try {
-            const res = await fetch(`${CONFIG_URL}?id=${accountId}`);
-            if (res.ok) config = await res.json();
-            else console.warn('[WA] Config not found for account:', accountId);
-          } catch(e) {
-            console.warn('[WA] Could not fetch config:', e.message);
-          }
-        } else {
-          console.warn('[WA] No data-account-id provided on script tag');
-        }
+      injectHTML(window.WA_CONFIG.agentName, config);
+      injectGreeting(config);
 
-        window.WA_CONFIG = {
-          elevenlabsAgentId: config.elevenlabsAgentId || '',
-          openaiProxyUrl:    PROXY_URL,
-          sessionUrl:        SESSION_URL,
-          agentName:         config.agentName || 'Website Avatar',
-          primaryColor:      config.primaryColor || '#c84b2f',
-          debug:             config.debug || false,
-          avatar_url:        config.avatar_url || '',
-          greetingMessage:   config.greetingMessage || '',
-          businessName:      config.businessName || ''
-        };
-        const debug = window.WA_CONFIG.debug;
+      // ── Core scripts ──
+      await Promise.all([
+        loadScript(BASE_URL + '/core/state.js'),
+        loadScript(BASE_URL + '/core/ai.js'),
+        loadScript(BASE_URL + '/core/utils.js')
+      ]);
 
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = BASE_URL + '/widget.css';
-        document.head.appendChild(link);
+      await Promise.all([
+        loadScript(BASE_URL + '/features/actions.js'),
+        loadScript(BASE_URL + '/features/bridge.js'),
+        loadScript(BASE_URL + '/features/ui.js'),
+        loadScript(BASE_URL + '/features/greeting.js')
+      ]);
 
-        injectHTML(window.WA_CONFIG.agentName, config);
-        injectGreeting(config);
+      // ── Discover + agent scripts ──
+      await Promise.all([
+        loadScript(BASE_URL + '/wa-discover.js'),
+        loadScript(BASE_URL + '/wa-agent.js')
+      ]);
 
-        // ── Core scripts ──
-        await Promise.all([
-          loadScript(BASE_URL + '/core/state.js'),
-          loadScript(BASE_URL + '/core/ai.js'),
-          loadScript(BASE_URL + '/core/utils.js')
-        ]);
+      await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
 
-        await Promise.all([
-          loadScript(BASE_URL + '/features/actions.js'),
-          loadScript(BASE_URL + '/features/bridge.js'),
-          loadScript(BASE_URL + '/features/ui.js'),
-          loadScript(BASE_URL + '/features/greeting.js'),
-          loadScript(BASE_URL + '/features/session-sync.js') 
-        ]);
-
-        // ── Discover + agent scripts ──
-        await Promise.all([
-          loadScript(BASE_URL + '/wa-discover.js'),
-          loadScript(BASE_URL + '/wa-agent.js')
-        ]);
-
-        await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
-
-        // Initialize greeting after all scripts loaded
-        if (window.WebsiteAvatarGreeting) {
-          window.WebsiteAvatarGreeting.init();
-        }
-
-        if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
+      // Initialize greeting after all scripts loaded
+      if (window.WebsiteAvatarGreeting) {
+        window.WebsiteAvatarGreeting.init();
       }
+
+      if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
 
     } catch(e) {
       console.error('[WA] Failed to load:', e.message);
