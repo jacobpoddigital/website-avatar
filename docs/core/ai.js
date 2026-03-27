@@ -18,10 +18,7 @@
 
   const SKIP_PHRASES = [
     'are you still there', 'still there', "you're not responding",
-    'gotten distracted', 'stepped away', 'seems like you',
-    'how can i help', 'what can i help', 'what would you like',
-    'is there anything', 'anything else i can help',
-    'let me know if', 'feel free to ask'
+    'gotten distracted', 'stepped away', 'seems like you'
   ];
 
   async function handleFormInputAI(userText, fields, recentMessages) {
