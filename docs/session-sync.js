@@ -149,12 +149,12 @@
   // ─── PAGE UNLOAD HANDLER ──────────────────────────────────────────────────
 
   function setupUnloadHandler() {
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', (e) => {
       const userId = getUserId();
       const session = WA.getSession ? WA.getSession() : {};
       
       if (!userId || !session.messages || session.messages.length === 0) {
-        return;
+        return; // No active session, allow close without prompt
       }
 
       const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
@@ -170,11 +170,20 @@
         }
       };
 
-      // Use sendBeacon for reliable unload save
+      // Use sendBeacon for guaranteed delivery
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-      navigator.sendBeacon('https://backend.jacob-e87.workers.dev/session', blob);
+      const sent = navigator.sendBeacon('https://backend.jacob-e87.workers.dev/session', blob);
       
-      console.log('[SessionSync] 🚪 Page unload - saving via beacon');
+      console.log('[SessionSync] 🚪 Page unload - beacon sent:', sent);
+
+      // Show confirmation dialog to give beacon time to send
+      // This also warns user they have an active chat
+      e.preventDefault();
+      e.returnValue = ''; // Chrome requires returnValue to be set
+      
+      // Modern browsers will show a generic message like:
+      // "Changes you made may not be saved. Are you sure you want to leave?"
+      return '';
     });
   }
 
