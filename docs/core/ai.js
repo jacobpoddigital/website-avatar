@@ -24,6 +24,18 @@
       'let me know if', 'feel free to ask'
     ];
 
+    // ✅ Conversational prompt filter
+    function isConversationalPrompt(text) {
+      // 1. Length threshold
+      if (!text) return false;
+      if (text.length > 200) {
+        // 2. Indicative words/phrases
+        const convWords = /\b(tell me|could you|what kind|please|for example|help me understand)\b/i;
+        if (convWords.test(text)) return true;
+      }
+      return false;
+    }
+
     async function handleFormInputAI(userText, fields, recentMessages) {
       // Cancel any in-flight request
       if (formAIController) formAIController.abort();
@@ -126,6 +138,19 @@
     // ─── ACTION DECISION ENGINE ───────────────────────────────────────────────
 
     async function decideActions(userMessage, agentMessage, knowledgeContext, pageContext, recentMessages, actions) {
+
+      // 0️⃣ Conversational filter — skip non-actionable messages
+      if (isConversationalPrompt(agentMessage)) {
+        if (WA.DEBUG) console.log('[WA] Action decision skipped — conversational prompt');
+        return null; // No action needed
+      }
+    
+      // 1️⃣ Skip generic phrases
+      if (SKIP_PHRASES.some(p => agentMessage.toLowerCase().includes(p))) return null;
+    
+      // 2️⃣ Skip if an action is already pending/active
+      if (actions.some(a => ['pending','active'].includes(a.status))) return null;
+
       const lower = agentMessage.toLowerCase();
 
       // Skip generic phrases
