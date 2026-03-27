@@ -475,8 +475,37 @@
 
   // ─── END SESSION ──────────────────────────────────────────────────────────
 
-  function endSession() {
+  async function endSession() {
     if (WA.DEBUG) console.log('[WA] Ending session');
+
+    // SAVE SESSION BEFORE DISCONNECTING
+    const userId = WA.getUserId ? WA.getUserId() : null;
+    if (userId && session.elevenlabsConversationId && session.messages?.length) {
+      if (WA.DEBUG) console.log('[WA] 💾 Saving session before end...');
+      
+      try {
+        const response = await fetch('https://backend.jacob-e87.workers.dev/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            conversation_id: session.elevenlabsConversationId,
+            transcript: session.messages,
+            analysis: {
+              lastSaved: new Date().toISOString(),
+              messageCount: session.messages.length,
+              endedManually: true
+            }
+          })
+        });
+        
+        if (response.ok) {
+          if (WA.DEBUG) console.log('[WA] ✅ Session saved before end');
+        }
+      } catch (err) {
+        console.error('[WA] ❌ Failed to save session before end:', err);
+      }
+    }
 
     WA.clearQueue();
     WA.disconnectBridge();
