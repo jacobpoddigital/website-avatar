@@ -270,7 +270,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@latest';
           agent: {
             firstMessage: null,
             prompt: {
-              prompt: [
+              append: [
                 pageContext,
                 userContext,
                 reconnectContext
