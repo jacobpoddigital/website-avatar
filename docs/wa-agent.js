@@ -592,6 +592,15 @@
   }
   
   function renderMultiActionCard(actions) {
+    // Action type labels
+    const actionTypeLabels = {
+      'navigate': 'Navigate',
+      'fill_form': 'Fill Form',
+      'navigate_then_fill': 'Navigate',
+      'click_element': 'Click',
+      'scroll_to': 'Scroll'
+    };
+    
     // Sort by confidence (if available)
     const sorted = [...actions].sort((a, b) => 
       (b.confidence || 0.8) - (a.confidence || 0.8)
@@ -610,8 +619,12 @@
       const conf = action.confidence || 0.8;
       const indicator = conf < 0.7 ? ' (?)' : '';
       
+      // Get action type label
+      const actionTypeLabel = actionTypeLabels[action.type] || action.type;
+      
       return {
         text: label + indicator,
+        label: actionTypeLabel,  // Add action type as button label
         style: 'confirm',
         action: async () => {
           await executeDecidedAction(action);
