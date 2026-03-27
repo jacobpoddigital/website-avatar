@@ -193,6 +193,31 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     return null;
   }
 
+  // ─── CONVERSATION ID CAPTURE ──────────────────────────────────────────────
+
+  async function captureConversationId(session) {
+    const props = ['conversationId', 'id', 'sessionId', 'conversation_id'];
+    let conversationId = null;
+    
+    console.log('[WA:Bridge] 🔍 Polling for conversation_id...');
+    
+    // Poll until conversation ID exists (up to 2 seconds)
+    for (let i = 0; i < 10; i++) {
+      conversationId = props.map(p => session[p]).find(v => !!v);
+      if (conversationId) {
+        console.log('[WA:Bridge] ✅ Found conversation_id on attempt', i + 1);
+        break;
+      }
+      await new Promise(res => setTimeout(res, 200)); // wait 200ms
+    }
+    
+    if (!conversationId) {
+      console.log('[WA:Bridge] 📋 Session object keys:', Object.keys(session || {}));
+    }
+    
+    return conversationId;
+  }
+
   // ─── CONNECTION ───────────────────────────────────────────────────────────
 
   async function connect() {
@@ -247,48 +272,22 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           context: contextToSend || ''
         },
 
-        onConnect: () => {
+        onConnect: async () => {
           console.log('[WA:Bridge] onConnect fired — session established');
           log('Connected');
           setConnectUI(true);
 
-          // ✅ CAPTURE ELEVENLABS CONVERSATION_ID
-          // Try multiple possible property names
-          const conversationId = session?.conversationId || 
-                                session?.id || 
-                                session?.sessionId ||
-                                session?.conversation_id;
-
-          console.log('[WA:Bridge] 🔍 Checking for conversation_id...');
-          console.log('[WA:Bridge] session.conversationId:', session?.conversationId);
-          console.log('[WA:Bridge] session.id:', session?.id);
-          console.log('[WA:Bridge] session.sessionId:', session?.sessionId);
-          console.log('[WA:Bridge] session keys:', Object.keys(session || {}));
-
+          // ✅ CAPTURE ELEVENLABS CONVERSATION_ID (with polling)
+          const conversationId = await captureConversationId(session);
+          
           if (conversationId) {
             const waSession = WA.getSession ? WA.getSession() : {};
             waSession.elevenlabsConversationId = conversationId;
             if (WA.saveSession) WA.saveSession(waSession);
-            console.log('[WA:Bridge] ✅ Captured ElevenLabs conversation_id:', conversationId);
+            console.log('[WA:Bridge] 💾 Captured ElevenLabs conversation_id:', conversationId);
           } else {
-            console.log('[WA:Bridge] ⚠️ No conversationId found - will retry in 500ms');
-            
-            // Delayed check - sometimes the ID appears after connection
-            setTimeout(() => {
-              const delayedId = session?.conversationId || 
-                               session?.id || 
-                               session?.sessionId ||
-                               session?.conversation_id;
-              
-              if (delayedId) {
-                const waSession = WA.getSession ? WA.getSession() : {};
-                waSession.elevenlabsConversationId = delayedId;
-                if (WA.saveSession) WA.saveSession(waSession);
-                console.log('[WA:Bridge] ✅ Captured ElevenLabs conversation_id (delayed):', delayedId);
-              } else {
-                console.log('[WA:Bridge] ⚠️ Still no conversationId - will use fallback on save');
-              }
-            }, 500);
+            console.warn('[WA:Bridge] ⚠️ Could not capture conversation_id after polling');
+            console.log('[WA:Bridge] Will use fallback ID on save');
           }
 
           // Open panel directly — do NOT call toggleChat (causes reconnect loop)
