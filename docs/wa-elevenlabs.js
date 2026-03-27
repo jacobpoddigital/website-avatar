@@ -201,26 +201,30 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       return null;
     }
     
-    const props = ['conversationId', 'id', 'sessionId', 'conversation_id'];
-    let conversationId = null;
+    console.log('[WA:Bridge] 🔍 Attempting to get conversation_id via getId()...');
     
-    console.log('[WA:Bridge] 🔍 Polling for conversation_id...');
-    
-    // Poll until conversation ID exists (up to 2 seconds)
+    // Poll for getId() to return a value (up to 2 seconds)
     for (let i = 0; i < 10; i++) {
-      conversationId = props.map(p => sessionObj[p]).find(v => !!v);
-      if (conversationId) {
-        console.log('[WA:Bridge] ✅ Found conversation_id on attempt', i + 1);
-        break;
+      let conversationId = null;
+      
+      // Try the documented getId() method
+      if (typeof sessionObj.getId === 'function') {
+        conversationId = sessionObj.getId();
       }
+      
+      if (conversationId) {
+        console.log('[WA:Bridge] ✅ Found conversation_id via getId() on attempt', i + 1, ':', conversationId);
+        return conversationId;
+      }
+      
       await new Promise(res => setTimeout(res, 200)); // wait 200ms
     }
     
-    if (!conversationId) {
-      console.log('[WA:Bridge] 📋 Session object keys:', Object.keys(sessionObj || {}));
-    }
+    console.warn('[WA:Bridge] ⚠️ getId() returned null/undefined after 10 attempts');
+    console.log('[WA:Bridge] 📋 Session object has getId method:', typeof sessionObj.getId === 'function');
+    console.log('[WA:Bridge] 📋 Session object keys:', Object.keys(sessionObj || {}));
     
-    return conversationId;
+    return null;
   }
 
   // ─── CONNECTION ───────────────────────────────────────────────────────────
