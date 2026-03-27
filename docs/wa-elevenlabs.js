@@ -347,7 +347,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@latest';
         },
       
         onMessage: (msg) => {
-          console.log('[WA:Bridge] Message:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
+          console.log('[WA:Bridge] ===== RAW MESSAGE =====');
+          console.log('Source:', msg.source);
+          console.log('Full message:', msg.message);
+          console.log('Message length:', msg.message?.length);
+          console.log('[WA:Bridge] ====================');
+          
           if (!msg.message) return;
       
           if (msg.source === 'ai') {
