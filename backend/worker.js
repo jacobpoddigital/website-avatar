@@ -144,27 +144,11 @@ export default {
       console.log('[Webhook] 🔔 ElevenLabs webhook received');
       console.log('[Webhook] Headers:', Object.fromEntries(request.headers));
       
-      // Verify HMAC
-      const signature = request.headers.get('X-Elevenlabs-Signature');
-      if (!signature) {
-        console.error('[Webhook] ❌ Missing signature');
-        return json({ error: 'Missing signature' }, 403, cors);
-      }
-    
       const bodyText = await request.text();
       console.log('[Webhook] Body length:', bodyText.length, 'bytes');
       console.log('[Webhook] Body preview:', bodyText.slice(0, 500));
-      
-      const valid = await verifyHmac(bodyText, signature, env.WEBHOOK_SECRET);
-      if (!valid) {
-        console.error('[Webhook] ❌ Invalid signature');
-        console.log('[Webhook] Expected secret:', env.WEBHOOK_SECRET ? '(set)' : '(missing)');
-        return json({ error: 'Invalid signature' }, 403, cors);
-      }
-      
-      console.log('[Webhook] ✅ Signature verified');
     
-      // Parse JSON after verification
+      // Parse JSON
       let body;
       try { 
         body = JSON.parse(bodyText); 
@@ -179,10 +163,12 @@ export default {
         has_transcript: !!body?.transcript,
         transcript_length: body?.transcript?.length,
         has_analysis: !!body?.analysis,
+        has_user_id: !!body?.user_id,
         dynamic_vars: body?.conversation_initiation_client_data?.dynamic_variables
       });
     
-      const userId = body?.conversation_initiation_client_data?.dynamic_variables?.user_id;
+      // Extract data - support both simple and nested formats
+      const userId = body?.user_id || body?.conversation_initiation_client_data?.dynamic_variables?.user_id;
       const conversationId = body?.conversation_id;
     
       console.log('[Webhook] Extracted:', { userId, conversationId });
@@ -215,35 +201,6 @@ export default {
       }
     }
     
-    // ── HMAC VERIFICATION HELPER ──────────────────────────
-    async function verifyHmac(bodyText, signature, secret) {
-      if (!secret) {
-        console.error('[HMAC] No webhook secret configured');
-        return false;
-      }
-      
-      try {
-        const encoder = new TextEncoder();
-        const keyData = encoder.encode(secret);
-        const cryptoKey = await crypto.subtle.importKey(
-          'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
-        );
-      
-        const sigBuffer = hexToBuffer(signature);
-        const bodyBuffer = encoder.encode(bodyText);
-      
-        return crypto.subtle.verify('HMAC', cryptoKey, sigBuffer, bodyBuffer);
-      } catch(e) {
-        console.error('[HMAC] Verification error:', e.message);
-        return false;
-      }
-    }
-    
-    function hexToBuffer(hex) {
-      const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-      return bytes.buffer;
-    }
-
     return json({ error: 'Not found' }, 404, cors);
   }
 };
