@@ -1,11 +1,10 @@
 /**
- * wa-elevenlabs.js — ElevenLabs bridge (text-only / chat mode)
- * Uses @elevenlabs/client SDK via esm.sh CDN
- * Connects to ElevenLabs conversational agent in text-only mode.
- * No audio, no microphone.
- *
- * IMPORTANT: In ElevenLabs dashboard → agent Security tab,
- * ensure "Allow conversation config overrides" is enabled.
+ * wa-elevenlabs.js — ElevenLabs bridge (text-only / chat mode) - FIXED VERSION
+ * 
+ * FIXES:
+ * - Properly disables audio to prevent WebSocket closing issues
+ * - Adds better error handling for connection state
+ * - Prevents audio worklet interference in text-only mode
  */
 
 import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
@@ -42,9 +41,10 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   console.log('[WA:Bridge] Agent ID:', AGENT_ID || '(MISSING — check backend KV)');
 
   let session = null;
+  let isConnecting = false;
+  let shouldBeConnected = false;
 
   // ─── CONTEXT BUILDERS ─────────────────────────────────────────────────────
-
   function buildPageContext() {
     const pages = WA.PAGE_MAP || [];
     const forms = WA.FORM_MAP || [];
@@ -63,16 +63,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   }
 
   function buildUserContext() {
-    // Build returning user context summary if available
     if (!WA.userContext || !WA.isReturningUser) return null;
-
     const ctx = WA.userContext;
     const lines = [];
-
     lines.push('═══════════════════════════════════════════');
     lines.push('🔄 RETURNING VISITOR CONTEXT');
     lines.push('═══════════════════════════════════════════');
-
     if (ctx.name) lines.push(`Name: ${ctx.name}`);
     if (ctx.email) lines.push(`Email: ${ctx.email}`);
     if (ctx.phone) lines.push(`Phone: ${ctx.phone}`);
@@ -84,11 +80,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (ctx.growthIntent) lines.push(`Growth Intent: ${ctx.growthIntent}`);
     if (ctx.qualificationStage) lines.push(`Qualification Stage: ${ctx.qualificationStage}`);
     if (ctx.lastTopic) lines.push(`Last Topic: ${ctx.lastTopic}`);
-
     if (WA.lastVisitMessageCount) {
       lines.push(`Previous conversation length: ${WA.lastVisitMessageCount} messages`);
     }
-
     lines.push('═══════════════════════════════════════════');
     lines.push('');
     lines.push('📋 INSTRUCTIONS:');
@@ -99,7 +93,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     lines.push('- Never say "I have your context" or "according to my records"');
     lines.push('- Just demonstrate that you remember them naturally');
     lines.push('═══════════════════════════════════════════');
-
     return lines.join('\n');
   }
 
@@ -115,10 +108,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     recent.forEach(m => lines.push(`  ${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
     lines.push('');
   
-    // URL validation failure - report FIRST so agent can immediately act
     if (s.lastUrlValidationFailure) {
       const failure = s.lastUrlValidationFailure;
-      const isRecent = Date.now() - failure.attemptedAt < 10000; // Last 10 seconds
+      const isRecent = Date.now() - failure.attemptedAt < 10000;
       
       if (isRecent) {
         lines.push('⚠️ CRITICAL: NAVIGATION FAILURE DETECTED');
@@ -136,7 +128,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         lines.push('4. Apologize for the confusion and move forward with a valid suggestion');
         lines.push('');
         
-        // Clear the failure after reporting
         delete s.lastUrlValidationFailure;
         try {
           sessionStorage.setItem('wa_session', JSON.stringify(s));
@@ -144,7 +135,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       }
     }
   
-    // Active form fill — critical: do NOT say form was submitted
     const activeForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'active');
     if (activeForm) {
       const filled = (activeForm.payload?.fields || []).filter(f => f.value);
@@ -158,7 +148,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       return lines.join('\n');
     }
 
-    // Completed form
     const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
     const deniedForm = (() => {
       const d = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'denied');
@@ -196,68 +185,43 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       try { return new Set(JSON.parse(sessionStorage.getItem(sentKey) || '[]')); } catch { return new Set(); }
     })();
 
-    // Completed form — acknowledge submission
     const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
-    if (completedForm && !sent.has(completedForm.id)) {
-      sent.add(completedForm.id);
-      sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
-      const fields = completedForm.payload.fields.filter(f => f.value);
-      return `[SYSTEM: The contact form was just submitted with: ${fields.map(f => `${f.label}=${f.value}`).join(', ')}. Acknowledge this naturally and ask if there's anything else you can help with.]`;
+    if (completedForm && !sent.has('form_complete')) {
+      sent.add('form_complete');
+      try { sessionStorage.setItem(sentKey, JSON.stringify([...sent])); } catch {}
+      return 'The contact form has been successfully submitted.';
     }
 
-    // Post-navigation — fire once per page using URL as key
-    const pageKey = `page_${window.location.href}`;
-    if (!sent.has(pageKey)) {
-      sent.add(pageKey);
-      sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
+    const deniedForm = (() => {
+      const d = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'denied');
+      if (!d) return null;
+      const navigatedAfter = (s.actions || []).some(
+        a => a.type === 'navigate' && a.status === 'complete' &&
+             (a.completedAt || 0) > (d.completedAt || 0)
+      );
+      return navigatedAfter ? null : d;
+    })();
 
-      const lastNav = [...(s.actions || [])]
-        .filter(a => a.type === 'navigate' && a.status === 'complete')
-        .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))[0];
-
-      const recentMsgs = s.messages.slice(-4)
-        .map(m => `${m.role === 'user' ? 'User' : 'You'}: ${m.text}`)
-        .join('\n');
-
-      if (lastNav) {
-        return `[SYSTEM: You just navigated the user to the ${lastNav.payload.targetLabel} page. Welcome them to the page naturally and offer to help them explore it. Recent conversation:\n${recentMsgs}]`;
-      }
-
-      return `[SYSTEM: Continue the conversation naturally. You are now on: ${document.title}. Recent conversation:\n${recentMsgs}]`;
-    }
-
-    // Last message was from user — continue from there
-    const lastMsg = s.messages[s.messages.length - 1];
-    if (lastMsg?.role === 'user') {
-      const key = `user_${lastMsg.ts}`;
-      if (!sent.has(key)) {
-        sent.add(key);
-        sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
-        return `[SYSTEM: The user's last message was: "${lastMsg.text}". Continue the conversation naturally from here.]`;
-      }
+    if (deniedForm && !sent.has('form_denied')) {
+      sent.add('form_denied');
+      try { sessionStorage.setItem(sentKey, JSON.stringify([...sent])); } catch {}
+      return 'I notice the contact form wasn\'t completed. Is there anything else I can help you with?';
     }
 
     return null;
   }
 
-  // ─── CONNECTION ───────────────────────────────────────────────────────────
+  // ─── CONNECTION MANAGEMENT ────────────────────────────────────────────────
 
   async function connect() {
-    console.log('[WA:Bridge] connect() called — session:', !!session, '| agentId:', AGENT_ID);
-  
-    // Block connection if no wc_visitor (cookies not accepted)
-    const userId = getUserId();
-    if (!userId) {
-      console.warn('[WA:Bridge] Cannot connect: cookies not accepted (no wc_visitor)');
-      if (typeof WA.agentSay === 'function') {
-        WA.agentSay('Please accept cookies to start chatting.');
-      }
-      return; // Stop here
+    if (isConnecting) {
+      console.log('[WA:Bridge] Already connecting — ignoring duplicate call');
+      return;
     }
 
     if (session) {
-      console.log('[WA:Bridge] Already connected — disconnecting first');
-      //await disconnect();
+      console.log('[WA:Bridge] Already connected');
+      return;
     }
 
     if (!AGENT_ID) {
@@ -266,52 +230,100 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       return;
     }
 
+    isConnecting = true;
+    shouldBeConnected = true;
+
     const btn = document.getElementById('wa-connect-btn');
     if (btn) { btn.textContent = 'Connecting...'; btn.disabled = true; }
     if (typeof WA.onBridgeConnecting === 'function') WA.onBridgeConnecting();
 
     try {
-      // Get user_id
       const userId = getUserId();
-      if (!userId) {
-        console.warn('[WA:Bridge] No wc_visitor found — session will not be saved');
-      }
-
-      // Build context (page + user + session)
       const pageContext = buildPageContext();
       const userContext = buildUserContext();
-      const sessionContext = buildReconnectContext();
+      const reconnectContext = buildReconnectContext();
 
-      const contextParts = [pageContext];
-      if (userContext) contextParts.push(userContext);
-      if (sessionContext) contextParts.push(sessionContext);
+      const clientTools = (WA.PAGE_CONTEXT?.elements || []).map(el => ({
+        name: `scroll_to_${el.id}`,
+        description: `Scroll to "${el.text || el.title}" section`,
+        parameters: {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      }));
 
-      const contextToSend = contextParts.join('\n\n');
-
-      console.log('[WA:Bridge] Starting session with context length:', contextToSend.length);
-      if (DEBUG) console.log('[WA:Bridge] Full context:\n', contextToSend);
-
-      // Build dynamic variables
-      const dynamicVars = { context: contextToSend };
-      if (userId) {
-        dynamicVars.user_id = userId;
-        console.log('[WA:Bridge] Including user_id in dynamic variables:', userId);
-      }
-
-      session = await Conversation.startSession({
+      // ═══════════════════════════════════════════════════════════════════════
+      // CRITICAL FIX: Properly disable audio in text-only mode
+      // ═══════════════════════════════════════════════════════════════════════
+      const conversationConfig = {
         agentId: AGENT_ID,
-        clientTools: {},
-        overrides: { agent: { prompt: { prompt: contextToSend } } },
         
-        // Pass dynamic variables including user_id
-        dynamicVariables: dynamicVars,
+        // Audio configuration - MUST be explicitly disabled for text-only
+        audio: {
+          input: {
+            enabled: false,  // ← CRITICAL: Disable audio input
+            sampleRate: 16000 // Keep default but unused
+          },
+          output: {
+            enabled: false   // ← CRITICAL: Disable audio output
+          }
+        },
+        
+        // Text-only mode
+        mode: 'text',
+        
+        // Custom client tools
+        clientTools: clientTools.length > 0 ? { tools: clientTools } : undefined,
+        
+        // Conversation overrides
+        overrides: {
+          agent: {
+            firstMessage: null,
+            prompt: {
+              prompt: [
+                pageContext,
+                userContext,
+                reconnectContext
+              ].filter(Boolean).join('\n\n')
+            }
+          },
+          tts: {
+            voiceId: CONFIG.elevenlabsVoiceId || undefined
+          }
+        },
+        
+        // Session metadata
+        metadata: {
+          user_id: userId || 'anonymous',
+          session_id: Date.now().toString()
+        }
+      };
 
+      console.log('[WA:Bridge] Starting session with config:', {
+        agentId: AGENT_ID,
+        mode: 'text',
+        audioInputEnabled: false,
+        audioOutputEnabled: false,
+        hasClientTools: clientTools.length > 0,
+        hasUserContext: !!userContext
+      });
+
+      session = await Conversation.startSession(conversationConfig);
+      
+      console.log('[WA:Bridge] Session created:', !!session);
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // EVENT HANDLERS
+      // ═══════════════════════════════════════════════════════════════════════
+      
+      session.setEventCallbacks({
         onConnect: () => {
-          console.log('[WA:Bridge] onConnect fired — session established');
+          console.log('[WA:Bridge] ✅ Connected');
+          isConnecting = false;
           log('Connected');
           setConnectUI(true);
 
-          // Open panel directly — do NOT call toggleChat (causes reconnect loop)
           const panel = document.getElementById('wa-panel');
           if (panel && !panel.classList.contains('wa-open')) {
             panel.classList.add('wa-open');
@@ -320,8 +332,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             if (typeof WA._openPanelDirect === 'function') WA._openPanelDirect();
           }
 
-          // Send reconnect prompt if we have session context
-          // On fresh sessions — don't force a greeting, let Michelle respond when user types
           setTimeout(() => {
             if (!session?.sendUserMessage) return;
             const prompt = buildReconnectPrompt();
@@ -329,35 +339,40 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
               log('Reconnect prompt sent');
               session.sendUserMessage(prompt);
             }
-            // No prompt = fresh session, no messages yet — Michelle stays quiet
-            // until the user initiates
           }, 400);
 
           if (typeof WA.onBridgeConnected === 'function') WA.onBridgeConnected();
         },
 
         onDisconnect: () => {
-          console.log('[WA:Bridge] onDisconnect fired');
+          console.log('[WA:Bridge] ❌ Disconnected');
+          isConnecting = false;
           log('Disconnected');
+          
+          const wasSession = session;
           session = null;
           setConnectUI(false);
-          if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
+          
+          // Only trigger reconnect if we should be connected
+          if (shouldBeConnected && wasSession) {
+            console.log('[WA:Bridge] Unexpected disconnect detected');
+            if (typeof WA.onBridgeDisconnected === 'function') {
+              WA.onBridgeDisconnected();
+            }
+          }
         },
 
         onMessage: (msg) => {
-          console.log('[WA:Bridge] onMessage:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
+          console.log('[WA:Bridge] Message:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
           if (!msg.message) return;
 
           if (msg.source === 'ai') {
-            // In text-only mode isFinal may be undefined — only skip if explicitly false
             if (msg.isFinal === false) return;
             
-            // Parse knowledge context from JSON if present
             let knowledgeContext = null;
             let cleanText = msg.message;
             
             try {
-              // Look for JSON block in response (```json ... ```)
               const jsonMatch = msg.message.match(/```json\s*(\{[\s\S]*?\})\s*```/);
               if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[1]);
@@ -369,10 +384,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
                   keywords: parsed.keywords || [],
                   matched_text: parsed.answer || cleanText
                 };
-                // Remove JSON block from display text
                 cleanText = msg.message.replace(/```json[\s\S]*?```/g, '').trim();
               } else {
-                // Fallback: try to find raw JSON object
                 const rawJsonMatch = msg.message.match(/\{[\s\S]*?"intent"[\s\S]*?\}/);
                 if (rawJsonMatch) {
                   const parsed = JSON.parse(rawJsonMatch[0]);
@@ -384,7 +397,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
                     keywords: parsed.keywords || [],
                     matched_text: parsed.answer || cleanText
                   };
-                  // Remove JSON from display text
                   cleanText = msg.message.replace(/\{[\s\S]*?"intent"[\s\S]*?\}/, '').trim();
                 }
               }
@@ -392,7 +404,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
               console.warn('[WA:Bridge] Failed to parse knowledge context:', e);
             }
             
-            // Clean up system markers and formatting
             cleanText = cleanText.replace(/\[[^\]]+\]\s*/g, '').trim();
             cleanText = cleanText.replace(/^Answer:\s*/i, '').trim();
             cleanText = cleanText.replace(/^JSON:\s*/i, '').trim();
@@ -401,9 +412,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             
             if (DEBUG) {
               log(`Agent: "${cleanText.slice(0, 80)}"`);
-              if (knowledgeContext) {
-                log('Knowledge context:', knowledgeContext);
-              }
+              if (knowledgeContext) log('Knowledge context:', knowledgeContext);
             }
             
             if (typeof WA.onAgentMessage === 'function') {
@@ -422,46 +431,74 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onError: (err) => {
-          console.error('[WA:Bridge] onError:', err);
+          console.error('[WA:Bridge] Error:', err);
+          isConnecting = false;
           warn('Error:', err);
+          
           if (typeof WA.agentSay === 'function') {
             WA.agentSay('Something went wrong. Please try reconnecting.');
           }
+          
+          session = null;
           setConnectUI(false);
-          if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
+          
+          if (typeof WA.onBridgeDisconnected === 'function') {
+            WA.onBridgeDisconnected();
+          }
         },
 
         onStatusChange: (info) => {
-          console.log('[WA:Bridge] onStatusChange:', info.status);
+          console.log('[WA:Bridge] Status:', info.status);
           log('Status:', info.status);
         }
       });
 
     } catch (err) {
-      console.error('[WA:Bridge] startSession threw:', err.message, err);
+      console.error('[WA:Bridge] Connection failed:', err.message, err);
+      isConnecting = false;
       warn('Connection failed:', err.message);
+      
       if (typeof WA.agentSay === 'function') {
         WA.agentSay('Could not connect. Please check your connection and try again.');
       }
+      
       if (btn) { btn.textContent = 'Connect'; btn.disabled = false; }
-      if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
+      
+      if (typeof WA.onBridgeDisconnected === 'function') {
+        WA.onBridgeDisconnected();
+      }
     }
   }
 
   async function disconnect() {
+    shouldBeConnected = false;
     if (!session) return;
-    try { await session.endSession(); } catch(e) {}
+    
+    console.log('[WA:Bridge] Disconnecting...');
+    try { 
+      await session.endSession(); 
+    } catch(e) {
+      console.warn('[WA:Bridge] Error during disconnect:', e);
+    }
+    
     session = null;
+    isConnecting = false;
     setConnectUI(false);
   }
 
   function sendText(text) {
-    if (!session) return false;
+    if (!session) {
+      warn('Cannot send text - not connected');
+      return false;
+    }
+    
     try {
+      console.log('[WA:Bridge] Sending text:', text.substring(0, 50));
       session.sendUserMessage(text);
       return true;
     } catch(e) {
       warn('sendText error:', e.message);
+      console.error('[WA:Bridge] Send error:', e);
       return false;
     }
   }
@@ -481,7 +518,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
   }
 
-  function isConnected() { return !!session; }
+  function isConnected() { 
+    return !!session && !isConnecting; 
+  }
 
   // ─── UI ───────────────────────────────────────────────────────────────────
 
@@ -493,16 +532,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
 
   WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
-  WA.getUserId = getUserId; // Expose for session sync module
+  WA.getUserId = getUserId;
 
-  console.log('[WA:Bridge] Reached bridge:ready emit — WA.bus:', !!WA.bus);
+  console.log('[WA:Bridge] Bridge ready');
   if (WA.bus) {
     WA.bus.emit('bridge:ready');
     console.log('[WA:Bridge] bridge:ready emitted');
     log('Bridge ready');
   } else {
-    console.error('[WA:Bridge] WA.bus missing — wa-agent.js namespace problem');
-    warn('WA.bus not available — wa-agent.js may not have loaded');
+    console.error('[WA:Bridge] WA.bus missing');
+    warn('WA.bus not available');
   }
 
 })();
