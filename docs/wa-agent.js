@@ -552,23 +552,41 @@
   // ─── ACTION CARD RENDERING ────────────────────────────────────────────────
 
   function renderActionCard(action) {
-    // Enhanced card with destination context
-    let enhancedMessage = action.description;
+    // Action type labels for buttons
+    const actionTypeLabels = {
+      'navigate': 'Navigate',
+      'fill_form': 'Fill Form',
+      'navigate_then_fill': 'Navigate',
+      'click_element': 'Click',
+      'scroll_to': 'Scroll'
+    };
+    
+    const actionTypeLabel = actionTypeLabels[action.type] || action.type;
+    
+    // Build message with context (no bold formatting)
+    const messageParts = [action.description];
   
-    // Add destination name if available
+    // Add destination/element context if available
     if (action.payload?.targetLabel) {
-      enhancedMessage = `${action.description}\n\nDestination: **${action.payload.targetLabel}**`;
+      messageParts.push(`Destination: ${action.payload.targetLabel}`);
     } else if (action.payload?.elementTitle) {
-      enhancedMessage = `${action.description}\n\nSection: **${action.payload.elementTitle}**`;
+      messageParts.push(`Section: ${action.payload.elementTitle}`);
+    } else if (action.payload?.elementText) {
+      messageParts.push(`Element: ${action.payload.elementText}`);
     }
   
     WA.renderCard({
       label:    'Proposed action',
-      message:  enhancedMessage,
+      message:  messageParts.join('\n\n'),
       actionId: action.id,
       buttons: [
-        { text: "Let's do it", style: 'confirm', action: () => WA.confirmAction(action.id, session) },
-        { text: 'No thanks',   style: 'deny',    action: () => WA.denyAction(action.id, session) }
+        { 
+          text: "Let's do it", 
+          label: actionTypeLabel,  // Add action type as button label
+          style: 'confirm', 
+          action: () => WA.confirmAction(action.id, session) 
+        },
+        { text: 'No thanks', style: 'deny', action: () => WA.denyAction(action.id, session) }
       ]
     });
   }
