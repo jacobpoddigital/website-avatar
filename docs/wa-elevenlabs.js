@@ -262,26 +262,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@latest';
         // Custom client tools
         clientTools: clientTools.length > 0 ? { tools: clientTools } : undefined,
         
-        // CRITICAL FIX: Use textOnly override instead of audio config
-        overrides: {
-          conversation: {
-            textOnly: true  // ← THIS is the correct way per ElevenLabs docs
-          },
-          agent: {
-            firstMessage: null,
-            prompt: {
-              append: [
-                pageContext,
-                userContext,
-                reconnectContext
-              ].filter(Boolean).join('\n\n')
-            }
-          },
-          tts: {
-            voiceId: CONFIG.elevenlabsVoiceId || undefined
-          }
-        },
-        
         // Session metadata
         metadata: {
           user_id: userId || 'anonymous',
