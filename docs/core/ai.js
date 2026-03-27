@@ -24,16 +24,20 @@
       'let me know if', 'feel free to ask'
     ];
 
-    // ✅ Conversational prompt filter
     function isConversationalPrompt(text) {
-      // 1. Length threshold
-      if (!text) return false;
+      if (!text) return true; // treat empty messages as non-actionable
+    
       if (text.length > 200) {
-        // 2. Indicative words/phrases
-        const convWords = /\b(tell me|could you|what kind|please|for example|help me understand)\b/i;
-        if (convWords.test(text)) return true;
+        // Anything long is automatically conversational
+        return true;
       }
-      return false;
+    
+      const lower = text.toLowerCase();
+      const CONVERSATIONAL_KEYWORDS = [
+        
+      ];
+    
+      return CONVERSATIONAL_KEYWORDS.some(kw => lower.includes(kw));
     }
 
     async function handleFormInputAI(userText, fields, recentMessages) {
