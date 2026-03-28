@@ -1,3 +1,5 @@
+import { parseHTML } from 'linkedom';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -140,6 +142,57 @@ export default {
       } catch (err) {
         console.error('[Session] GET DB error:', err);
         return json({ error: 'Database error' }, 500, cors);
+      }
+    }
+
+    // ── GET /semantic?url=xxx ─────────────────────────────
+    if (url.pathname === '/semantic' && request.method === 'GET') {
+      const pageUrl = url.searchParams.get('url');
+      if (!pageUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
+
+      try {
+        // 1️⃣ Fetch the page HTML
+        const response = await fetch(pageUrl);
+        if (!response.ok) throw new Error(`Failed to fetch ${pageUrl}`);
+        const html = await response.text();
+
+        // 2️⃣ Parse the HTML using linkedom
+        const { document } = parseHTML(html);
+
+        // 3️⃣ Remove non-content elements
+        const ignoreSelectors = 'head, header, footer, script, style, nav';
+        document.querySelectorAll(ignoreSelectors).forEach(el => el.remove());
+
+        // 4️⃣ Extract semantic sections
+        const elements = Array.from(document.body.querySelectorAll('h1, h2, h3, h4, h5, h6, p'));
+        const sections = [];
+        let currentSection = null;
+
+        elements.forEach(el => {
+          if (el.tagName.match(/^H[1-6]$/)) {
+            if (currentSection) sections.push(currentSection);
+            currentSection = { heading: el.textContent.trim(), level: parseInt(el.tagName[1]), content: [] };
+          } else if (el.tagName === 'P' && currentSection) {
+            const text = el.textContent.trim();
+            if (text.length > 30) currentSection.content.push(text);
+          }
+        });
+
+        if (currentSection) sections.push(currentSection);
+
+        // 5️⃣ Summarize each section (simple first sentence + light compression)
+        const summarise = (text) => text.split(/[.!?]+/)[0].trim();
+        const output = sections.map(sec => ({
+          heading: sec.heading,
+          level: sec.level,
+          summary: summarise(sec.content.join(' ')),
+          content: sec.content
+        }));
+
+        return json({ url: pageUrl, sections: output }, 200, cors);
+
+      } catch (err) {
+        return json({ error: err.message }, 500, cors);
       }
     }
 
