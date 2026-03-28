@@ -157,11 +157,100 @@ export default {
         const html = await response.text();
 
         // 2️⃣ Parse the HTML using linkedom
+        const { parseHTML } = await import('linkedom');
         const { document } = parseHTML(html);
 
         // 3️⃣ Remove non-content elements
         const ignoreSelectors = 'head, header, footer, script, style, nav';
         document.querySelectorAll(ignoreSelectors).forEach(el => el.remove());
+
+        // ── Helper functions ─────────────────────────────
+        const LIGHT_STOPWORDS = new Set([
+          "the","a","an","and","but","or","so","to","of","in","on","at",
+          "for","with","is","are","was","were","be","been","being","have",
+          "has","had","do","does","did","will","would","could","should",
+          "may","might","must","can","that","this","these","those"
+        ]);
+
+        const summarise = (text) => {
+          if (!text) return '';
+          const first = text.split(/[.!?]+/)[0].trim();
+          return first
+            .split(/\s+/)
+            .filter(w => !LIGHT_STOPWORDS.has(w.toLowerCase()))
+            .join(' ')
+            .trim();
+        };
+
+        const extractSubsections = (headingEl, parentLevel) => {
+          const subsections = [];
+          let currentEl = headingEl.nextElementSibling;
+          while (currentEl) {
+            if (currentEl.tagName && currentEl.tagName.match(/^H[1-6]$/)) {
+              const level = parseInt(currentEl.tagName[1]);
+              if (level <= parentLevel) break;
+              subsections.push({
+                title: currentEl.textContent.trim(),
+                content: Array.from(currentEl.parentElement.querySelectorAll('p'))
+                  .map(p => p.textContent.trim())
+                  .filter(t => t.length > 20)
+              });
+            }
+            currentEl = currentEl.nextElementSibling;
+          }
+          return subsections;
+        };
+
+        const discoverForms = () => {
+          const forms = [];
+          document.querySelectorAll('form').forEach((form, i) => {
+            const fields = Array.from(form.querySelectorAll('input, textarea, select')).map(f => ({
+              name: f.name || null,
+              id: f.id || null,
+              type: f.type || f.tagName.toLowerCase(),
+              required: f.required || f.getAttribute('aria-required') === 'true',
+              label: f.placeholder || f.name || f.id || 'Field'
+            }));
+            if (fields.length > 0) {
+              forms.push({ index: i, fields });
+            }
+          });
+          return forms;
+        };
+
+        const discoverCTAs = () => {
+          const ctas = [];
+          document.querySelectorAll('a, button').forEach(el => {
+            const text = el.textContent.trim();
+            if (text && text.length > 2 && text.length < 60) {
+              ctas.push({ text, role: 'cta', tag: el.tagName });
+            }
+          });
+          return ctas;
+        };
+
+        const discoverMedia = () => {
+          const media = [];
+          document.querySelectorAll('img[alt], video, iframe').forEach(el => {
+            if (el.tagName === 'IMG') {
+              media.push({ type: 'image', alt: el.alt.trim() });
+            } else if (el.tagName === 'VIDEO') {
+              media.push({ type: 'video', title: el.getAttribute('title') || 'Video' });
+            } else if (el.tagName === 'IFRAME') {
+              media.push({ type: 'iframe', src: el.src });
+            }
+          });
+          return media;
+        };
+
+        const discoverContacts = () => {
+          const contacts = [];
+          document.querySelectorAll('a[href^="tel:"], a[href^="mailto:"]').forEach(el => {
+            if (el.href.startsWith('tel:')) contacts.push({ type: 'phone', number: el.href.replace('tel:', '') });
+            if (el.href.startsWith('mailto:')) contacts.push({ type: 'email', email: el.href.replace('mailto:', '') });
+          });
+          return contacts;
+        };
 
         // 4️⃣ Extract semantic sections
         const elements = Array.from(document.body.querySelectorAll('h1, h2, h3, h4, h5, h6, p'));
@@ -171,7 +260,12 @@ export default {
         elements.forEach(el => {
           if (el.tagName.match(/^H[1-6]$/)) {
             if (currentSection) sections.push(currentSection);
-            currentSection = { heading: el.textContent.trim(), level: parseInt(el.tagName[1]), content: [] };
+            currentSection = {
+              heading: el.textContent.trim(),
+              level: parseInt(el.tagName[1]),
+              content: [],
+              subsections: extractSubsections(el, parseInt(el.tagName[1]))
+            };
           } else if (el.tagName === 'P' && currentSection) {
             const text = el.textContent.trim();
             if (text.length > 30) currentSection.content.push(text);
@@ -180,22 +274,34 @@ export default {
 
         if (currentSection) sections.push(currentSection);
 
-        // 5️⃣ Summarize each section (simple first sentence + light compression)
-        const summarise = (text) => text.split(/[.!?]+/)[0].trim();
         const output = sections.map(sec => ({
           heading: sec.heading,
           level: sec.level,
           summary: summarise(sec.content.join(' ')),
-          content: sec.content
+          content: sec.content,
+          subsections: sec.subsections
         }));
 
-        return json({ url: pageUrl, sections: output }, 200, cors);
+        // 5️⃣ Discover forms, CTAs, media, contacts
+        const forms = discoverForms();
+        const ctas = discoverCTAs();
+        const media = discoverMedia();
+        const contacts = discoverContacts();
+
+        // 6️⃣ Return structured JSON
+        return json({
+          url: pageUrl,
+          sections: output,
+          forms,
+          ctas,
+          media,
+          contacts
+        }, 200, cors);
 
       } catch (err) {
         return json({ error: err.message }, 500, cors);
       }
     }
-
     return json({ error: 'Not found' }, 404, cors);
   }
 };
