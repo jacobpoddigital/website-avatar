@@ -123,82 +123,43 @@ Rules:
   // ─── KNOWLEDGE CONTEXT PARSER ─────────────────────────────────────────────
 
   function parseKnowledgeIntent(knowledgeContext, pageMap) {
-    if (!knowledgeContext || !knowledgeContext.intent) return null;
+    if (!knowledgeContext) return null;
     
-    const { intent, target_page, section, confidence } = knowledgeContext;
+    const { intent, target_page, section, confidence, keywords } = knowledgeContext;
     
-    // Only trust high-confidence knowledge context
-    if ((confidence || 0) < 0.8) {
-      if (WA.DEBUG) console.log('[WA] Knowledge context confidence too low:', confidence);
-      return null;
+    // ──────────────────────────────────────────────────────────────────────
+    // GATE 1: Must have at least one of intent, target_page, or section
+    // ──────────────────────────────────────────────────────────────────────
+    if (!intent && !target_page && !section) {
+      if (WA.DEBUG) console.log('[WA] No intent, target_page, or section — skipping OpenAI');
+      return { actions: [] };
     }
     
     // ──────────────────────────────────────────────────────────────────────
-    // INFORMATIONAL: No target_page AND no section = just conversation
+    // GATE 2: Confidence must be high enough
+    // ──────────────────────────────────────────────────────────────────────
+    if ((confidence || 0) < 0.8) {
+      if (WA.DEBUG) console.log('[WA] Knowledge context confidence too low:', confidence, '— skipping OpenAI');
+      return { actions: [] };
+    }
+    
+    // ──────────────────────────────────────────────────────────────────────
+    // GATE 3: Must have navigation context (target_page or section)
     // ──────────────────────────────────────────────────────────────────────
     if (!target_page && !section) {
-      if (WA.DEBUG) console.log('[WA] Knowledge context is informational (no target/section):', intent);
-      return { actions: [] }; // Explicitly: no action needed
-    }
-    
-    const actions = [];
-    
-    // ──────────────────────────────────────────────────────────────────────
-    // NAVIGATE: Has target_page
-    // ──────────────────────────────────────────────────────────────────────
-    if (target_page) {
-      const domain = window.location.origin;
-      const page = pageMap.find(p => {
-        const path = p.file.replace(domain, '');
-        return path === target_page || p.file === target_page;
-      });
-      
-      if (page) {
-        actions.push({
-          type: 'navigate',
-          auto: false,
-          element_id: null,
-          target_url: page.file,
-          target_label: page.label,
-          reason: `Agent recommended navigating to ${page.label}`,
-          confidence: confidence || 0.9
-        });
-        
-        if (WA.DEBUG) console.log('[WA] Knowledge context parsed navigate action:', page.label);
-      } else {
-        if (WA.DEBUG) console.warn('[WA] Knowledge context target_page not found in page map:', target_page);
-        return null; // Page not found, let OpenAI try
-      }
+      if (WA.DEBUG) console.log('[WA] No target_page or section — skipping OpenAI');
+      return { actions: [] };
     }
     
     // ──────────────────────────────────────────────────────────────────────
-    // SCROLL: Has section but no target_page (same page scroll)
+    // ALL GATES PASSED: Proceed to OpenAI with knowledge context
     // ──────────────────────────────────────────────────────────────────────
-    if (section && !target_page) {
-      // Would need to search page context for matching section element
-      // For now, defer to OpenAI which has full page context
-      if (WA.DEBUG) console.log('[WA] Knowledge context wants scroll to section, deferring to OpenAI');
-      return null;
+    if (WA.DEBUG) {
+      console.log('[WA] Actionable knowledge context — proceeding to OpenAI');
+      console.log('[WA] Intent:', intent, '| Page:', target_page, '| Section:', section, '| Keywords:', keywords);
     }
     
-    // ──────────────────────────────────────────────────────────────────────
-    // CONTACT/FORM: Explicit form fill intent
-    // ──────────────────────────────────────────────────────────────────────
-    if (intent.includes('contact') || intent.includes('form') || intent.includes('enquiry')) {
-      actions.push({
-        type: 'fill_form',
-        auto: false,
-        element_id: null,
-        target_url: null,
-        target_label: 'Contact Form',
-        reason: 'Agent suggested filling out the contact form',
-        confidence: confidence || 0.9
-      });
-      
-      if (WA.DEBUG) console.log('[WA] Knowledge context parsed form fill action');
-    }
-    
-    return actions.length > 0 ? { actions } : null;
+    return null; // Signal: call OpenAI
   }
 
   // ─── ACTION DECISION ENGINE ───────────────────────────────────────────────
@@ -222,25 +183,26 @@ Rules:
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // PRIMARY: High-confidence knowledge context
+    // CHECK: Knowledge context decision
     // ──────────────────────────────────────────────────────────────────────
-    if (knowledgeContext && knowledgeContext.confidence >= 0.8) {
+    if (knowledgeContext) {
       const pageMap = WA.getPageMap ? WA.getPageMap() : [];
-      const knowledgeActions = parseKnowledgeIntent(knowledgeContext, pageMap);
+      const knowledgeResult = parseKnowledgeIntent(knowledgeContext, pageMap);
       
-      if (knowledgeActions !== null) {
-        // Could be { actions: [...] } or { actions: [] }
-        if (WA.DEBUG) console.log('[WA] Using knowledge context result:', knowledgeActions);
-        return knowledgeActions;
+      // If result is { actions: [] }, skip OpenAI
+      if (knowledgeResult !== null) {
+        return knowledgeResult;
       }
       
-      // knowledgeActions is null → knowledge context couldn't parse it
-      // Fall through to OpenAI
-      if (WA.DEBUG) console.log('[WA] Knowledge context could not parse intent, deferring to OpenAI');
+      // Result is null → proceed to OpenAI call below
+    } else {
+      // No knowledge context at all → skip OpenAI
+      if (WA.DEBUG) console.log('[WA] No knowledge context — skipping OpenAI');
+      return null;
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // FALLBACK: Call OpenAI for action decision
+    // CALL OPENAI: High-confidence actionable intent exists
     // ──────────────────────────────────────────────────────────────────────
     
     // Cancel any in-flight request
@@ -292,17 +254,19 @@ Rules:
       `${m.role === 'user' ? 'U' : 'M'}: ${m.text}`
     ).join('\n');
 
-    // Add knowledge context if available
+    // Add knowledge context to OpenAI prompt
     const knowledgeSection = knowledgeContext ? `
 KNOWLEDGE CONTEXT (from agent's response):
 Intent: ${knowledgeContext.intent || 'unknown'}
 Target page: ${knowledgeContext.target_page || 'none'}
 Section: ${knowledgeContext.section || 'none'}
 Confidence: ${knowledgeContext.confidence}
-Keywords: ${knowledgeContext.keywords?.join(', ') || 'none'}
+Keywords (from user speech): ${knowledgeContext.keywords?.join(', ') || 'none'}
 Matched text: "${knowledgeContext.matched_text?.slice(0, 100) || ''}..."
 
-This context shows what the agent knows about the user's intent. Use it to decide the most appropriate action.
+This context shows what the agent knows about the user's intent based on their actual spoken words.
+The keywords are particularly important as they come directly from speech recognition.
+Use this information to decide the most appropriate action.
 ` : '';
 
     const prompt = `You are deciding what actions a website chat widget should take after the agent spoke.
@@ -360,15 +324,17 @@ RULES:
 - element_id uses full format (wa_el_5 not just 5)
 - Sections may have subsections - check subsections array for specific services/offerings
 - When agent mentions a specific service (e.g., "SEO", "Web Design"), look in section subsections
+- When keywords from speech are provided, prioritize elements that match those keywords
 - Sections include summary field - verify relevance before suggesting scroll
 - Buttons include context field - prefer buttons in relevant context
 - If target_page matches current URL (both are paths), use scroll_to. If different, use navigate.
 - Use scroll_to only when already on the target page
 - confidence: 1.0 = perfect match, 0.8 = strong match, 0.6 = possible match, <0.5 = weak/uncertain
+- Boost confidence when element content aligns with keywords from user speech
 - Max 4 actions (prioritize quality over quantity)`;
 
     const t0 = Date.now();
-    if (WA.DEBUG) console.log('[WA] → Action decision request sent (OpenAI fallback)');
+    if (WA.DEBUG) console.log('[WA] → Action decision request sent to OpenAI');
 
     try {
       const res = await fetch(OPENAI_PROXY, {
