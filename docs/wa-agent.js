@@ -754,29 +754,34 @@
   async function handleAgentMessage(userMessage, agentMessage, knowledgeContext) {
     // Apply intent-aware filtering
     const filteredContext = filterPageContext(WA.PAGE_CONTEXT, knowledgeContext);
-
+  
     // Debug full vs filtered
     debugFilteredContext(WA.PAGE_CONTEXT, filteredContext, knowledgeContext);
-
+  
+    // GATE: Skip OpenAI if filtering did nothing
+    if (filteredContext.elements.length === WA.PAGE_CONTEXT.elements.length) {
+      if (WA.DEBUG) console.log('[WA] No filtering applied (0% reduction) — skipping OpenAI');
+      return;
+    }
+  
     const result = await WA.decideActions(
       userMessage,
       agentMessage,
       knowledgeContext,
-      filteredContext,
-      WA.PAGE_CONTEXT,
+      filteredContext, // Only pass filtered context
       session.messages.slice(-4),
       session.actions
     );
-
+  
     if (!result || !result.actions?.length) return;
-
+  
     // Double-check still clear
     if (session.actions.some(a => ['pending','active'].includes(a.status))) return;
-
+  
     // Filter out 'none' actions
     const validActions = result.actions.filter(a => a.type && a.type !== 'none');
     if (!validActions.length) return;
-
+  
     // Multiple high-confidence actions → show multi-action card (never auto)
     const highConfidence = validActions.filter(a => (a.confidence || 0.8) >= 0.7);
     if (highConfidence.length > 1) {
@@ -785,7 +790,7 @@
       renderMultiActionCard(manualActions);
       return;
     }
-
+  
     // Single action or mixed confidence → execute in sequence
     for (const action of validActions) {
       await executeDecidedAction(action);
