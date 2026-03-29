@@ -123,26 +123,252 @@ export default {
       }
     }
 
-    // ── GET /session?user_id=xxx ─────────────────────────
-    if (url.pathname === '/session' && request.method === 'GET') {
-      const userId = url.searchParams.get('user_id');
-      if (!userId) return json({ error: 'Missing user_id' }, 400, cors);
+    // ── SHARED SEMANTIC ANALYSIS FUNCTION ─────────────────────────────
+    async function analyzePageSemantics(pageUrl) {
+      // Fetch HTML
+      const response = await fetch(pageUrl);
+      if (!response.ok) throw new Error(`Failed to fetch ${pageUrl}`);
+      const html = await response.text();
 
-      try {
-        const { results } = await env.website_avatar_db.prepare(`
-          SELECT * FROM conversations
-          WHERE user_id = ?
-          ORDER BY created_at DESC
-        `)
-        .bind(userId)
-        .all();
+      // Parse
+      const { document } = parseHTML(html);
 
-        console.log('[Session] GET for user:', userId, '| found:', results.length);
-        return json(results, 200, cors);
-      } catch (err) {
-        console.error('[Session] GET DB error:', err);
-        return json({ error: 'Database error' }, 500, cors);
+      // Remove junk
+      document.querySelectorAll('head, header, footer, script, style, nav')
+        .forEach(el => el.remove());
+
+      // Helpers
+      const LIGHT_STOPWORDS = new Set([
+        "the","a","an","and","but","or","so","to","of","in","on","at",
+        "for","with","is","are","was","were","be","been","being","have",
+        "has","had","do","does","did","will","would","could","should",
+        "may","might","must","can","that","this","these","those"
+      ]);
+
+      const summarise = (text) => {
+        if (!text || text.length < 50) return text;
+        const first = text.split(/[.!?]+/)[0].trim();
+        return first
+          .split(/\s+/)
+          .filter(w => !LIGHT_STOPWORDS.has(w.toLowerCase()))
+          .join(' ')
+          .trim();
+      };
+
+      function extractSubsections(headingEl) {
+        const subsections = [];
+        const subsectionElements = [];
+        let currentEl = headingEl.nextElementSibling;
+        const parentLevel = parseInt(headingEl.tagName[1]);
+
+        while (currentEl) {
+          if (currentEl.tagName && currentEl.tagName.match(/^H[1-6]$/)) {
+            const level = parseInt(currentEl.tagName[1]);
+            if (level <= parentLevel) break;
+          }
+
+          const containers = currentEl.matches?.('li, .box-list-item, .swiper-slide')
+            ? [currentEl]
+            : currentEl.querySelectorAll?.('li, .box-list-item, .swiper-slide') || [];
+
+          containers.forEach(container => {
+            const heading = container.querySelector('h3, h4, h5, h6');
+            if (!heading) return;
+
+            const title = heading.textContent.trim();
+            if (!title || title.length < 3) return;
+
+            const paragraphs = container.querySelectorAll('p');
+            const text = Array.from(paragraphs)
+              .map(p => p.textContent.trim())
+              .filter(t => t.length > 20)
+              .join(' ');
+
+            if (!text) return;
+
+            const summary = summarise(text);
+
+            subsections.push({
+              title,
+              description: summary,
+              tokens: Math.ceil(summary.length / 4)
+            });
+
+            subsectionElements.push(heading);
+          });
+
+          currentEl = currentEl.nextElementSibling;
+        }
+
+        const seen = new Set();
+        const deduped = subsections.filter(s => {
+          if (seen.has(s.title)) return false;
+          seen.add(s.title);
+          return true;
+        });
+
+        return { subsections: deduped, subsectionElements };
       }
+
+      // Pre-identify subsection headings
+      const allHeadings = Array.from(document.body.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+      const subsectionHeadingSet = new Set();
+
+      allHeadings.forEach((heading) => {
+        const { subsectionElements } = extractSubsections(heading);
+        subsectionElements.forEach(el => subsectionHeadingSet.add(el));
+      });
+
+      // Build sections
+      const elements = Array.from(document.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p'));
+      const sections = [];
+      let currentSection = null;
+
+      elements.forEach((el) => {
+        if (el.closest('header, footer, nav')) return;
+
+        if (el.tagName.match(/^H[1-6]$/)) {
+          if (subsectionHeadingSet.has(el)) return;
+
+          if (currentSection) {
+            sections.push(currentSection);
+          }
+
+          currentSection = {
+            heading: el.textContent.trim(),
+            level: parseInt(el.tagName[1]),
+            content: [],
+            element: el
+          };
+        } else if (el.tagName === 'P' && currentSection) {
+          const text = el.textContent.trim();
+          if (text.length > 40) {
+            currentSection.content.push(text);
+          }
+        }
+      });
+
+      if (currentSection) {
+        sections.push(currentSection);
+      }
+
+      // Process sections
+      const processedSections = [];
+      const seenHeadings = new Set();
+
+      sections.forEach((sec) => {
+        const combined = sec.content.join(' ');
+        const summary = summarise(combined);
+        const { subsections } = extractSubsections(sec.element);
+
+        if ((!summary || summary.length < 10) && subsections.length === 0) {
+          return;
+        }
+
+        const headingKey = sec.heading.toLowerCase().trim();
+        if (seenHeadings.has(headingKey)) return;
+        seenHeadings.add(headingKey);
+
+        processedSections.push({
+          heading: sec.heading,
+          level: sec.level,
+          summary,
+          content: sec.content,
+          subsections
+        });
+      });
+
+      // Extra discovery
+      const forms = [];
+      document.querySelectorAll('form').forEach((form, i) => {
+        const fields = Array.from(form.querySelectorAll('input, textarea, select')).map(f => ({
+          name: f.name || null,
+          id: f.id || null,
+          type: f.type || f.tagName.toLowerCase(),
+          required: f.required || f.getAttribute('aria-required') === 'true'
+        }));
+        if (fields.length > 0) forms.push({ index: i, fields });
+      });
+
+      const ctas = [];
+      document.querySelectorAll('a, button').forEach(el => {
+        const text = el.textContent.trim();
+        if (text && text.length > 2 && text.length < 60) {
+          ctas.push({ text, tag: el.tagName });
+        }
+      });
+
+      const media = [];
+      document.querySelectorAll('img[alt], video, iframe').forEach(el => {
+        if (el.tagName === 'IMG') {
+          media.push({ type: 'image', alt: el.alt.trim() });
+        } else if (el.tagName === 'VIDEO') {
+          media.push({ type: 'video' });
+        } else if (el.tagName === 'IFRAME') {
+          media.push({ type: 'iframe', src: el.src });
+        }
+      });
+
+      const contacts = [];
+      document.querySelectorAll('a[href^="tel:"], a[href^="mailto:"]').forEach(el => {
+        if (el.href.startsWith('tel:')) {
+          contacts.push({ type: 'phone', number: el.href.replace('tel:', '') });
+        }
+        if (el.href.startsWith('mailto:')) {
+          contacts.push({ type: 'email', email: el.href.replace('mailto:', '') });
+        }
+      });
+
+      return {
+        url: pageUrl,
+        sections: processedSections,
+        forms,
+        ctas,
+        media,
+        contacts
+      };
+    }
+
+    // ── SHARED SITEMAP FETCHING FUNCTION ─────────────────────────────
+    async function fetchSitemapUrls(sitemapUrl) {
+      const seenUrls = new Set();
+
+      async function fetchSitemap(u) {
+        const res = await fetch(u);
+        if (!res.ok) throw new Error(`Failed to fetch ${u}`);
+        const xmlText = await res.text();
+        const { document: doc } = parseHTML(xmlText);
+
+        const urls = [];
+
+        // Check if it's a sitemap index
+        const sitemapIndex = doc.querySelectorAll('sitemap > loc');
+        if (sitemapIndex.length > 0) {
+          for (const locEl of sitemapIndex) {
+            const loc = locEl.textContent.trim();
+            if (!seenUrls.has(loc)) {
+              seenUrls.add(loc);
+              const nested = await fetchSitemap(loc);
+              urls.push(...nested);
+            }
+          }
+          return urls;
+        }
+
+        // Otherwise, assume it's a urlset
+        const urlEls = doc.querySelectorAll('url > loc');
+        for (const locEl of urlEls) {
+          const loc = locEl.textContent.trim();
+          if (loc && !seenUrls.has(loc)) {
+            seenUrls.add(loc);
+            urls.push(loc);
+          }
+        }
+
+        return urls;
+      }
+
+      return await fetchSitemap(sitemapUrl);
     }
 
     // ── GET /semantic?url=xxx ─────────────────────────────
@@ -151,157 +377,90 @@ export default {
       if (!pageUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
 
       try {
-        // 1️⃣ Fetch the page HTML
-        const response = await fetch(pageUrl);
-        if (!response.ok) throw new Error(`Failed to fetch ${pageUrl}`);
-        const html = await response.text();
-
-        // 2️⃣ Parse the HTML using linkedom
-        const { parseHTML } = await import('linkedom');
-        const { document } = parseHTML(html);
-
-        // 3️⃣ Remove non-content elements
-        const ignoreSelectors = 'head, header, footer, script, style, nav';
-        document.querySelectorAll(ignoreSelectors).forEach(el => el.remove());
-
-        // ── Helper functions ─────────────────────────────
-        const LIGHT_STOPWORDS = new Set([
-          "the","a","an","and","but","or","so","to","of","in","on","at",
-          "for","with","is","are","was","were","be","been","being","have",
-          "has","had","do","does","did","will","would","could","should",
-          "may","might","must","can","that","this","these","those"
-        ]);
-
-        const summarise = (text) => {
-          if (!text) return '';
-          const first = text.split(/[.!?]+/)[0].trim();
-          return first
-            .split(/\s+/)
-            .filter(w => !LIGHT_STOPWORDS.has(w.toLowerCase()))
-            .join(' ')
-            .trim();
-        };
-
-        const extractSubsections = (headingEl, parentLevel) => {
-          const subsections = [];
-          let currentEl = headingEl.nextElementSibling;
-          while (currentEl) {
-            if (currentEl.tagName && currentEl.tagName.match(/^H[1-6]$/)) {
-              const level = parseInt(currentEl.tagName[1]);
-              if (level <= parentLevel) break;
-              subsections.push({
-                title: currentEl.textContent.trim(),
-                content: Array.from(currentEl.parentElement.querySelectorAll('p'))
-                  .map(p => p.textContent.trim())
-                  .filter(t => t.length > 20)
-              });
-            }
-            currentEl = currentEl.nextElementSibling;
-          }
-          return subsections;
-        };
-
-        const discoverForms = () => {
-          const forms = [];
-          document.querySelectorAll('form').forEach((form, i) => {
-            const fields = Array.from(form.querySelectorAll('input, textarea, select')).map(f => ({
-              name: f.name || null,
-              id: f.id || null,
-              type: f.type || f.tagName.toLowerCase(),
-              required: f.required || f.getAttribute('aria-required') === 'true',
-              label: f.placeholder || f.name || f.id || 'Field'
-            }));
-            if (fields.length > 0) {
-              forms.push({ index: i, fields });
-            }
-          });
-          return forms;
-        };
-
-        const discoverCTAs = () => {
-          const ctas = [];
-          document.querySelectorAll('a, button').forEach(el => {
-            const text = el.textContent.trim();
-            if (text && text.length > 2 && text.length < 60) {
-              ctas.push({ text, role: 'cta', tag: el.tagName });
-            }
-          });
-          return ctas;
-        };
-
-        const discoverMedia = () => {
-          const media = [];
-          document.querySelectorAll('img[alt], video, iframe').forEach(el => {
-            if (el.tagName === 'IMG') {
-              media.push({ type: 'image', alt: el.alt.trim() });
-            } else if (el.tagName === 'VIDEO') {
-              media.push({ type: 'video', title: el.getAttribute('title') || 'Video' });
-            } else if (el.tagName === 'IFRAME') {
-              media.push({ type: 'iframe', src: el.src });
-            }
-          });
-          return media;
-        };
-
-        const discoverContacts = () => {
-          const contacts = [];
-          document.querySelectorAll('a[href^="tel:"], a[href^="mailto:"]').forEach(el => {
-            if (el.href.startsWith('tel:')) contacts.push({ type: 'phone', number: el.href.replace('tel:', '') });
-            if (el.href.startsWith('mailto:')) contacts.push({ type: 'email', email: el.href.replace('mailto:', '') });
-          });
-          return contacts;
-        };
-
-        // 4️⃣ Extract semantic sections
-        const elements = Array.from(document.body.querySelectorAll('h1, h2, h3, h4, h5, h6, p'));
-        const sections = [];
-        let currentSection = null;
-
-        elements.forEach(el => {
-          if (el.tagName.match(/^H[1-6]$/)) {
-            if (currentSection) sections.push(currentSection);
-            currentSection = {
-              heading: el.textContent.trim(),
-              level: parseInt(el.tagName[1]),
-              content: [],
-              subsections: extractSubsections(el, parseInt(el.tagName[1]))
-            };
-          } else if (el.tagName === 'P' && currentSection) {
-            const text = el.textContent.trim();
-            if (text.length > 30) currentSection.content.push(text);
-          }
-        });
-
-        if (currentSection) sections.push(currentSection);
-
-        const output = sections.map(sec => ({
-          heading: sec.heading,
-          level: sec.level,
-          summary: summarise(sec.content.join(' ')),
-          content: sec.content,
-          subsections: sec.subsections
-        }));
-
-        // 5️⃣ Discover forms, CTAs, media, contacts
-        const forms = discoverForms();
-        const ctas = discoverCTAs();
-        const media = discoverMedia();
-        const contacts = discoverContacts();
-
-        // 6️⃣ Return structured JSON
-        return json({
-          url: pageUrl,
-          sections: output,
-          forms,
-          ctas,
-          media,
-          contacts
-        }, 200, cors);
-
+        console.log('[Semantic] Start analyzing', pageUrl);
+        const result = await analyzePageSemantics(pageUrl);
+        console.log('[Semantic] Total top-level sections:', result.sections.length);
+        return json(result, 200, cors);
       } catch (err) {
+        console.error('[Semantic] ❌ Error:', err);
         return json({ error: err.message }, 500, cors);
       }
     }
+
+    // ── GET /all-pages?url=xxx ─────────────────────────────
+    if (url.pathname === '/all-pages' && request.method === 'GET') {
+      const sitemapUrl = url.searchParams.get('url');
+      if (!sitemapUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
+
+      try {
+        console.log('[All-Pages] Fetching sitemap:', sitemapUrl);
+        const allPages = await fetchSitemapUrls(sitemapUrl);
+
+        return json({
+          sitemap: sitemapUrl,
+          totalUrls: allPages.length,
+          urls: allPages
+        }, 200, cors);
+
+      } catch (err) {
+        console.error('[All-Pages] ❌ Error:', err);
+        return json({ error: err.message }, 500, cors);
+      }
+    }
+
+    // ── GET /semantic-sitemap?url=xxx ─────────────────────────────
+    if (url.pathname === '/semantic-sitemap' && request.method === 'GET') {
+      const sitemapUrl = url.searchParams.get('url');
+      const limit = parseInt(url.searchParams.get('limit')) || 5;
+      
+      if (!sitemapUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
+
+      try {
+        console.log('[Semantic-Sitemap] Fetching sitemap:', sitemapUrl);
+        
+        // Get all URLs from sitemap
+        const allUrls = await fetchSitemapUrls(sitemapUrl);
+        console.log(`[Semantic-Sitemap] Found ${allUrls.length} URLs, processing first ${limit}...`);
+
+        // Process each URL (limited)
+        const results = [];
+        const urlsToProcess = allUrls.slice(0, limit);
+
+        for (let i = 0; i < urlsToProcess.length; i++) {
+          const pageUrl = urlsToProcess[i];
+          console.log(`[Semantic-Sitemap] Processing ${i + 1}/${urlsToProcess.length}: ${pageUrl}`);
+
+          try {
+            const semanticResult = await analyzePageSemantics(pageUrl);
+            
+            console.log(`[Semantic-Sitemap] ✅ ${pageUrl} → ${semanticResult.sections.length} sections`);
+
+            results.push({
+              url: pageUrl,
+              sections: semanticResult.sections,
+              sectionCount: semanticResult.sections.length
+            });
+
+          } catch (err) {
+            console.error(`[Semantic-Sitemap] ❌ Error processing ${pageUrl}:`, err);
+            results.push({ url: pageUrl, error: err.message });
+          }
+        }
+
+        return json({
+          sitemap: sitemapUrl,
+          totalUrlsInSitemap: allUrls.length,
+          processedCount: results.length,
+          limit,
+          results
+        }, 200, cors);
+
+      } catch (err) {
+        console.error('[Semantic-Sitemap] ❌ Error:', err);
+        return json({ error: err.message }, 500, cors);
+      }
+    }
+    
     return json({ error: 'Not found' }, 404, cors);
   }
 };
