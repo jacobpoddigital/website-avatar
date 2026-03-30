@@ -166,7 +166,10 @@
           debug:             config.debug || false,
           avatar_url:        config.avatar_url || '',
           greetingMessage:   config.greetingMessage || '',
-          businessName:      config.businessName || ''
+          businessName:      config.businessName || '',
+          // accountId from data-account-id attribute — propagated to all session saves
+          // so every D1 record is tagged with the client that owns it.
+          clientId:          accountId
         };
         const debug = window.WA_CONFIG.debug;
 

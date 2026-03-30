@@ -325,8 +325,9 @@ export default {
 
           const sessions = result.results.map(row => ({
             conversation_id: row.conversation_id,
+            client_id:       row.client_id || '',
             transcript: typeof row.transcript === 'string' ? JSON.parse(row.transcript) : row.transcript,
-            analysis: typeof row.analysis === 'string' ? JSON.parse(row.analysis) : row.analysis,
+            analysis:   typeof row.analysis  === 'string' ? JSON.parse(row.analysis)  : row.analysis,
             created_at: row.created_at
           }));
 
@@ -368,10 +369,13 @@ export default {
       }
 
       // Route B: transcript save → D1 (requires user_id + conversation_id)
-      const userId = body?.user_id;
+      const userId         = body?.user_id;
       const conversationId = body?.conversation_id;
+      // client_id identifies which account (data-account-id) owns this conversation.
+      // Empty string is stored when not provided so existing rows are not broken.
+      const clientId       = body?.client_id || '';
 
-      console.log('[Session] Frontend save:', { userId, conversationId, messageCount: body?.transcript?.length });
+      console.log('[Session] Frontend save:', { userId, clientId, conversationId, messageCount: body?.transcript?.length });
 
       if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
 
@@ -380,19 +384,20 @@ export default {
 
       try {
         await env.website_avatar_db.prepare(`
-          INSERT INTO conversations (user_id, conversation_id, transcript, analysis)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(conversation_id)
           DO UPDATE SET
+            client_id  = excluded.client_id,
             transcript = excluded.transcript,
-            analysis = excluded.analysis,
+            analysis   = excluded.analysis,
             created_at = CURRENT_TIMESTAMP
         `)
-        .bind(userId, conversationId, transcript, analysis)
+        .bind(userId, conversationId, clientId, transcript, analysis)
         .run();
 
-        console.log('[Session] ✅ Saved to DB:', conversationId);
-        return json({ message: 'Session saved', conversation_id: conversationId }, 200, cors);
+        console.log('[Session] ✅ Saved to DB:', conversationId, '| client:', clientId);
+        return json({ message: 'Session saved', conversation_id: conversationId, client_id: clientId }, 200, cors);
       } catch (err) {
         console.error('[Session] ❌ DB error:', err);
         return json({ error: 'Database error' }, 500, cors);

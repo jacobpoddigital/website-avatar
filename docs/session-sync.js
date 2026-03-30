@@ -11,9 +11,18 @@
   let saveTimeout = null;
 
   // ─── GET USER ID ──────────────────────────────────────────────────────────
-  
+
   function getUserId() {
     return localStorage.getItem('wc_visitor') || null;
+  }
+
+  // ─── GET CLIENT ID ────────────────────────────────────────────────────────
+  // Reads the accountId that was set on the script tag (data-account-id) and
+  // stored in WA_CONFIG.clientId during boot. Used to tag every D1 record so
+  // conversations are always queryable by the account that owns them.
+
+  function getClientId() {
+    return (window.WA_CONFIG || {}).clientId || '';
   }
 
   // ─── GET CONVERSATION METADATA ────────────────────────────────────────────
@@ -56,6 +65,7 @@
     const payload = {
       user_id: userId,
       conversation_id: conversationId,
+      client_id: getClientId(), // account that owns this conversation
       transcript: session.messages,
       analysis: {
         lastSaved: new Date().toISOString(),
@@ -65,6 +75,7 @@
 
     console.log('[SessionSync] 💾 Saving session...', {
       userId,
+      clientId: payload.client_id,
       messageCount: session.messages.length,
       conversationId: conversationId
     });
@@ -165,6 +176,7 @@
       const payload = {
         user_id: userId,
         conversation_id: conversationId,
+        client_id: getClientId(), // account that owns this conversation
         transcript: session.messages,
         analysis: {
           lastSaved: new Date().toISOString(),
@@ -223,6 +235,7 @@
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
   WA.getUserId = getUserId;
+  WA.getClientId = getClientId;
   WA.getConversationMetadata = getConversationMetadata;
   WA.loadSessionFromBackend = loadSessionFromBackend;
   WA.saveSessionToBackend = saveSessionToBackend;

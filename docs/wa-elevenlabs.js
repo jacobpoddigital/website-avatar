@@ -354,6 +354,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             const payload = {
               user_id: userId,
               conversation_id: waSession.elevenlabsConversationId,
+              client_id: WA.getClientId ? WA.getClientId() : '', // account that owns this conversation
               transcript: waSession.messages,
               analysis: {
                 lastSaved: new Date().toISOString(),

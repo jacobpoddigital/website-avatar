@@ -495,6 +495,7 @@
           body: JSON.stringify({
             user_id: userId,
             conversation_id: session.elevenlabsConversationId,
+            client_id: WA.getClientId ? WA.getClientId() : '', // account that owns this conversation
             transcript: session.messages,
             analysis: {
               lastSaved: new Date().toISOString(),
