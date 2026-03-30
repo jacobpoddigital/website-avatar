@@ -57,9 +57,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   }
 
   function buildReconnectContext() {
-    const s = (() => {
-      try { return JSON.parse(sessionStorage.getItem('wa_session') || '{}'); } catch { return {}; }
-    })();
+    // Use in-memory session from WA.getSession() instead of reading sessionStorage directly.
+    // The session is kept in sync with the backend by saveSession() calls throughout the app.
+    const s = WA.getSession ? WA.getSession() : {};
     if (!s.messages?.length) return null;
   
     const lines = ['SESSION CONTEXT:'];
@@ -89,11 +89,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         lines.push('4. Apologize for the confusion and move forward with a valid suggestion');
         lines.push('');
         
-        // Clear the failure after reporting
+        // Clear the failure after reporting and persist via backend (replaces sessionStorage.setItem)
         delete s.lastUrlValidationFailure;
-        try {
-          sessionStorage.setItem('wa_session', JSON.stringify(s));
-        } catch(e) {}
+        if (WA.saveSession) WA.saveSession(s); // fire-and-forget
       }
     }
   
@@ -139,21 +137,20 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   }
 
   function buildReconnectPrompt() {
-    const s = (() => {
-      try { return JSON.parse(sessionStorage.getItem('wa_session') || '{}'); } catch { return {}; }
-    })();
+    // Use in-memory session instead of sessionStorage.
+    const s = WA.getSession ? WA.getSession() : {};
     if (!s.messages?.length) return null;
 
-    const sentKey = 'wa_sent_prompts';
-    const sent = (() => {
-      try { return new Set(JSON.parse(sessionStorage.getItem(sentKey) || '[]')); } catch { return new Set(); }
-    })();
+    // sentPrompts is now a field on the session object (replaces wa_sent_prompts sessionStorage key)
+    const sent = new Set(s.sentPrompts || []);
 
     // Completed form — acknowledge submission
     const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
     if (completedForm && !sent.has(completedForm.id)) {
       sent.add(completedForm.id);
-      sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
+      // Persist updated sentPrompts to backend via session (replaces sessionStorage)
+      s.sentPrompts = [...sent];
+      if (WA.saveSession) WA.saveSession(s); // fire-and-forget
       const fields = completedForm.payload.fields.filter(f => f.value);
       return `[SYSTEM: The contact form was just submitted with: ${fields.map(f => `${f.label}=${f.value}`).join(', ')}. Acknowledge this naturally and ask if there's anything else you can help with.]`;
     }
@@ -162,7 +159,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     const pageKey = `page_${window.location.href}`;
     if (!sent.has(pageKey)) {
       sent.add(pageKey);
-      sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
+      // Persist updated sentPrompts to backend via session (replaces sessionStorage)
+      s.sentPrompts = [...sent];
+      if (WA.saveSession) WA.saveSession(s); // fire-and-forget
 
       const lastNav = [...(s.actions || [])]
         .filter(a => a.type === 'navigate' && a.status === 'complete')
@@ -185,7 +184,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       const key = `user_${lastMsg.ts}`;
       if (!sent.has(key)) {
         sent.add(key);
-        sessionStorage.setItem(sentKey, JSON.stringify([...sent]));
+        // Persist updated sentPrompts to backend via session (replaces sessionStorage)
+        s.sentPrompts = [...sent];
+        if (WA.saveSession) WA.saveSession(s); // fire-and-forget
         return `[SYSTEM: The user's last message was: "${lastMsg.text}". Continue the conversation naturally from here.]`;
       }
     }

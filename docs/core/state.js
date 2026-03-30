@@ -37,27 +37,59 @@
       sendBtn.title    = blocked ? 'Please wait…' : '';
     }
   
-    // ─── SESSION STORAGE ──────────────────────────────────────────────────────
-  
-    const SESSION_KEY = 'wa_session';
-  
+    // ─── BACKEND SESSION API ──────────────────────────────────────────────────
+    // Session persistence has been moved from sessionStorage to the backend
+    // /session endpoints. This enables cross-page session continuity managed
+    // centrally by the Cloudflare Worker (KV for state, D1 for transcripts).
+
+    // Backend URL from WA_CONFIG.sessionUrl or default worker URL
+    const BACKEND_URL = (window.WA_CONFIG || {}).sessionUrl
+      || 'https://backend.jacob-e87.workers.dev/session';
+
+    /**
+     * Returns a stable session ID persisted in localStorage.
+     * Generated once and reused across page navigations for the same browser session.
+     * Cleared by clearSession() when the user explicitly ends a session.
+     */
+    function getSessionId() {
+      let id = localStorage.getItem('wa_session_id');
+      if (!id) {
+        id = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+        localStorage.setItem('wa_session_id', id);
+      }
+      return id;
+    }
+
     function freshSession() {
-      return { 
-        messages: [], 
-        actions: [], 
-        activeFormActionId: null, 
+      return {
+        messages: [],
+        actions: [],
+        activeFormActionId: null,
         isOpen: false,
-        lastUrlValidationFailure: null
+        lastUrlValidationFailure: null,
+        sentPrompts: []   // replaces the separate wa_sent_prompts sessionStorage key
       };
     }
-  
-    function loadSession() {
+
+    /**
+     * Loads session state from the backend (GET /session?session_id=...).
+     * Now async — callers must await. Falls back to freshSession() on error or
+     * when no session exists yet for this session_id.
+     */
+    async function loadSession() {
+      const sessionId = getSessionId();
       try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const s = JSON.parse(raw);
+        const response = await fetch(
+          `${BACKEND_URL}?session_id=${encodeURIComponent(sessionId)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          // Backend returns { fresh: true } when no prior state exists in KV
+          if (data.fresh) return freshSession();
+
+          const s = data;
           const now = Date.now();
-  
+
           // Mark abandoned active fill_form as denied
           (s.actions || []).forEach(a => {
             if (a.type === 'fill_form' && a.status === 'active') {
@@ -65,12 +97,12 @@
               a.completedAt = now;
             }
           });
-  
+
           // Clear activeFormActionId
           if (s.activeFormActionId) {
             s.activeFormActionId = null;
           }
-  
+
           // Clear stale pendingOnArrival
           if (s.pendingOnArrival) {
             const alreadyArrived = (s.actions || []).some(
@@ -78,23 +110,55 @@
             );
             if (alreadyArrived) delete s.pendingOnArrival;
           }
+
+          // Ensure sentPrompts exists (for sessions saved before this field was added)
+          if (!s.sentPrompts) s.sentPrompts = [];
+
           return s;
         }
-      } catch(e) { 
-        console.warn('[WA] Failed to load session', e); 
+      } catch(e) {
+        console.warn('[WA] Failed to load session from backend', e);
       }
       return freshSession();
     }
-  
-    function saveSession(session) {
+
+    /**
+     * Saves session state to the backend (POST /session with session_id → KV).
+     * Fire-and-forget: returns a Promise but callers do not need to await it.
+     * Replaces all direct sessionStorage.setItem(SESSION_KEY, ...) calls.
+     */
+    async function saveSession(session) {
+      const sessionId = getSessionId();
       try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, session_data: session })
+        });
         if (typeof WA.renderDebug === 'function') WA.renderDebug();
       } catch(e) {
-        // sessionStorage full — trim oldest messages
-        session.messages = session.messages.slice(-20);
-        try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e2) {}
+        console.warn('[WA] Failed to save session to backend', e);
       }
+    }
+
+    /**
+     * Clears session state from the backend KV and removes the local session ID.
+     * Called on endSession() to ensure a clean slate for the next conversation.
+     */
+    async function clearSession() {
+      const sessionId = getSessionId();
+      try {
+        // Overwrite with a fresh session to reset KV state before removing the ID
+        await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, session_data: freshSession() })
+        });
+      } catch(e) {
+        console.warn('[WA] Failed to clear session on backend', e);
+      }
+      // Remove session ID so the next getSessionId() call generates a fresh one
+      localStorage.removeItem('wa_session_id');
     }
   
     // ─── FORM STATE ───────────────────────────────────────────────────────────
@@ -123,6 +187,8 @@
     WA.loadSession     = loadSession;
     WA.saveSession     = saveSession;
     WA.freshSession    = freshSession;
+    WA.clearSession    = clearSession;
+    WA.getSessionId    = getSessionId;
     WA.formState       = formState;
     WA.resetFormState  = resetFormState;
   

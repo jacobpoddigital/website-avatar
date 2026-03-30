@@ -15,7 +15,9 @@
   WA.DEBUG = CONFIG.debug || false;
 
   // ─── SESSION ──────────────────────────────────────────────────────────────
-  let session = WA.loadSession();
+  // Start with a fresh session; the real data is loaded asynchronously in init()
+  // once loadSession() fetches from the backend /session endpoint.
+  let session = WA.freshSession();
   WA.getSession = () => session;
 
   let _completeFormFillAttempts = 0;
@@ -510,8 +512,8 @@
     WA.clearQueue();
     WA.disconnectBridge();
 
-    try { sessionStorage.removeItem('wa_session'); } catch(e) {}
-    try { sessionStorage.removeItem('wa_sent_prompts'); } catch(e) {}
+    // Clear backend KV state and reset session ID (replaces sessionStorage.removeItem calls)
+    await WA.clearSession();
 
     session = WA.freshSession();
     session.isOpen = false;
@@ -900,7 +902,10 @@
 
   // ─── INIT ─────────────────────────────────────────────────────────────────
 
-  function init() {
+  // init() is async so it can await WA.loadSession(), which now fetches
+  // persisted session state from the backend /session endpoint before rendering.
+  async function init() {
+    session = await WA.loadSession();
     const hasActiveSession = session.messages.length > 0;
     const hasNavAction     = session.actions.some(a => a.type === 'navigate' && a.status === 'active');
     const hasFormResume    = !!(session.activeFormActionId &&
