@@ -21,10 +21,13 @@
   function getConversationMetadata() {
     const userId = getUserId();
     const session = WA.getSession ? WA.getSession() : {};
-    
+    // Use the stable wa_session_id (localStorage) rather than a fresh timestamp so
+    // the session_id in ElevenLabs metadata is consistent with our KV state key.
+    const sessionId = WA.getSessionId ? WA.getSessionId() : Date.now().toString();
+
     return {
       user_id: userId || 'anonymous',
-      session_id: Date.now().toString(),
+      session_id: sessionId,
       message_count: session.messages?.length || 0,
       has_active_session: (session.messages?.length || 0) > 0
     };

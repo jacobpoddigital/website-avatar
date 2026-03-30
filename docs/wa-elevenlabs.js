@@ -256,7 +256,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       message_count: 0
     };
 
-    console.log('[WA:Bridge] 🔗 Connecting with metadata:', metadata);
+    // Fix: read visitor ID fresh at connect time rather than relying on the cached
+    // value inside getConversationMetadata(), which may have been captured before
+    // the third-party wc_visitor script had a chance to write to localStorage.
+    const resolvedUserId = (WA.getUserId ? WA.getUserId() : null) || metadata.user_id;
+
+    console.log('[WA:Bridge] 🔗 Connecting with metadata:', { ...metadata, user_id: resolvedUserId });
 
     const reconnectCtx  = buildReconnectContext();
     const pageCtx       = buildPageContext();
@@ -277,8 +282,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         // ✅ PASS USER_ID AND CONTEXT VIA DYNAMIC VARIABLES (more reliable)
+        // Uses resolvedUserId — fresh read of wc_visitor — to avoid 'anonymous' fallback
         dynamicVariables: {
-          user_id: metadata.user_id,
+          user_id: resolvedUserId,
           context: contextToSend || ''
         },
 

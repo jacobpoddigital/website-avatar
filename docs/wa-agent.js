@@ -212,7 +212,8 @@
         WA.renderOptionsCard(field, result.multi !== false, (selected) => {
           field.value = selected;
           WA.fillCheckboxField(field, selected);
-          WA.saveSession(session);
+          // Debounced: checkbox callbacks fire rapidly; coalesce into one KV write
+          WA.saveSessionDebounced(session);
           const summary = selected.length ? `Selected: ${selected.join(', ')}` : '(skipped)';
           routeFormInput(summary);
         });
@@ -235,7 +236,8 @@
             } else {
               WA.fillCheckboxField(field, selected);
             }
-            WA.saveSession(session);
+            // Debounced: choice callbacks fire per-selection; coalesce into one KV write
+            WA.saveSessionDebounced(session);
             const summary = selected.length ? `Selected: ${selected.join(', ')}` : '(skipped)';
             routeFormInput(summary);
           });
@@ -250,7 +252,8 @@
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             WA.fillField(el, result.value);
           }
-          WA.saveSession(session);
+          // Debounced: AI fills fields in sequence; coalesce into one KV write per burst
+          WA.saveSessionDebounced(session);
         } else {
           if (result.message) agentSay(result.message);
           return;
@@ -906,6 +909,16 @@
   // persisted session state from the backend /session endpoint before rendering.
   async function init() {
     session = await WA.loadSession();
+
+    // If KV returned a fresh session (no messages) but session-sync.js already loaded
+    // transcript history from D1 into WA._previousSession, hydrate the current session
+    // with those messages so the user sees their conversation history.
+    // We do NOT call saveSession() here — D1 history should not overwrite KV state.
+    if (!session.messages.length && WA._previousSession?.messages?.length) {
+      session.messages = WA._previousSession.messages;
+      if (WA.DEBUG) console.log('[WA] Hydrated session from D1 history:', session.messages.length, 'messages');
+    }
+
     const hasActiveSession = session.messages.length > 0;
     const hasNavAction     = session.actions.some(a => a.type === 'navigate' && a.status === 'active');
     const hasFormResume    = !!(session.activeFormActionId &&

@@ -142,6 +142,18 @@
     }
 
     /**
+     * Debounced variant of saveSession() for high-frequency write paths (form-fill,
+     * checkbox callbacks). Coalesces rapid calls into a single KV write 500ms after
+     * the last call, preventing write amplification without risking data loss on
+     * critical state changes (those callers use saveSession directly).
+     */
+    let _saveDebounceTimer = null;
+    function saveSessionDebounced(session) {
+      clearTimeout(_saveDebounceTimer);
+      _saveDebounceTimer = setTimeout(() => saveSession(session), 500);
+    }
+
+    /**
      * Clears session state from the backend KV and removes the local session ID.
      * Called on endSession() to ensure a clean slate for the next conversation.
      */
@@ -182,13 +194,14 @@
   
     // ─── EXPOSE ───────────────────────────────────────────────────────────────
   
-    WA.State           = State;
-    WA.setState        = setState;
-    WA.loadSession     = loadSession;
-    WA.saveSession     = saveSession;
-    WA.freshSession    = freshSession;
-    WA.clearSession    = clearSession;
-    WA.getSessionId    = getSessionId;
+    WA.State                 = State;
+    WA.setState              = setState;
+    WA.loadSession           = loadSession;
+    WA.saveSession           = saveSession;
+    WA.saveSessionDebounced  = saveSessionDebounced;
+    WA.freshSession          = freshSession;
+    WA.clearSession          = clearSession;
+    WA.getSessionId          = getSessionId;
     WA.formState       = formState;
     WA.resetFormState  = resetFormState;
   
