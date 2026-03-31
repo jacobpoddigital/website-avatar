@@ -162,6 +162,40 @@ Rules:
     return null; // Signal: call OpenAI
   }
 
+  // ─── TRANSFORM PAGE CONTEXT FOR OPENAI ────────────────────────────────────
+  
+  function transformPageContextForAI(pageContext) {
+    // Transform WA.PAGE_CONTEXT.page.sections into elements format for OpenAI
+    const elements = [];
+    
+    if (pageContext?.page?.sections) {
+      pageContext.page.sections.forEach((section, idx) => {
+        const el = {
+          id: section.id || `wa_section_${idx}`,
+          type: 'section',
+          title: section.title,
+          summary: section.summary,
+          keywords: section.keywords,
+          sectionType: section.type, // hero, features, pricing, etc.
+          actions: ['scroll_to']
+        };
+        
+        // Add subsections if they exist
+        if (section.subsections && section.subsections.length > 0) {
+          el.subsections = section.subsections.map(sub => ({
+            title: sub.title,
+            summary: sub.summary,
+            keywords: sub.keywords
+          }));
+        }
+        
+        elements.push(el);
+      });
+    }
+    
+    return elements;
+  }
+
   // ─── ACTION DECISION ENGINE ───────────────────────────────────────────────
 
   async function decideActions(userMessage, agentMessage, knowledgeContext, pageContext, recentMessages, actions) {
@@ -218,36 +252,10 @@ Rules:
 
     const currentUrl = window.location.pathname;
 
-    const pageEls = pageContext?.elements?.length
-      ? JSON.stringify(pageContext.elements.map(e => {
-          const el = {
-            id: e.id,
-            type: e.type,
-            actions: e.actions
-          };
-          
-          // Add type-specific content fields
-          if (e.summary) {
-            el.title = e.title;
-            el.summary = e.summary;
-            el.tokens = e.tokens;
-          } else if (e.context) {
-            el.text = e.text || e.title;
-            el.context = e.context;
-          } else if (e.text) {
-            el.text = e.text;
-          } else if (e.title) {
-            el.title = e.title;
-          } else if (e.number) {
-            el.number = e.number;
-          } else if (e.email) {
-            el.email = e.email;
-          } else if (e.alt) {
-            el.alt = e.alt;
-          }
-          
-          return el;
-        }), null, 2)
+    // Transform page context sections into elements format
+    const elements = transformPageContextForAI(pageContext);
+    const pageEls = elements.length > 0
+      ? JSON.stringify(elements, null, 2)
       : '[]';
 
     const recentMsgs = (Array.isArray(recentMessages) ? recentMessages : []).map(m =>
@@ -277,19 +285,20 @@ URL: ${currentUrl}
 AVAILABLE PAGES (label|url):
 ${pages}
 
-PAGE ELEMENTS (JSON array with full element details):
+PAGE SECTIONS (JSON array):
 ${pageEls}
 
-Element types:
-- section: has title, summary (compressed content), tokens
-  → May have subsections array: nested items each with title, url, description, tokens
-  → Use subsections to understand detailed offerings within a section
-  → Example: "Our services Design & Creative" section contains subsections for "Web Design", "Content Marketing", etc.
-- button: has text, context (parent section name)
-- video: has title, context
-- phone: has number
-- email: has email
-- image: has alt
+Section structure:
+- id: section identifier (e.g., "hero-section", "section-1")
+- type: "section"
+- sectionType: semantic type (hero, features, pricing, testimonials, faq, contact, etc.)
+- title: section heading
+- summary: compressed content overview
+- keywords: key terms from section content
+- subsections: nested content blocks (optional)
+  → Each subsection has: title, summary, keywords
+  → Example: "Our Services" section contains subsections for "Web Design", "SEO", "Content Marketing"
+- actions: ["scroll_to"]
 
 RECENT CONVERSATION:
 ${recentMsgs}
@@ -302,9 +311,9 @@ Reply with JSON only:
 {
   "actions": [
     {
-      "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"click_element"|"none",
+      "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"none",
       "auto": true|false,
-      "element_id": "wa_el_N or null",
+      "section_id": "id from sections array or null",
       "target_url": "exact url from pages list or null",
       "target_label": "human-readable page/section name",
       "reason": "brief user-friendly message for why this is relevant to the intent",
@@ -315,22 +324,22 @@ Reply with JSON only:
 
 RULES:
 - Empty [] if no action needed
-- Return multiple actions when there are several valid options (e.g., "browse product page" AND "add to cart")
+- Return multiple actions when there are several valid options (e.g., multiple relevant sections)
 - Order actions by confidence score (highest first)
 - auto:true = execute now (scroll_to automatically)
-- auto:false = confirm first (navigate, fill_form, click_element)
-- target_label REQUIRED for all navigate/scroll actions - use the exact page name or section title
+- auto:false = confirm first (navigate, fill_form)
+- target_label REQUIRED for all navigate/scroll actions - use the exact section title or page name
 - reason must be user-friendly
-- element_id uses full format (wa_el_5 not just 5)
+- section_id should match the "id" field from the sections array
 - Sections may have subsections - check subsections array for specific services/offerings
 - When agent mentions a specific service (e.g., "SEO", "Web Design"), look in section subsections
-- When keywords from speech are provided, prioritize elements that match those keywords
-- Sections include summary field - verify relevance before suggesting scroll
-- Buttons include context field - prefer buttons in relevant context
-- If target_page matches current URL (both are paths), use scroll_to. If different, use navigate.
+- When keywords from speech are provided, prioritize sections that match those keywords
+- summary field helps verify relevance before suggesting scroll
+- sectionType helps identify the purpose (hero=intro, pricing=costs, contact=forms, etc.)
+- If target page matches current URL (both are paths), use scroll_to. If different, use navigate.
 - Use scroll_to only when already on the target page
 - confidence: 1.0 = perfect match, 0.8 = strong match, 0.6 = possible match, <0.5 = weak/uncertain
-- Boost confidence when element content aligns with keywords from user speech
+- Boost confidence when section keywords align with keywords from user speech
 - Max 4 actions (prioritize quality over quantity)`;
 
     const t0 = Date.now();
