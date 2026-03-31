@@ -950,7 +950,7 @@
     const hasFormResume    = !!(session.activeFormActionId &&
                                session.actions.find(a => a.id === session.activeFormActionId && a.status === 'active'));
 
-    // Restore messages
+    // Restore messages with timestamp
     const msgs = document.getElementById('wa-messages');
     if (msgs) {
       msgs.innerHTML = '';
@@ -958,6 +958,16 @@
         const el = document.createElement('div');
         el.className = `wa-msg wa-${m.role}`;
         el.textContent = m.text;
+
+        // Add timestamp
+        const tsEl = document.createElement('span');
+        tsEl.className = 'wa-msg-ts';
+        tsEl.textContent = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        tsEl.style.marginLeft = '0.5em';
+        tsEl.style.fontSize = '0.8em';
+        tsEl.style.opacity = 0.7;
+        el.appendChild(tsEl);
+
         msgs.appendChild(el);
       });
     }
