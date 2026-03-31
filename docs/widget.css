@@ -120,6 +120,7 @@
   transform: translateY(16px) scale(0.97); opacity: 0; pointer-events: none;
   transform-origin: bottom left;
   transition: transform .3s cubic-bezier(0.34,1.30,0.64,1), opacity .25s ease;
+  min-height: 480px;
 }
 
 /* Apply blend mode via pseudo-element for background only */
@@ -605,7 +606,7 @@ span.wa-msg-text {
 #wa-panel .wa-history-panel,
 #wa-panel .wa-history-view {
   position: absolute; inset: 0; z-index: 10;
-  background: var(--wa-glass-bg);
+  background: #fff;
   backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
   display: flex; flex-direction: column;
   transform: translateX(100%);
@@ -622,7 +623,7 @@ span.wa-msg-text {
 #wa-panel .wa-history-view-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--wa-glass-border-dim);
-  background: var(--wa-glass-subtle); flex-shrink: 0;
+  background: #fff; flex-shrink: 0;
   border-radius: 20px 20px 0 0;
 }
 #wa-panel .wa-history-title { font-size: 13px; font-weight: 600; color: var(--wa-text); }
