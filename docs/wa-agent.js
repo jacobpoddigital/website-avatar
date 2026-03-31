@@ -154,10 +154,30 @@
     }, 900);
   }
 
+  // ─── SESSION ARCHIVE ──────────────────────────────────────────────────────
+
+  function archiveSession(s) {
+    try {
+      const existing = JSON.parse(localStorage.getItem('wa_past_sessions') || '[]');
+      existing.unshift({
+        id:           s.elevenlabsConversationId || ('sess_' + Date.now()),
+        startedAt:    s.messages[0]?.ts || Date.now(),
+        endedAt:      Date.now(),
+        messages:     s.messages,
+        messageCount: s.messages.length,
+        snippet:      s.messages[0]?.text?.slice(0, 80) || ''
+      });
+      localStorage.setItem('wa_past_sessions', JSON.stringify(existing.slice(0, 20)));
+    } catch (e) {
+      console.warn('[WA] Failed to archive session:', e);
+    }
+  }
+
   // ─── END SESSION ──────────────────────────────────────────────────────────
 
   async function endSession() {
     if (WA.DEBUG) console.log('[WA] Ending session');
+    if (session.messages?.length) archiveSession(session);
 
     // SAVE SESSION BEFORE DISCONNECTING
     const userId = WA.getUserId ? WA.getUserId() : null;

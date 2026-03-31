@@ -373,6 +373,99 @@
     if (panel)    panel.classList.remove('wa-open');
   }
 
+  // ─── PAST CONVERSATIONS ───────────────────────────────────────────────────
+
+  const PAST_SESSIONS_KEY = 'wa_past_sessions';
+
+  function openHistoryPanel() {
+    const panel = document.getElementById('wa-history-panel');
+    if (!panel) return;
+    renderHistoryList();
+    panel.classList.add('wa-history-visible');
+    panel.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeHistoryPanel() {
+    const panel = document.getElementById('wa-history-panel');
+    const view  = document.getElementById('wa-history-view');
+    if (panel) { panel.classList.remove('wa-history-visible'); panel.setAttribute('aria-hidden', 'true'); }
+    if (view)  { view.classList.remove('wa-history-visible');  view.setAttribute('aria-hidden', 'true'); }
+  }
+
+  function closeHistorySession() {
+    const view = document.getElementById('wa-history-view');
+    if (view) { view.classList.remove('wa-history-visible'); view.setAttribute('aria-hidden', 'true'); }
+  }
+
+  function renderHistoryList() {
+    const listEl = document.getElementById('wa-history-list');
+    if (!listEl) return;
+
+    let sessions = [];
+    try { sessions = JSON.parse(localStorage.getItem(PAST_SESSIONS_KEY) || '[]'); } catch (e) {}
+
+    if (!sessions.length) {
+      listEl.innerHTML = '<p class="wa-history-empty">No past conversations yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    sessions.forEach(s => {
+      const date    = new Date(s.startedAt);
+      const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const snippet = s.snippet ? s.snippet.slice(0, 72) + (s.snippet.length > 72 ? '…' : '') : '';
+
+      const item = document.createElement('button');
+      item.className = 'wa-history-item';
+      item.innerHTML = `
+        <div class="wa-history-item-meta">
+          <span class="wa-history-item-date">${dateStr} · ${timeStr}</span>
+          <span class="wa-history-item-count">${s.messageCount} msgs</span>
+        </div>
+        ${snippet ? `<div class="wa-history-item-snippet">${snippet}</div>` : ''}
+      `;
+      item.onclick = () => renderHistorySession(s);
+      listEl.appendChild(item);
+    });
+  }
+
+  function renderHistorySession(sessionData) {
+    const view   = document.getElementById('wa-history-view');
+    const msgsEl = document.getElementById('wa-history-view-msgs');
+    const dateEl = document.getElementById('wa-history-view-date');
+    if (!view || !msgsEl) return;
+
+    if (dateEl) {
+      const date = new Date(sessionData.startedAt);
+      dateEl.textContent = date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    msgsEl.innerHTML = '';
+    (sessionData.messages || []).forEach(m => {
+      const el = document.createElement('div');
+      el.className = `wa-msg wa-${m.role}`;
+
+      const textEl = document.createElement('span');
+      textEl.className = 'wa-msg-text';
+      textEl.textContent = m.text;
+      el.appendChild(textEl);
+
+      if (m.ts) {
+        const tsEl = document.createElement('span');
+        tsEl.className = 'wa-msg-ts';
+        tsEl.textContent = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        el.appendChild(tsEl);
+      }
+
+      msgsEl.appendChild(el);
+    });
+
+    view.classList.add('wa-history-visible');
+    view.setAttribute('aria-hidden', 'false');
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
   // ─── DEBUG ────────────────────────────────────────────────────────────────
 
   function renderDebug() {
@@ -410,6 +503,10 @@
   WA.highlightSubmitButton  = highlightSubmitButton;
   WA.showTransition         = showTransition;
   WA.resetChatUI            = resetChatUI;
+  WA.openHistoryPanel       = openHistoryPanel;
+  WA.closeHistoryPanel      = closeHistoryPanel;
+  WA.closeHistorySession    = closeHistorySession;
+  WA.renderHistorySession   = renderHistorySession;
   WA.renderDebug            = renderDebug;
 
 })();

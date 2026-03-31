@@ -94,17 +94,35 @@
               <span id="wa-status-label">Offline</span>
             </div>
           </div>
+          <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">•••</button>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" />
           <button id="wa-send">Send</button>
         </div>
+        <div class="wa-history-panel" id="wa-history-panel" aria-hidden="true">
+          <div class="wa-history-header">
+            <span class="wa-history-title">Past Conversations</span>
+            <button class="wa-history-close" id="wa-history-close" aria-label="Close">✕</button>
+          </div>
+          <div class="wa-history-list" id="wa-history-list"></div>
+        </div>
+        <div class="wa-history-view" id="wa-history-view" aria-hidden="true">
+          <div class="wa-history-view-header">
+            <button class="wa-history-back" id="wa-history-back" aria-label="Back to list">← Back</button>
+            <span class="wa-history-view-date" id="wa-history-view-date"></span>
+          </div>
+          <div class="wa-history-view-msgs" id="wa-history-view-msgs"></div>
+        </div>
       `;
       document.body.appendChild(panel);
 
-      panel.querySelector('#wa-send').onclick  = () => WebsiteAvatar.sendMessage();
+      panel.querySelector('#wa-send').onclick    = () => WebsiteAvatar.sendMessage();
       panel.querySelector('#wa-input').onkeydown = (e) => WebsiteAvatar.handleKey(e);
+      panel.querySelector('#wa-history-btn').onclick   = () => WebsiteAvatar.openHistoryPanel?.();
+      panel.querySelector('#wa-history-close').onclick = () => WebsiteAvatar.closeHistoryPanel?.();
+      panel.querySelector('#wa-history-back').onclick  = () => WebsiteAvatar.closeHistorySession?.();
     }
   }
 
