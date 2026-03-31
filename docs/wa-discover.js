@@ -464,10 +464,6 @@
     
     // Step 6: Debug output
     if (DEBUG) {
-      console.group(`🌐 [WA] Site Discovery — ${window.location.hostname}`);
-      
-      // Stats summary
-      console.log('📊 Stats:', WA.PAGE_CONTEXT.page.stats);
       
       // Sections
       if (WA.CONTENT_MAP.length) {
@@ -475,42 +471,20 @@
           acc[s.type] = (acc[s.type] || 0) + 1;
           return acc;
         }, {});
-        console.group(`📄 Sections (${WA.CONTENT_MAP.length}) — types: ${JSON.stringify(typeMap)}`);
-        WA.CONTENT_MAP.forEach((s, i) => {
-          console.log(`  ${i + 1}. [${s.type}] "${s.title}"`);
-          console.log(`     summary: ${s.summary}`);
-          console.log(`     keywords: ${s.keywords.slice(0, 6).join(', ')}`);
-          if (s.subsections?.length) {
-            console.log(`     subsections: ${s.subsections.length}`);
-          }
-        });
-        console.groupEnd();
       }
-      
-      // Site pages
-      console.group(`🔗 Site Pages (${sitePages.length})`);
-      sitePages.forEach(p => console.log(`  "${p.title}" → ${p.url}`));
-      console.groupEnd();
       
       // Forms
       if (pageForms.length) {
-        console.group(`📝 Forms (${pageForms.length})`);
         pageForms.forEach(f => {
           const label = f.id + (f.isCF7 ? ' [CF7]' : '');
-          console.group(`  ${label}`);
           f.fields.forEach(field => {
             const key = field.id ? `id=${field.id}` : `name=${field.name}`;
             const opts = field.options?.length ? ` [${field.options.length} opts]` : '';
-            console.log(`    ${key} "${field.label}" (${field.type})${field.required ? ' *' : ''}${opts}`);
           });
-          console.groupEnd();
         });
-        console.groupEnd();
       }
       
-      console.log('📋 Summary:', summary);
       console.log('📦 Full Context:', WA.PAGE_CONTEXT);
-      console.groupEnd();
     }
     
     log('✅ Discovery complete!');
