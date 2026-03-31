@@ -667,41 +667,64 @@
   function scoreElement(el, ctx) {
     let score = 0;
   
-    const keywords = (ctx?.keywords || []).map(normalise);
+    const keywords = (ctx?.keywords || []).map(k => normalise(k));
     const targetSection = normalise(ctx?.section || "");
   
     // Build haystack from section properties
+    const keywordString = Array.isArray(el.keywords) ? el.keywords.join(" ") : "";
     const haystack = normalise(
       (el.title || "") + " " +
       (el.summary || "") + " " +
-      (el.keywords || []).join(" ")  // Add keywords array
+      keywordString + " " +
+      (el.type || "")
     );
   
-    // keyword match
-    keywords.forEach(k => {
-      if (haystack.includes(k)) score += 5;
-    });
+    console.log('[WA] Scoring:', el.id, 'type:', el.type);
+    console.log('[WA] Target section:', targetSection);
+    console.log('[WA] Keywords:', keywords);
+    console.log('[WA] Haystack sample:', haystack.slice(0, 100));
   
-    // strong section match
-    if (targetSection && el.title && normalise(el.title).includes(targetSection)) {
-      score += 20;
+    // Strong match: section type is contained in target
+    // e.g., targetSection="hero section" contains el.type="hero"
+    if (targetSection && el.type) {
+      const normalizedType = normalise(el.type);
+      if (targetSection.includes(normalizedType)) {
+        score += 30;
+        console.log('[WA] ✅ Type match!', el.type, 'in', targetSection, '+30');
+      }
     }
   
-    // section type match (hero, features, pricing, etc.)
-    if (targetSection && el.type && normalise(el.type).includes(targetSection)) {
-      score += 15;
+    // keyword match in haystack
+    keywords.forEach(k => {
+      if (haystack.includes(k)) {
+        score += 5;
+        console.log('[WA] ✅ Keyword match:', k, '+5');
+      }
+    });
+  
+    // title match
+    if (targetSection && el.title) {
+      const normalizedTitle = normalise(el.title);
+      if (normalizedTitle.includes(targetSection) || targetSection.includes(normalizedTitle)) {
+        score += 15;
+        console.log('[WA] ✅ Title match:', '+15');
+      }
     }
   
     // subsection relevance
-    if (el.subsections) {
+    if (el.subsections && Array.isArray(el.subsections)) {
       el.subsections.forEach(sub => {
-        const subText = normalise(sub.title + " " + (sub.summary || ""));  // Changed from sub.description
+        const subText = normalise(sub.title + " " + (sub.summary || ""));
         keywords.forEach(k => {
-          if (subText.includes(k)) score += 3;
+          if (subText.includes(k)) {
+            score += 3;
+            console.log('[WA] ✅ Subsection match:', sub.title, k, '+3');
+          }
         });
       });
     }
   
+    console.log('[WA] Final score:', score);
     return score;
   }
 
