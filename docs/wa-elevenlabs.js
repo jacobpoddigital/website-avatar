@@ -18,13 +18,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   function log  (...a) { if (DEBUG) console.log ('[WA:Bridge]', ...a); }
   function warn (...a) {           console.warn('[WA:Bridge]', ...a); }
 
-  // ─── STARTUP DIAGNOSTICS ─────────────────────────────────────────────────
-  console.log('[WA:Bridge] Module executing');
-  console.log('[WA:Bridge] Conversation imported:', typeof Conversation);
-  console.log('[WA:Bridge] window.WebsiteAvatar exists:', !!window.WebsiteAvatar);
-  console.log('[WA:Bridge] WA.bus exists:', !!WA.bus);
-  console.log('[WA:Bridge] WA_CONFIG:', JSON.stringify(window.WA_CONFIG || {}));
-
   if (!Conversation) {
     warn('Failed to import Conversation from @elevenlabs/client');
     return;
@@ -33,7 +26,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   const CONFIG   = window.WA_CONFIG || {};
   const AGENT_ID = CONFIG.elevenlabsAgentId || '';
 
-  console.log('[WA:Bridge] Agent ID:', AGENT_ID || '(MISSING — check backend KV)');
+  log('Module ready | agentId:', AGENT_ID || '(MISSING)');
 
   let session = null;
 
@@ -219,8 +212,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
     
     console.warn('[WA:Bridge] ⚠️ getId() returned null/undefined after 10 attempts');
-    console.log('[WA:Bridge] 📋 Session object has getId method:', typeof sessionObj.getId === 'function');
-    console.log('[WA:Bridge] 📋 Session object keys:', Object.keys(sessionObj || {}));
+    log('Session has getId:', typeof sessionObj.getId === 'function', '| keys:', Object.keys(sessionObj || {}));
     
     return null;
   }
@@ -228,10 +220,10 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── CONNECTION ───────────────────────────────────────────────────────────
 
   async function connect() {
-    console.log('[WA:Bridge] connect() called — session:', !!session, '| agentId:', AGENT_ID);
+    log('connect() called | session:', !!session, '| agentId:', AGENT_ID);
 
     if (session) {
-      console.log('[WA:Bridge] Already connected — disconnecting first');
+      log('Already connected — disconnecting first');
       await disconnect();
       return;
     }
@@ -258,14 +250,13 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     // the third-party wc_visitor script had a chance to write to localStorage.
     const resolvedUserId = (WA.getUserId ? WA.getUserId() : null) || metadata.user_id;
 
-    console.log('[WA:Bridge] 🔗 Connecting with metadata:', { ...metadata, user_id: resolvedUserId });
+    log('🔗 Connecting | user:', resolvedUserId, '| msgs:', metadata.message_count);
 
     const reconnectCtx  = buildReconnectContext();
     const pageCtx       = buildPageContext();
     const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
 
-    console.log('[WA:Bridge] Calling Conversation.startSession...');
-    console.log('[WA:Bridge] Context length:', contextToSend?.length || 0, 'chars');
+    log('Starting session | context:', contextToSend?.length || 0, 'chars');
 
     try {
       session = await Conversation.startSession({
@@ -286,8 +277,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onConnect: async function() {
-          console.log('[WA:Bridge] onConnect fired — session established');
-          log('Connected');
+          log('onConnect fired');
           setConnectUI(true);
 
           // ✅ CAPTURE ELEVENLABS CONVERSATION_ID (with polling)
@@ -300,10 +290,10 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             const waSession = WA.getSession ? WA.getSession() : {};
             waSession.elevenlabsConversationId = conversationId;
             if (WA.saveSession) WA.saveSession(waSession);
-            console.log('[WA:Bridge] 💾 Captured ElevenLabs conversation_id:', conversationId);
+            console.log('[WA:Bridge] ✅ Connected —', conversationId);
           } else {
             console.warn('[WA:Bridge] ⚠️ Could not capture conversation_id after polling');
-            console.log('[WA:Bridge] Will use fallback ID on save');
+            log('Will use fallback ID on save');
           }
 
           // Open panel directly — do NOT call toggleChat (causes reconnect loop)
@@ -332,26 +322,19 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onDisconnect: async () => {
-          console.log('[WA:Bridge] onDisconnect fired');
           log('Disconnected');
-          
+
           // Send final session data to backend BEFORE clearing session
           const waSession = WA.getSession ? WA.getSession() : {};
           const userId = WA.getUserId ? WA.getUserId() : null;
-          
-          console.log('[WA:Bridge] Disconnect save check:', {
-            hasUserId: !!userId,
-            hasConversationId: !!waSession.elevenlabsConversationId,
-            messageCount: waSession.messages?.length || 0
-          });
-          
+
           if (userId && waSession.elevenlabsConversationId && waSession.messages?.length) {
-            console.log('[WA:Bridge] 💾 Sending final session to backend...');
-            
+            log('💾 Saving final session...');
+
             const payload = {
               user_id: userId,
               conversation_id: waSession.elevenlabsConversationId,
-              client_id: WA.getClientId ? WA.getClientId() : '', // account that owns this conversation
+              client_id: WA.getClientId ? WA.getClientId() : '',
               transcript: waSession.messages,
               analysis: {
                 lastSaved: new Date().toISOString(),
@@ -359,34 +342,24 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
                 disconnectedAt: new Date().toISOString()
               }
             };
-            
-            console.log('[WA:Bridge] Payload:', {
-              user_id: payload.user_id,
-              conversation_id: payload.conversation_id,
-              messageCount: payload.transcript.length
-            });
-            
+
             try {
               const response = await fetch('https://backend.jacob-e87.workers.dev/session', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
               });
-              
-              console.log('[WA:Bridge] Response status:', response.status);
-              
+
               if (response.ok) {
-                const result = await response.json();
-                console.log('[WA:Bridge] ✅ Final session saved on disconnect:', result);
+                console.log('[WA:Bridge] 💾 Session saved —', waSession.messages.length, 'messages');
               } else {
-                const error = await response.text();
-                console.warn('[WA:Bridge] ⚠️ Failed to save final session:', response.status, error);
+                console.warn('[WA:Bridge] ⚠️ Failed to save session:', response.status);
               }
             } catch (err) {
-              console.error('[WA:Bridge] ❌ Error saving final session:', err);
+              console.error('[WA:Bridge] ❌ Error saving session:', err);
             }
           } else {
-            console.log('[WA:Bridge] Skipping save - missing data');
+            log('Skipping disconnect save — missing data');
           }
           
           // Now clear session and update UI
@@ -396,7 +369,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onMessage: (msg) => {
-          console.log('[WA:Bridge] onMessage:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
+          log('onMessage:', msg.source, '| isFinal:', msg.isFinal, '| text:', (msg.message || '').slice(0, 60));
           if (!msg.message) return;
 
           if (msg.source === 'ai') {
@@ -483,7 +456,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onStatusChange: (info) => {
-          console.log('[WA:Bridge] onStatusChange:', info.status);
           log('Status:', info.status);
         }
       });
@@ -545,11 +517,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
 
-  console.log('[WA:Bridge] Reached bridge:ready emit — WA.bus:', !!WA.bus);
   if (WA.bus) {
     WA.bus.emit('bridge:ready');
-    console.log('[WA:Bridge] bridge:ready emitted');
-    log('Bridge ready');
+    log('bridge:ready emitted');
   } else {
     console.error('[WA:Bridge] WA.bus missing — wa-agent.js namespace problem');
     warn('WA.bus not available — wa-agent.js may not have loaded');

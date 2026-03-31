@@ -484,7 +484,7 @@
         });
       }
       
-      console.log('📦 Full Context:', WA.PAGE_CONTEXT);
+      log('📦 Full Context:', WA.PAGE_CONTEXT);
     }
     
     log('✅ Discovery complete!');
