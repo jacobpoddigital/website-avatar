@@ -367,6 +367,138 @@
     return pages;
   }
 
+  // ─── BUILD PAGE CONTEXT (Interactive Elements) ────────────────────────────
+  
+  function buildPageContext() {
+    const elements = [];
+    const _refs = {};
+    let idCounter = 0;
+    
+    // Helper to generate unique ID
+    function nextId() {
+      return `wa_el_${idCounter++}`;
+    }
+    
+    // Add sections from CONTENT_MAP
+    WA.CONTENT_MAP.forEach(section => {
+      const id = nextId();
+      elements.push({
+        id,
+        type: 'section',
+        title: section.title,
+        summary: section.summary,
+        tokens: section.tokenCountCompressed,
+        actions: ['scroll_to'],
+        subsections: section.subsections?.map(sub => ({
+          title: sub.title,
+          summary: sub.summary,
+          tokens: sub.tokenCountCompressed
+        }))
+      });
+      
+      // Store reference for scroll actions (find by section.id)
+      const sectionEl = document.getElementById(section.id);
+      if (sectionEl) {
+        _refs[id] = sectionEl;
+      }
+    });
+    
+    // Add buttons
+    document.querySelectorAll('button, a.button, a.btn, [role="button"]').forEach(btn => {
+      const text = btn.textContent.trim();
+      if (!text || text.length > 100) return;
+      
+      const id = nextId();
+      const parentSection = btn.closest('section, article, [id*="section"]');
+      const context = parentSection?.querySelector('h1, h2, h3, h4')?.textContent?.trim() || 'page';
+      
+      elements.push({
+        id,
+        type: 'button',
+        text,
+        context,
+        actions: ['click_element']
+      });
+      
+      _refs[id] = btn;
+    });
+    
+    // Add videos
+    document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]').forEach(vid => {
+      const id = nextId();
+      const title = vid.title || vid.getAttribute('aria-label') || 'Video';
+      const parentSection = vid.closest('section, article')?.querySelector('h1, h2, h3, h4')?.textContent?.trim() || 'page';
+      
+      elements.push({
+        id,
+        type: 'video',
+        title,
+        context: parentSection,
+        actions: ['scroll_to']
+      });
+      
+      _refs[id] = vid;
+    });
+    
+    // Add phone numbers
+    document.querySelectorAll('a[href^="tel:"]').forEach(tel => {
+      const id = nextId();
+      const number = tel.textContent.trim() || tel.href.replace('tel:', '');
+      
+      elements.push({
+        id,
+        type: 'phone',
+        number,
+        actions: ['click_element']
+      });
+      
+      _refs[id] = tel;
+    });
+    
+    // Add emails
+    document.querySelectorAll('a[href^="mailto:"]').forEach(mail => {
+      const id = nextId();
+      const email = mail.textContent.trim() || mail.href.replace('mailto:', '');
+      
+      elements.push({
+        id,
+        type: 'email',
+        email,
+        actions: ['click_element']
+      });
+      
+      _refs[id] = mail;
+    });
+    
+    // Add images with meaningful alt text
+    document.querySelectorAll('img[alt]').forEach(img => {
+      const alt = img.alt.trim();
+      if (!alt || alt.length < 5) return;
+      
+      const id = nextId();
+      elements.push({
+        id,
+        type: 'image',
+        alt,
+        actions: ['scroll_to']
+      });
+      
+      _refs[id] = img;
+    });
+    
+    return {
+      elements,
+      metadata: {
+        elementCount: elements.length,
+        byType: elements.reduce((acc, e) => {
+          acc[e.type] = (acc[e.type] || 0) + 1;
+          return acc;
+        }, {})
+      },
+      _refs
+    };
+  }
+
   // ─── CF7 EVENT LISTENERS ──────────────────────────────────────────────────
   
   function registerCF7Listeners() {
@@ -414,13 +546,16 @@
       )
     }));
     
-    // Step 4: Build summary
+    // Step 4: Build interactive elements context
+    const rawCtx = buildPageContext();
+    
+    // Step 5: Build summary
     const heroSection = WA.CONTENT_MAP.find(s => s.type === 'hero') || WA.CONTENT_MAP[0];
     const summary = heroSection
       ? `${pageTitle} — ${heroSection.summary || heroSection.title}`
       : pageTitle;
     
-    // Step 5: Build unified PAGE_CONTEXT
+    // Step 6: Build unified PAGE_CONTEXT (with elements for ai.js compatibility)
     WA.PAGE_CONTEXT = {
       page: {
         title: pageTitle,
@@ -438,12 +573,15 @@
         }
       },
       sitePages,
-      summary
+      summary,
+      elements: rawCtx.elements,
+      metadata: rawCtx.metadata,
+      _refs: rawCtx._refs
     };
     
     registerCF7Listeners();
     
-    // Step 6: Debug output
+    // Step 7: Debug output
     if (DEBUG) {
       console.group(`🌐 [WA] Site Discovery — ${window.location.hostname}`);
       
@@ -487,6 +625,11 @@
           console.groupEnd();
         });
         console.groupEnd();
+      }
+      
+      // Interactive elements
+      if (WA.PAGE_CONTEXT.elements?.length) {
+        console.log(`🎯 Interactive Elements (${WA.PAGE_CONTEXT.elements.length}):`, WA.PAGE_CONTEXT.metadata.byType);
       }
       
       console.log('📋 Summary:', summary);
