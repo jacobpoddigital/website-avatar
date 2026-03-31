@@ -499,41 +499,48 @@ export default {
           return 'content';
         };
     
-        const discoverSubsections = (element, depth = 0) => {
+        const discoverSubsections = (element, depth = 0, parentSectionId = '') => {
           if (depth > 2) return [];
           const subsections = [];
-          let candidates;
-          try { candidates = Array.from(element.querySelectorAll('section, article, div[class*="section"], div[class*="block"], div[class*="card"], li')); } catch { return []; }
+          const candidates = element.querySelectorAll('section, article, .article, div[class*="section"], div[class*="block"], div[class*="card"], li');
           const processed = new Set();
-    
-          candidates.forEach((candidate, idx) => {
-            if (processed.has(candidate) || candidate===element || (candidate.textContent||'').trim().length < 50) return;
-            processed.add(candidate); candidate.querySelectorAll('*')?.forEach(c => processed.add(c));
-    
-            const heading = candidate.querySelector('h1,h2,h3,h4,h5,h6');
+
+          candidates.forEach(candidate => {
+            if (processed.has(candidate)) return;
+            const textLength = (candidate.textContent || '').trim().length;
+            if (textLength < 50) return;
+            if (candidate === element) return;
+
+            processed.add(candidate);
+            candidate.querySelectorAll('*').forEach(c => processed.add(c));
+
+            const heading = candidate.querySelector('h1, h2, h3, h4, h5, h6');
             const title = heading ? heading.textContent.trim() : '';
             const text = extractTextContent(candidate);
-            if (text.length <= 50) return;
-    
-            subsections.push({
-              id: candidate.getAttribute('id') || `subsection-${idx}`,
-              type: detectSectionType(candidate),
-              title: title.slice(0,100),
-              summary: compressText(text,30),
-              keywords: extractKeywords(text,5),
-              tokenCountOriginal: estimateTokens(text),
-              tokenCountCompressed: estimateTokens(compressText(text,30)),
-              links: extractLinks(candidate)
-            });
+
+            if (text.length > 50) {
+              const compressed = compressText(text, 30);
+              const subId = candidate.id || `${parentSectionId}-sub-${subsections.length}`;
+              subsections.push({
+                id: subId,
+                type: detectSectionType(candidate),
+                title: title.slice(0, 100),
+                summary: compressed,
+                keywords: extractKeywords(text, 5),
+                tokenCountOriginal: estimateTokens(text),
+                tokenCountCompressed: estimateTokens(compressed),
+                links: extractLinks(candidate)
+              });
+            }
           });
-    
+
           return subsections;
         };
     
         // ── Section discovery ─────────────────────────
         const sections = [];
         const sectionCandidates = Array.from(document.querySelectorAll(
-          'main section, main article, main > div, body > section, body > article, [role="main"] > *'
+          'main section, main article, main > div, body > section, body > .section, body > article, [role="main"] > *'
         ));
     
         sectionCandidates.forEach((el,index) => {
@@ -549,7 +556,7 @@ export default {
             tokenCountOriginal: estimateTokens(text),
             tokenCountCompressed: estimateTokens(compressText(text,100)),
             links: extractLinks(el),
-            subsections: discoverSubsections(el),
+            subsections: discoverSubsections(el, 0, el.getAttribute('id') || `section-${index}`),
             weight: 1.0
           });
         });
@@ -725,7 +732,7 @@ export default {
           if (depth > 2) return [];
           const subsections = [];
           let candidates;
-          try { candidates = Array.from(element.querySelectorAll('section, article, div[class*="section"], div[class*="block"], div[class*="card"], li')); } catch { return []; }
+          try { candidates = Array.from(element.querySelectorAll('section, article, .article, div[class*="section"], div[class*="block"], div[class*="card"], li')); } catch { return []; }
           const processed = new Set();
 
           candidates.forEach((candidate, idx) => {
