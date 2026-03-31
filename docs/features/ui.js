@@ -44,26 +44,27 @@
   // ─── MESSAGES ─────────────────────────────────────────────────────────────
 
   function appendMessage(role, text, ts) {
+    console.log('[DEBUG] appendMessage called:', { role, text, ts });
+  
     const el = document.createElement('div');
     el.className = `wa-msg wa-${role}`;
-
-    // Message text
+  
     const textEl = document.createElement('span');
     textEl.className = 'wa-msg-text';
     textEl.textContent = text;
     el.appendChild(textEl);
-
-    // Timestamp
-    if (ts) {
-      const timeEl = document.createElement('span');
-      timeEl.className = 'wa-msg-ts';
-      const date = new Date(ts);
-      timeEl.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      el.appendChild(timeEl);
-    }
-
+  
+    const timeEl = document.createElement('span');
+    timeEl.className = 'wa-msg-ts';
+    const date = ts ? new Date(ts) : new Date();
+    timeEl.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.appendChild(timeEl);
+  
     const msgs = document.getElementById('wa-messages');
-    if (msgs) { msgs.appendChild(el); scrollToBottom(); }
+    if (msgs) { 
+      msgs.appendChild(el); 
+      scrollToBottom(); 
+    }
   }
 
   // ─── CARDS ────────────────────────────────────────────────────────────────
