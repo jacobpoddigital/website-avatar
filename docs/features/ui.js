@@ -367,10 +367,20 @@
     const endBtn   = document.getElementById('wa-end-session-btn');
     const abortBtn = document.getElementById('wa-abort-btn');
     const panel    = document.getElementById('wa-panel');
+    const bubble   = document.getElementById('wa-bubble');
     if (msgs)     msgs.innerHTML = '';
     if (endBtn)   endBtn.remove();
     if (abortBtn) abortBtn.remove();
     if (panel)    panel.classList.remove('wa-open');
+    if (bubble) {
+      const avatarUrl = window.WA_CONFIG?.avatar_url || '';
+      if (avatarUrl) {
+        bubble.innerHTML = `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`;
+      } else {
+        bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
+      }
+      bubble.classList.remove('wa-close-mode');
+    }
   }
 
   // ─── PAST CONVERSATIONS ───────────────────────────────────────────────────
