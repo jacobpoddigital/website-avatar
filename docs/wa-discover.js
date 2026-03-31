@@ -168,7 +168,7 @@
     if (depth > 2) return [];
     
     const subsections = [];
-    const candidates = element.querySelectorAll('section, article, div[class*="section"], div[class*="block"], div[class*="card"], li');
+    const candidates = element.querySelectorAll('section, article, .article, div[class*="section"], div[class*="block"], div[class*="card"], li');
     const processed = new Set();
     
     candidates.forEach(candidate => {
