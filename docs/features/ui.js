@@ -43,10 +43,25 @@
 
   // ─── MESSAGES ─────────────────────────────────────────────────────────────
 
-  function appendMessage(role, text) {
+  function appendMessage(role, text, ts) {
     const el = document.createElement('div');
     el.className = `wa-msg wa-${role}`;
-    el.textContent = text;
+
+    // Message text
+    const textEl = document.createElement('span');
+    textEl.className = 'wa-msg-text';
+    textEl.textContent = text;
+    el.appendChild(textEl);
+
+    // Timestamp
+    if (ts) {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'wa-msg-ts';
+      const date = new Date(ts);
+      timeEl.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      el.appendChild(timeEl);
+    }
+
     const msgs = document.getElementById('wa-messages');
     if (msgs) { msgs.appendChild(el); scrollToBottom(); }
   }
