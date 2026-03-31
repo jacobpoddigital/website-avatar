@@ -183,6 +183,7 @@ Rules:
         // Add subsections if they exist
         if (section.subsections && section.subsections.length > 0) {
           el.subsections = section.subsections.map(sub => ({
+            id: sub.id,
             title: sub.title,
             summary: sub.summary,
             keywords: sub.keywords
@@ -296,8 +297,9 @@ Section structure:
 - summary: compressed content overview
 - keywords: key terms from section content
 - subsections: nested content blocks (optional)
-  → Each subsection has: title, summary, keywords
+  → Each subsection has: id, title, summary, keywords
   → Example: "Our Services" section contains subsections for "Web Design", "SEO", "Content Marketing"
+  → When targeting a subsection, set section_id to the parent and subsection_id to the subsection's id
 - actions: ["scroll_to"]
 
 RECENT CONVERSATION:
@@ -313,7 +315,8 @@ Reply with JSON only:
     {
       "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"none",
       "auto": true|false,
-      "section_id": "id from sections array or null",  // ← Good!
+      "section_id": "id from sections array or null",
+      "subsection_id": "id of specific subsection or null",
       "target_url": "exact url from pages list or null",
       "target_label": "human-readable page/section name",
       "reason": "brief user-friendly message for why this is relevant to the intent",
@@ -331,8 +334,8 @@ RULES:
 - target_label REQUIRED for all navigate/scroll actions - use the exact section title or page name
 - reason must be user-friendly
 - section_id should match the "id" field from the sections array
-- Sections may have subsections - check subsections array for specific services/offerings
-- When agent mentions a specific service (e.g., "SEO", "Web Design"), look in section subsections
+- When the user is asking about a specific subsection (e.g. a specific article, service, or feature), set subsection_id to that subsection's id and section_id to its parent section's id; target_label should be the subsection title
+- When the user is asking about a parent section generally, leave subsection_id null
 - When keywords from speech are provided, prioritize sections that match those keywords
 - summary field helps verify relevance before suggesting scroll
 - sectionType helps identify the purpose (hero=intro, pricing=costs, contact=forms, etc.)

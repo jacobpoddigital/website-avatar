@@ -164,34 +164,37 @@
 
   // ─── DISCOVER SUBSECTIONS ─────────────────────────────────────────────────
   
-  function discoverSubsections(element, depth = 0) {
+  function discoverSubsections(element, depth = 0, _refs = {}, parentSectionId = '') {
     if (depth > 2) return [];
-    
+
     const subsections = [];
     const candidates = element.querySelectorAll('section, article, .article, div[class*="section"], div[class*="block"], div[class*="card"], li');
     const processed = new Set();
-    
+
     candidates.forEach(candidate => {
       if (processed.has(candidate)) return;
-      
+
       const textLength = candidate.textContent.trim().length;
       if (textLength < 50) return;
       if (candidate === element) return;
-      
+
       processed.add(candidate);
       candidate.querySelectorAll('*').forEach(child => processed.add(child));
-      
+
       const heading = candidate.querySelector('h1, h2, h3, h4, h5, h6');
       const title = heading ? heading.textContent.trim() : '';
       const text = extractTextContent(candidate);
       const type = detectSectionType(candidate);
-      
+
       if (text.length > 50) {
         const tokenCount = estimateTokens(text);
         const compressed = compressText(text, 30);
-        
+
+        // Use element's own id if present; otherwise generate a unique id scoped to the parent section
+        const subId = candidate.id || `${parentSectionId}-sub-${subsections.length}`;
+
         subsections.push({
-          id: candidate.id || `subsection-${subsections.length}`,
+          id: subId,
           type,
           title: title.slice(0, 100),
           summary: compressed,
@@ -200,9 +203,12 @@
           tokenCountCompressed: estimateTokens(compressed),
           links: extractLinks(candidate)
         });
+
+        // Store DOM ref so scroll_to can find subsection elements
+        _refs[subId] = candidate;
       }
     });
-    
+
     return subsections;
   }
 
@@ -223,10 +229,10 @@
       const type = detectSectionType(element);
       const tokenCount = estimateTokens(text);
       const compressed = compressText(text, 100);
-      const subsections = discoverSubsections(element);
-      
       // Use element's ID if it exists, otherwise create one
       const sectionId = element.id || `section-${index}`;
+
+      const subsections = discoverSubsections(element, 0, _refs, sectionId);
       
       sections.push({
         id: sectionId,

@@ -428,29 +428,43 @@
   }
 
   async function executeDecidedAction(action) {
-    const { type, auto, section_id, element_id, target_url, target_label, reason, confidence } = action;
+    const { type, auto, section_id, subsection_id, element_id, target_url, target_label, reason, confidence } = action;
     const isAuto = auto === true;
-  
+
     if (type === 'scroll_to') {
       // Try section_id first (new structure), fallback to element_id (old structure)
       const sectionIdToFind = section_id || element_id;
-      
-      // Find section in PAGE_CONTEXT
+
+      // Find parent section in PAGE_CONTEXT
       const section = WA.PAGE_CONTEXT?.page?.sections?.find(s => s.id === sectionIdToFind);
-      
+
       if (!section) {
         console.warn('[WA] Could not find section:', sectionIdToFind);
         return;
       }
-      
-      // Use target_label from AI if provided, otherwise fallback to section title
-      const label = target_label || section.title || sectionIdToFind;
+
+      // If a specific subsection was identified, scroll to that instead
+      let scrollId = section.id;
+      let scrollTitle = section.title;
+
+      if (subsection_id) {
+        const sub = section.subsections?.find(s => s.id === subsection_id);
+        if (sub) {
+          scrollId = sub.id;
+          scrollTitle = sub.title;
+        } else {
+          console.warn('[WA] subsection_id not found in section, falling back to parent:', subsection_id);
+        }
+      }
+
+      // Use target_label from AI if provided, otherwise fallback to resolved title
+      const label = target_label || scrollTitle || scrollId;
       const description = reason || `Show you the ${label} section`;
-      
+
       WA.proposeAction(session, 'scroll_to', description, {
-        sectionId:    section.id,
+        sectionId:    scrollId,
         sectionTitle: label,
-        elementTitle: section.title || label,  // For backward compatibility
+        elementTitle: scrollTitle || label,  // For backward compatibility
         confidence:   confidence
       }, isAuto !== false); // scroll_to is auto by default
       return;

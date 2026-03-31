@@ -187,13 +187,25 @@
         if (el && WA.DEBUG) console.log('[WA] Found element via data attribute');
       }
       
-      // Method 4: Find by matching title
+      // Method 4: Find by matching title (checks sections and subsections)
       if (!el && ctx?.page?.sections) {
+        // Check top-level sections first
+        let titleToMatch = null;
         const section = ctx.page.sections.find(s => s.id === idToFind);
         if (section) {
+          titleToMatch = section.title;
+        } else {
+          // Check subsections across all sections
+          for (const sec of ctx.page.sections) {
+            const sub = sec.subsections?.find(s => s.id === idToFind);
+            if (sub) { titleToMatch = sub.title; break; }
+          }
+        }
+
+        if (titleToMatch) {
           const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
           for (const heading of headings) {
-            if (heading.textContent.trim() === section.title) {
+            if (heading.textContent.trim() === titleToMatch) {
               el = heading.closest('section, article, div[class*="section"], main > div');
               if (el) {
                 if (WA.DEBUG) console.log('[WA] Found element by matching title');
