@@ -166,11 +166,48 @@
       const idToFind = sectionId || elementId;
       const titleToShow = sectionTitle || elementTitle;
       
-      // Find the section DOM element by its ID
-      const el = document.getElementById(idToFind);
+      // Try multiple methods to find the element
+      let el = null;
+      
+      // Method 1: Try _refs first (fastest if it works)
+      const ctx = WA.PAGE_CONTEXT;
+      if (ctx?._refs?.[idToFind] && ctx._refs[idToFind] instanceof HTMLElement) {
+        el = ctx._refs[idToFind];
+        console.log('[WA] Found element via _refs');
+      }
+      
+      // Method 2: Try document.getElementById
+      if (!el) {
+        el = document.getElementById(idToFind);
+        if (el) console.log('[WA] Found element via getElementById');
+      }
+      
+      // Method 3: Try finding by data attribute or other means
+      if (!el) {
+        el = document.querySelector(`[data-section-id="${idToFind}"]`);
+        if (el) console.log('[WA] Found element via data attribute');
+      }
+      
+      // Method 4: Find the section by matching against discovered sections
+      if (!el && ctx?.page?.sections) {
+        const section = ctx.page.sections.find(s => s.id === idToFind);
+        if (section) {
+          // Try to find element by title
+          const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+          for (const heading of headings) {
+            if (heading.textContent.trim() === section.title) {
+              el = heading.closest('section, article, div[class*="section"], main > div');
+              if (el) {
+                console.log('[WA] Found element by matching title');
+                break;
+              }
+            }
+          }
+        }
+      }
       
       if (!el) {
-        console.warn('[WA] Section not found, trying to find in DOM:', idToFind);
+        console.warn('[WA] Section not found after trying all methods:', idToFind);
         throw new Error(`Section ${idToFind} not found`);
       }
       
