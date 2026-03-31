@@ -728,31 +728,40 @@
 
   function debugFilteredContext(full, filtered, knowledge) {
     if (!WA.DEBUG) return;
-
+  
     console.group('[WA] 🧠 Context Filtering');
-
     console.log('Intent:', knowledge?.intent);
     console.log('Keywords:', knowledge?.keywords);
     console.log('Section:', knowledge?.section);
-
-    full?.page?.sections || []  
-    filtered?.page?.sections.forEach(section => {
-      console.log(`[${section.type}] ${section.title}`)  
-      console.log(`keywords: ${section.keywords.join(', ')}`)  
-    })
+  
+    // Get sections from both full and filtered contexts
+    const fullSections = full?.page?.sections || [];
+    const filteredSections = filtered?.page?.sections || [];
+  
+    console.group(`📦 FULL (${fullSections.length} sections)`);
+    fullSections.forEach(section => {
+      console.log(`[${section.type}] ${section.title}`);
+      if (section.subsections?.length) {
+        console.log(`   └─ ${section.subsections.length} subsections`);
+      }
+    });
     console.groupEnd();
-
-    console.group(`🎯 FILTERED (${filtered.elements.length})`);
-    filtered.elements.forEach(e => {
-      console.log(`${e.type}: ${e.title || e.text} (score: ${e._score})`);
-      if (e.subsections) {
-        e.subsections.forEach(sub => {
-          console.log(`   ↳ ${sub.title}`);
+  
+    console.group(`🎯 FILTERED (${filteredSections.length} sections)`);
+    filteredSections.forEach(section => {
+      const score = section._score !== undefined ? ` (score: ${section._score.toFixed(2)})` : '';
+      console.log(`[${section.type}] ${section.title}${score}`);
+      console.log(`   keywords: ${section.keywords.slice(0, 5).join(', ')}`);
+      
+      if (section.subsections?.length) {
+        section.subsections.forEach(sub => {
+          const subScore = sub._score !== undefined ? ` (${sub._score.toFixed(2)})` : '';
+          console.log(`   ↳ ${sub.title}${subScore}`);
         });
       }
     });
     console.groupEnd();
-
+  
     console.groupEnd();
   }
 
