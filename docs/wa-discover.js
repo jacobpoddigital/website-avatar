@@ -210,6 +210,7 @@
   
   function discoverSections() {
     const sections = [];
+    const _refs = {}; 
     const candidates = document.querySelectorAll('main section, main article, main > div, body > section, body > article, [role="main"] > *');
     
     candidates.forEach((element, index) => {
@@ -224,8 +225,11 @@
       const compressed = compressText(text, 100);
       const subsections = discoverSubsections(element);
       
+      // Use element's ID if it exists, otherwise create one
+      const sectionId = element.id || `section-${index}`;
+      
       sections.push({
-        id: element.id || `section-${index}`,
+        id: sectionId,
         type,
         title: title.slice(0, 150),
         summary: compressed,
@@ -234,11 +238,14 @@
         tokenCountCompressed: estimateTokens(compressed),
         links: extractLinks(element),
         subsections,
-        weight: 1.0 // Placeholder for compatibility
+        weight: 1.0
       });
+      
+      // Store DOM reference for scrolling
+      _refs[sectionId] = element;
     });
     
-    return sections;
+    return { sections, _refs };
   }
 
   // ─── DISCOVER FORMS ───────────────────────────────────────────────────────
@@ -406,6 +413,7 @@
     // Step 1: Build individual maps (for backward compatibility)
     WA.PAGE_MAP = discoverSitePages();
     WA.FORM_MAP = discoverForms();
+    const { sections, _refs } = discoverSections(); 
     WA.CONTENT_MAP = discoverSections();
     
     // Step 2: Calculate stats
@@ -448,7 +456,8 @@
         }
       },
       sitePages,
-      summary
+      summary,
+      _refs
     };
     
     registerCF7Listeners();
