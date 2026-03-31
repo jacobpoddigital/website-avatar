@@ -1015,88 +1015,77 @@
 
   // ─── INITIALISATION ───────────────────────────────────────────────────────
   function initDiscovery() {
-    WA.PAGE_MAP     = discoverPages();
-    WA.FORM_MAP     = discoverForms();
-    WA.PAGE_CONTEXT = buildPageContext();
-    WA.CONTENT_MAP  = discoverSections();
+
+    // ── Step 1: Build individual discovery maps ────────────────────────────
+    WA.PAGE_MAP    = discoverPages();
+    WA.FORM_MAP    = discoverForms();
+    WA.CONTENT_MAP = discoverSections();
+
+    // ── Step 2: Build interactive-element context (wa_el_* IDs for the agent
+    //    action engine — scroll_to, click_element, filterPageContext)
+    const rawCtx = buildPageContext();
+
+    // ── Step 3: Simplified site-page references (title + url only).
+    //    Used by the agent for cross-page navigation suggestions.
+    //    Keeping this minimal avoids inflating every AI prompt with keyword arrays.
+    const sitePages = WA.PAGE_MAP.map(p => ({ title: p.label, url: p.file }));
+
+    // ── Step 4: Clean form view for context passing.
+    //    Strips DOM refs and internal bookkeeping; keeps only what an AI needs.
+    const pageForms = WA.FORM_MAP.map(f => ({
+      id:     f.formEl?.id  || `form_${f.index}`,
+      name:   f.formEl?.name || null,
+      isCF7:  f.isCF7 || false,
+      fields: f.fields.map(({ id, name, label, type, required, options }) =>
+        ({ id, name, label, type, required, ...(options?.length ? { options } : {}) })
+      )
+    }));
+
+    // ── Step 5: Derive a plain-text page summary.
+    //    Used by the agent's arrival message: WA.PAGE_CONTEXT?.summary
+    const heroSection = WA.CONTENT_MAP.find(s => s.type === 'hero') || WA.CONTENT_MAP[0];
+    const summary = heroSection
+      ? `${document.title} — ${heroSection.summary || heroSection.title}`
+      : document.title;
+
+    // ── Step 6: Assemble unified PAGE_CONTEXT ─────────────────────────────
+    //
+    //   .page      → rich context for the current page (sections + forms)
+    //   .sitePages → minimal cross-page references for navigation decisions
+    //   .summary   → plain-text fallback consumed by wa-agent.js arrival handler
+    //   .elements  → wa_el_* interactive elements (agent scroll/click/filter)
+    //   .metadata  → token/count diagnostics
+    //   ._refs     → live DOM refs for scroll_to / click_element execution
+    //
+    //   WA.PAGE_MAP / WA.FORM_MAP remain set for utils.js helpers
+    //   (getPageMap, getFormMap, freshFields, getContactPage, isOnContactPage).
+    WA.PAGE_CONTEXT = {
+      page: {
+        title:    document.title,
+        url:      window.location.href,
+        sections: WA.CONTENT_MAP,
+        forms:    pageForms
+      },
+      sitePages,
+      summary,
+      elements: rawCtx.elements,
+      metadata: rawCtx.metadata,
+      _refs:    rawCtx._refs
+    };
+
     registerCF7Listeners();
 
     if (DEBUG) {
-      console.group(`[WA] 🔍 Enhanced Site Discovery — ${window.location.hostname}`);
-      
-      console.group(`[WA] 📄 Pages (${WA.PAGE_MAP.length})`);
-      WA.PAGE_MAP.forEach(p => console.log(`  "${p.label}" → ${p.file}`));
-      console.groupEnd();
-      
-      if (WA.PAGE_CONTEXT?.elements?.length) {
-        console.group(`[WA] 🎯 Page Elements (${WA.PAGE_CONTEXT.elements.length})`);
-        
-        const byType = WA.PAGE_CONTEXT.elements.reduce((acc, e) => {
-          acc[e.type] = (acc[e.type] || 0) + 1;
-          return acc;
-        }, {});
-        console.log('Element types:', byType);
-        
-        // Show compression stats for sections
-        const sections = WA.PAGE_CONTEXT.elements.filter(e => e.type === 'section');
-        if (sections.length > 0) {
-          let totalOriginal = 0;
-          let totalCompressed = 0;
-          
-          console.group(`📦 Content Compression (${sections.length} sections)`);
-          sections.forEach((e, i) => {
-            const original = e.originalTokens || 0;
-            const compressed = e.tokens || 0;
-            const reduction = original > 0 ? Math.round((1 - compressed / original) * 100) : 0;
-            
-            totalOriginal += original;
-            totalCompressed += compressed;
-            
-            console.log(`  Section ${i + 1}: ${e.title}`);
-            console.log(`    Summary: ${e.summary}`);
-            console.log(`    Tokens (Original): ${original}`);
-            console.log(`    Tokens (Compressed): ${compressed}`);
-            console.log(`    Reduction: ${reduction}%`);
-            
-            // Show subsections if present
-            if (e.subsections && e.subsections.length > 0) {
-              console.log(`    ✨ Subsections: ${e.subsections.length}`);
-              e.subsections.forEach((sub, idx) => {
-                console.log(`       ${idx + 1}. ${sub.title} (${sub.tokens} tokens)`);
-              });
-            }
-          });
-          
-          const overallReduction = totalOriginal > 0 
-            ? Math.round((1 - totalCompressed / totalOriginal) * 100) 
-            : 0;
-          
-          console.log(`\n📊 TOTALS:`);
-          console.log(`  Original Tokens: ${totalOriginal}`);
-          console.log(`  Compressed Tokens: ${totalCompressed}`);
-          console.log(`  Overall Reduction: ${overallReduction}%`);
-          console.groupEnd();
-        }
-        
-        console.groupEnd();
+      console.group(`[WA] Site Discovery — ${window.location.hostname}`);
 
-        if (WA.PAGE_CONTEXT.metadata) {
-          console.group(`[WA] 📊 Metadata`);
-          console.log('Total elements:', WA.PAGE_CONTEXT.metadata.totalElements);
-          console.log('Content sections:', WA.PAGE_CONTEXT.metadata.contentSections);
-          console.log('Estimated tokens:', WA.PAGE_CONTEXT.metadata.estimatedTokens);
-          console.groupEnd();
-        }
-      }
-      
-      if (WA.CONTENT_MAP?.length) {
-        const byType = WA.CONTENT_MAP.reduce((acc, s) => {
+      // ── Page sections ──────────────────────────────────────────────────
+      if (WA.PAGE_CONTEXT.page.sections.length) {
+        const typeMap = WA.PAGE_CONTEXT.page.sections.reduce((acc, s) => {
           acc[s.type] = (acc[s.type] || 0) + 1;
           return acc;
         }, {});
-        console.group(`[WA] 🗂 Content Map (${WA.CONTENT_MAP.length} sections)`);
-        console.log('Types:', byType);
-        WA.CONTENT_MAP.forEach((s, i) => {
+        console.group(`[WA] Sections (${WA.PAGE_CONTEXT.page.sections.length}) — types: ${JSON.stringify(typeMap)}`);
+        WA.PAGE_CONTEXT.page.sections.forEach((s, i) => {
           console.log(`  ${i + 1}. [${s.type}] w=${s.weight} "${s.title}"`);
           console.log(`     summary:  ${s.summary}`);
           console.log(`     keywords: ${s.keywords.slice(0, 6).join(', ')}`);
@@ -1104,18 +1093,37 @@
         console.groupEnd();
       }
 
-      console.group(`[WA] 📋 Forms (${WA.FORM_MAP.length})`);
-      WA.FORM_MAP.forEach(f => {
-        console.group(`  Form ${f.index}${f.isCF7 ? ' [CF7]' : ''}${f.formEl.id ? ' #' + f.formEl.id : ''}`);
-        f.fields.forEach(field => {
-          const id = field.id ? `id=${field.id}` : `name=${field.name}`;
-          const opts = field.options?.length ? ` [${field.options.length} options]` : '';
-          console.log(`    ${id} → "${field.label}"${field.required ? ' *' : ''} (${field.type})${opts}`);
-        });
-        console.groupEnd();
-      });
+      // ── Site pages ─────────────────────────────────────────────────────
+      console.group(`[WA] Site pages (${WA.PAGE_CONTEXT.sitePages.length})`);
+      WA.PAGE_CONTEXT.sitePages.forEach(p => console.log(`  "${p.title}" → ${p.url}`));
       console.groupEnd();
 
+      // ── Forms ──────────────────────────────────────────────────────────
+      if (WA.PAGE_CONTEXT.page.forms.length) {
+        console.group(`[WA] Forms (${WA.PAGE_CONTEXT.page.forms.length})`);
+        WA.PAGE_CONTEXT.page.forms.forEach(f => {
+          const label = f.id + (f.isCF7 ? ' [CF7]' : '');
+          console.group(`  ${label}`);
+          f.fields.forEach(field => {
+            const key  = field.id ? `id=${field.id}` : `name=${field.name}`;
+            const opts = field.options?.length ? ` [${field.options.length} opts]` : '';
+            console.log(`    ${key} "${field.label}" (${field.type})${field.required ? ' *' : ''}${opts}`);
+          });
+          console.groupEnd();
+        });
+        console.groupEnd();
+      }
+
+      // ── Interactive elements ───────────────────────────────────────────
+      if (WA.PAGE_CONTEXT.elements?.length) {
+        const byType = WA.PAGE_CONTEXT.elements.reduce((acc, e) => {
+          acc[e.type] = (acc[e.type] || 0) + 1;
+          return acc;
+        }, {});
+        console.log(`[WA] Interactive elements (${WA.PAGE_CONTEXT.elements.length}):`, byType);
+      }
+
+      console.log(`[WA] Summary: "${WA.PAGE_CONTEXT.summary}"`);
       console.groupEnd();
     }
   }
