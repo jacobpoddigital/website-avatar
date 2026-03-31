@@ -211,7 +211,7 @@
   function discoverSections() {
     const sections = [];
     const _refs = {}; 
-    const candidates = document.querySelectorAll('main section, main article, main > div, body > section, body > article, [role="main"] > *');
+    const candidates = document.querySelectorAll('main section, main article, main > div, body > section,  body > .section, body > article, [role="main"] > *');
     
     candidates.forEach((element, index) => {
       const heading = element.querySelector('h1, h2, h3, h4, h5, h6');
