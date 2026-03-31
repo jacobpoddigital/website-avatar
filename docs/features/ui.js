@@ -44,7 +44,6 @@
   // ─── MESSAGES ─────────────────────────────────────────────────────────────
 
   function appendMessage(role, text, ts) {
-    console.log('[DEBUG] appendMessage called:', { role, text, ts });
   
     const el = document.createElement('div');
     el.className = `wa-msg wa-${role}`;

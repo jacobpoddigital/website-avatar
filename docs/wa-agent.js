@@ -243,10 +243,10 @@
       (el.type || "")
     );
   
-    console.log('[WA] Scoring:', el.id, 'type:', el.type);
-    console.log('[WA] Target section:', targetSection);
-    console.log('[WA] Keywords:', keywords);
-    console.log('[WA] Haystack sample:', haystack.slice(0, 100));
+    // console.log('[WA] Scoring:', el.id, 'type:', el.type);
+    // console.log('[WA] Target section:', targetSection);
+    // console.log('[WA] Keywords:', keywords);
+    // console.log('[WA] Haystack sample:', haystack.slice(0, 100));
   
     // Strong match: section type is contained in target
     // e.g., targetSection="hero section" contains el.type="hero"
@@ -254,7 +254,7 @@
       const normalizedType = normalise(el.type);
       if (targetSection.includes(normalizedType)) {
         score += 30;
-        console.log('[WA] ✅ Type match!', el.type, 'in', targetSection, '+30');
+        //console.log('[WA] ✅ Type match!', el.type, 'in', targetSection, '+30');
       }
     }
   
@@ -262,7 +262,7 @@
     keywords.forEach(k => {
       if (haystack.includes(k)) {
         score += 5;
-        console.log('[WA] ✅ Keyword match:', k, '+5');
+        //console.log('[WA] ✅ Keyword match:', k, '+5');
       }
     });
   
@@ -271,7 +271,7 @@
       const normalizedTitle = normalise(el.title);
       if (normalizedTitle.includes(targetSection) || targetSection.includes(normalizedTitle)) {
         score += 15;
-        console.log('[WA] ✅ Title match:', '+15');
+        //console.log('[WA] ✅ Title match:', '+15');
       }
     }
   
@@ -282,7 +282,7 @@
         keywords.forEach(k => {
           if (subText.includes(k)) {
             score += 3;
-            console.log('[WA] ✅ Subsection match:', sub.title, k, '+3');
+            //console.log('[WA] ✅ Subsection match:', sub.title, k, '+3');
           }
         });
       });

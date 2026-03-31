@@ -47,16 +47,9 @@
   async function saveSessionToBackend() {
     const userId = getUserId();
     const session = WA.getSession ? WA.getSession() : {};
-    
-    if (!userId) {
-      console.log('[SessionSync] ⚠️ No user ID - skipping save');
-      return;
-    }
-    
-    if (!session.messages || session.messages.length === 0) {
-      console.log('[SessionSync] ⚠️ No messages - skipping save');
-      return;
-    }
+
+    if (!userId) return;
+    if (!session.messages || session.messages.length === 0) return;
 
     // Get conversation_id from ElevenLabs (stored in session) or generate fallback
     // ElevenLabs bridge should set session.elevenlabsConversationId when it connects
@@ -73,12 +66,7 @@
       }
     };
 
-    console.log('[SessionSync] 💾 Saving session...', {
-      userId,
-      clientId: payload.client_id,
-      messageCount: session.messages.length,
-      conversationId: conversationId
-    });
+    if (WA.DEBUG) console.log('[SessionSync] 💾 Saving session...', { userId, clientId: payload.client_id, messageCount: session.messages.length, conversationId });
 
     try {
       const response = await fetch(SESSION_URL, {
@@ -106,58 +94,38 @@
 
   async function loadSessionFromBackend() {
     const userId = getUserId();
-    
-    if (!userId) {
-      console.log('[SessionSync] No user ID, skipping load');
-      return null;
-    }
+
+    if (!userId) return null;
 
     try {
       const response = await fetch(`${SESSION_URL}?user_id=${userId}`);
-      
-      if (!response.ok) {
-        console.log('[SessionSync] No previous session found');
-        return null;
-      }
+
+      if (!response.ok) return null;
 
       const sessions = await response.json();
-      
-      if (!sessions || sessions.length === 0) {
-        console.log('[SessionSync] No sessions returned');
-        return null;
-      }
+
+      if (!sessions || sessions.length === 0) return null;
 
       const lastSession = sessions[0];
-      
+
       // Parse transcript
       let transcript = lastSession.transcript;
       if (typeof transcript === 'string') {
         transcript = JSON.parse(transcript);
       }
 
-      console.log('[SessionSync] ✅ Loaded previous session');
-      console.log('[SessionSync] Messages:', transcript.length);
-      console.log('[SessionSync] Preview:', transcript.slice(0, 3));
-      
+      console.log('[SessionSync] ✅ Loaded previous session —', transcript.length, 'messages');
+
       return {
         messages: transcript,
         conversationId: lastSession.conversation_id,
         lastSaved: lastSession.analysis?.lastSaved
       };
-      
+
     } catch (err) {
       console.error('[SessionSync] ❌ Load failed:', err);
       return null;
     }
-  }
-
-  // ─── HOOK INTO MESSAGE FLOW ───────────────────────────────────────────────
-
-  function hookIntoMessages() {
-    // Message hooks disabled - we now save on disconnect only
-    // The full session is sent via onDisconnect in wa-elevenlabs.js
-    
-    console.log('[SessionSync] Message hooks disabled - using disconnect-based saving');
   }
 
   // ─── PAGE UNLOAD HANDLER ──────────────────────────────────────────────────
@@ -205,27 +173,16 @@
   // ─── INIT ─────────────────────────────────────────────────────────────────
 
   async function init() {
-    console.log('[SessionSync] Initializing...');
-    
-    // Load previous session
     const previousSession = await loadSessionFromBackend();
-    
+
     if (previousSession) {
-      console.log('[SessionSync] 📦 Session data loaded - ready to use');
-      // Store for potential future use
       WA._previousSession = previousSession;
     }
-    
-    // Hook into message flow
-    hookIntoMessages();
-    
-    // Setup page unload handler
+
     setupUnloadHandler();
-    
-    console.log('[SessionSync] ✅ Ready');
-    console.log('[SessionSync] User ID:', getUserId());
-    
-    // Log metadata when first message is sent
+
+    console.log('[SessionSync] ✅ Ready | User:', getUserId());
+
     setTimeout(() => {
       const metadata = getConversationMetadata();
       console.log('[SessionSync] 📋 Conversation Metadata:', metadata);

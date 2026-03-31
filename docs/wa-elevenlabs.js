@@ -202,8 +202,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       return null;
     }
     
-    console.log('[WA:Bridge] 🔍 Attempting to get conversation_id via getId()...');
-    
     // Poll for getId() to return a value (up to 2 seconds)
     for (let i = 0; i < 10; i++) {
       let conversationId = null;
@@ -214,7 +212,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       }
       
       if (conversationId) {
-        console.log('[WA:Bridge] ✅ Found conversation_id via getId() on attempt', i + 1, ':', conversationId);
         return conversationId;
       }
       

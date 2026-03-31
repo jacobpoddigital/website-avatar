@@ -211,8 +211,6 @@
           window.WebsiteAvatarGreeting.init();
         }
 
-        if (debug) console.log('[WA] Website Avatar loaded from', BASE_URL, '| account:', accountId);
-
       } catch(e) {
         console.error('[WA] Failed to load:', e.message);
       }
