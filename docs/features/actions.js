@@ -162,7 +162,6 @@
     execute: async (action) => {
       const { sectionId, sectionTitle, elementId, elementTitle } = action.payload;
       
-      // Use sectionId (new structure) or fallback to elementId (old structure)
       const idToFind = sectionId || elementId;
       const titleToShow = sectionTitle || elementTitle;
       
@@ -173,32 +172,31 @@
       const ctx = WA.PAGE_CONTEXT;
       if (ctx?._refs?.[idToFind] && ctx._refs[idToFind] instanceof HTMLElement) {
         el = ctx._refs[idToFind];
-        console.log('[WA] Found element via _refs');
+        if (WA.DEBUG) console.log('[WA] Found element via _refs');
       }
       
       // Method 2: Try document.getElementById
       if (!el) {
         el = document.getElementById(idToFind);
-        if (el) console.log('[WA] Found element via getElementById');
+        if (el && WA.DEBUG) console.log('[WA] Found element via getElementById');
       }
       
-      // Method 3: Try finding by data attribute or other means
+      // Method 3: Try finding by data attribute
       if (!el) {
         el = document.querySelector(`[data-section-id="${idToFind}"]`);
-        if (el) console.log('[WA] Found element via data attribute');
+        if (el && WA.DEBUG) console.log('[WA] Found element via data attribute');
       }
       
-      // Method 4: Find the section by matching against discovered sections
+      // Method 4: Find by matching title
       if (!el && ctx?.page?.sections) {
         const section = ctx.page.sections.find(s => s.id === idToFind);
         if (section) {
-          // Try to find element by title
           const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
           for (const heading of headings) {
             if (heading.textContent.trim() === section.title) {
               el = heading.closest('section, article, div[class*="section"], main > div');
               if (el) {
-                console.log('[WA] Found element by matching title');
+                if (WA.DEBUG) console.log('[WA] Found element by matching title');
                 break;
               }
             }
@@ -211,11 +209,26 @@
         throw new Error(`Section ${idToFind} not found`);
       }
       
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Smart scroll with offset for fixed headers and better positioning
+      const rect = el.getBoundingClientRect();
+      const absoluteTop = window.pageYOffset + rect.top;
+      
+      // Check if there's a fixed header
+      const header = document.querySelector('header[style*="fixed"], nav[style*="fixed"], .fixed-header, .sticky-header');
+      const headerHeight = header ? header.offsetHeight : 0;
+      
+      // Calculate scroll position: element top minus header height minus some padding
+      const targetY = absoluteTop - headerHeight - 20; // 20px padding
+      
+      window.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: 'smooth'
+      });
+      
       await WA.sleep(600);
       if (WA.spawnSparkles) WA.spawnSparkles(el);
       if (WA.agentSay) WA.agentSay(`Here's the ${titleToShow}.`);
-
+    
       // Skip turn - prevent disconnect during scroll
       if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
     },
