@@ -775,7 +775,10 @@
     debugFilteredContext(WA.PAGE_CONTEXT, filteredContext, knowledgeContext);
   
     // GATE: Skip OpenAI if filtering did nothing
-    if (filteredContext.elements.length === WA.PAGE_CONTEXT.elements.length) {
+    const fullSections = WA.PAGE_CONTEXT?.page?.sections || [];
+    const filteredSections = filteredContext?.page?.sections || [];
+    
+    if (filteredSections.length === fullSections.length) {
       if (WA.DEBUG) console.log('[WA] No filtering applied (0% reduction) — skipping OpenAI');
       return;
     }
