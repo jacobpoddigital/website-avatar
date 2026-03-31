@@ -735,10 +735,11 @@
     console.log('Keywords:', knowledge?.keywords);
     console.log('Section:', knowledge?.section);
 
-    console.group(`📦 FULL (${full.elements.length})`);
-    full.elements.forEach(e => {
-      console.log(`${e.type}: ${e.title || e.text}`);
-    });
+    full?.page?.sections || []  
+    filtered?.page?.sections.forEach(section => {
+      console.log(`[${section.type}] ${section.title}`)  
+      console.log(`keywords: ${section.keywords.join(', ')}`)  
+    })
     console.groupEnd();
 
     console.group(`🎯 FILTERED (${filtered.elements.length})`);
