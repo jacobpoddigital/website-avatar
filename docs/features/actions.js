@@ -90,7 +90,7 @@
     execute: async (action) => {
       return new Promise(resolve => {
         action._resolveFormFill = resolve;
-        if (WA.startFormFill) WA.startFormFill(action);
+        startFormFill(action);
       });
     },
 
@@ -242,6 +242,298 @@
       setTimeout(() => { if (WA.reconnectBridge) WA.reconnectBridge(); }, 600);
     }
   });
+
+  // ─── FORM FILL ────────────────────────────────────────────────────────────
+
+  let _completeFormFillAttempts = 0;
+
+  async function startFormFill(action) {
+    if (WA.formState.active) return;
+
+    WA.formState.active = true;
+    WA.formState.action = action;
+
+    const session = WA.getSession();
+    session.activeFormActionId = action.id;
+    WA.saveSession(session);
+
+    WA.openPanel();
+    WA.updateAbortButton(true);
+    repopulateFields(action);
+    routeFormInput('__RESUME__');
+  }
+
+  async function routeFormInput(userText) {
+    if (!WA.formState.action) return;
+
+    const session    = WA.getSession();
+    const fields     = WA.formState.action.payload.fields;
+    const recentMsgs = session.messages.slice(-6);
+
+    WA.showTyping();
+    const result = await WA.handleFormInputAI(userText, fields, recentMsgs);
+    WA.hideTyping();
+
+    if (!result || result.error) {
+      if (result?.message) WA.agentSay(result.message);
+      return;
+    }
+
+    if (result.action === 'abort') {
+      abandonFormFill();
+      return;
+    }
+
+    // Show options
+    if (result.action === 'show_options' && result.field_name) {
+      const field = fields.find(f => f.name === result.field_name);
+      if (field) {
+        if (result.message) WA.agentSay(result.message);
+        WA.renderOptionsCard(field, result.multi !== false, (selected) => {
+          field.value = selected;
+          WA.fillCheckboxField(field, selected);
+          WA.saveSessionDebounced(WA.getSession());
+          const summary = selected.length ? `Selected: ${selected.join(', ')}` : '(skipped)';
+          routeFormInput(summary);
+        });
+        return;
+      }
+    }
+
+    // Fill field
+    if (result.action === 'fill_field' || result.action === 'correct_field') {
+      const field = fields.find(f => f.name === result.field_name);
+      if (field) {
+        // Intercept choice fields
+        if (['checkbox', 'radio', 'select'].includes(field.type) && field.options?.length) {
+          if (result.message) WA.agentSay(result.message);
+          WA.renderOptionsCard(field, field.type !== 'radio', (selected) => {
+            field.value = selected;
+            if (field.type === 'select') {
+              const el = WA.getFieldElement(field);
+              if (el) { el.value = selected[0] || ''; WA.fillField(el, selected[0] || ''); }
+            } else {
+              WA.fillCheckboxField(field, selected);
+            }
+            WA.saveSessionDebounced(WA.getSession());
+            const summary = selected.length ? `Selected: ${selected.join(', ')}` : '(skipped)';
+            routeFormInput(summary);
+          });
+          return;
+        }
+
+        if (result.value) {
+          field.value = result.value;
+          const el = WA.getFieldElement(field);
+          if (el) {
+            el.classList.add('wa-filling');
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            WA.fillField(el, result.value);
+          }
+          WA.saveSessionDebounced(WA.getSession());
+        } else {
+          if (result.message) WA.agentSay(result.message);
+          return;
+        }
+      }
+    }
+
+    // Submit ready
+    if (result.action === 'submit_ready' || result.all_required_filled) {
+      setTimeout(completeFormFill, 400);
+      return;
+    }
+
+    if (result.message) WA.agentSay(result.message);
+  }
+
+  function completeFormFill() {
+    if (!WA.formState.action) return;
+    const fields  = WA.formState.action.payload.fields;
+    const missing = fields.filter(f => f.required && (!f.value || (Array.isArray(f.value) ? !f.value.length : !f.value.trim())));
+
+    if (missing.length) {
+      _completeFormFillAttempts++;
+      if (_completeFormFillAttempts <= 2) {
+        routeFormInput('__RESUME__');
+      } else {
+        _completeFormFillAttempts = 0;
+        WA.agentSay(`I still need: ${missing.map(f => f.label).join(', ')}. Please provide these to continue.`);
+      }
+      return;
+    }
+    _completeFormFillAttempts = 0;
+
+    const filled  = fields.filter(f => f.value);
+    const summary = filled.map(f => `${f.label}: ${f.value}`).join(', ');
+
+    WA.agentSay(`All set! I've filled in ${summary}. Ready to send?`);
+
+    WA.renderCard({
+      label:   'Ready to submit',
+      message: 'Shall I submit the form now?',
+      buttons: [
+        { text: 'Submit', action: () => submitForm() },
+        { text: 'Cancel', action: () => cancelFormFill(), style: 'deny' }
+      ]
+    });
+  }
+
+  async function submitForm() {
+    const session = WA.getSession();
+    if (WA.formState.action) {
+      WA.formState.action.status      = 'complete';
+      WA.formState.action.completedAt = Date.now();
+    }
+    const parent = session.actions.find(a => a.type === 'navigate_then_fill' && a.status === 'active');
+    if (parent) { parent.status = 'complete'; parent.completedAt = Date.now(); }
+    session.activeFormActionId = null;
+    WA.saveSession(session);
+
+    const formEl = document.querySelector('.wpcf7-form');
+    if (formEl) {
+      await submitCF7Form(formEl);
+    } else {
+      await submitGenericForm();
+    }
+  }
+
+  function submitCF7Form(formEl) {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.warn('[WA] CF7 response timed out');
+        handleFormSubmitFallback();
+        resolve();
+      }, 10000);
+
+      const onSuccess = () => { clearTimeout(timeout); cleanup(); finishFormFill('success'); resolve(); };
+      const onInvalid = (e) => { clearTimeout(timeout); cleanup(); handleCF7ValidationError(e.detail); resolve(); };
+      const onSpam    = () => {
+        clearTimeout(timeout); cleanup();
+        WA.agentSay("The form was flagged — please click the submit button manually to complete your enquiry.");
+        WA.highlightSubmitButton();
+        WA.reconnectBridge();
+        resolve();
+      };
+      const onFailed  = () => {
+        clearTimeout(timeout); cleanup();
+        WA.agentSay("There was a problem sending the form. Please try submitting manually or try again in a moment.");
+        WA.reconnectBridge();
+        resolve();
+      };
+
+      function cleanup() {
+        WA.bus.off('form:submitted', onSuccess);
+        WA.bus.off('form:invalid',   onInvalid);
+        WA.bus.off('form:spam',      onSpam);
+        WA.bus.off('form:failed',    onFailed);
+      }
+
+      WA.bus.on('form:submitted', onSuccess);
+      WA.bus.on('form:invalid',   onInvalid);
+      WA.bus.on('form:spam',      onSpam);
+      WA.bus.on('form:failed',    onFailed);
+
+      const submitBtn = formEl.querySelector('[type="submit"], .wpcf7-submit');
+      if (submitBtn) {
+        if (WA.DEBUG) console.log('[WA] Clicking CF7 submit button');
+        submitBtn.click();
+      } else {
+        console.warn('[WA] CF7 submit button not found');
+        handleFormSubmitFallback();
+        resolve();
+      }
+    });
+  }
+
+  async function submitGenericForm() {
+    const submitBtn = document.querySelector(
+      'form [type="submit"], .btn-submit, button[type="submit"], input[type="submit"]'
+    );
+    if (submitBtn) {
+      submitBtn.click();
+      await WA.sleep(1000);
+      finishFormFill('success');
+    } else {
+      WA.agentSay("The form is filled — please click the submit button to send your enquiry.");
+      WA.highlightSubmitButton();
+      WA.resetFormState();
+      WA.setState('action', 'none');
+    }
+  }
+
+  function finishFormFill(outcome) {
+    WA.clearFieldHighlights();
+    const session = WA.getSession();
+    session.activeFormActionId = null;
+    WA.saveSession(session);
+    if (WA.formState.action) {
+      WA.updateActionCardStatus(WA.formState.action.id, 'complete');
+    }
+    if (WA.formState.action?._resolveFormFill) {
+      WA.formState.action._resolveFormFill();
+    }
+    WA.resetFormState();
+  }
+
+  function handleCF7ValidationError(detail) {
+    const failedInputs = document.querySelectorAll('.wpcf7-not-valid');
+    if (failedInputs.length && WA.formState.action) {
+      const failedNames = Array.from(failedInputs).map(el => el.getAttribute('name'));
+      WA.formState.action.payload.fields.forEach(f => {
+        if (failedNames.includes(f.name)) f.value = null;
+      });
+      WA.formState.active = true;
+      routeFormInput('__RESUME__');
+      return;
+    }
+    WA.agentSay("Some fields need correcting — please check the form.");
+    WA.reconnectBridge();
+  }
+
+  function handleFormSubmitFallback() {
+    WA.agentSay("The form is filled — please click the submit button to send your enquiry.");
+    WA.highlightSubmitButton();
+    WA.reconnectBridge();
+  }
+
+  function cancelFormFill() {
+    if (WA.formState.action) {
+      WA.formState.action.status      = 'denied';
+      WA.formState.action.completedAt = Date.now();
+      if (WA.formState.action._resolveFormFill) WA.formState.action._resolveFormFill();
+    }
+    const session = WA.getSession();
+    session.activeFormActionId = null;
+    WA.saveSession(session);
+    WA.resetFormState();
+    WA.setState('action', 'none');
+    setTimeout(() => WA.reconnectBridge(), 800);
+  }
+
+  function abandonFormFill() {
+    if (WA.formState.action) {
+      WA.formState.action.status      = 'denied';
+      WA.formState.action.completedAt = Date.now();
+      if (WA.formState.action._resolveFormFill) WA.formState.action._resolveFormFill();
+    }
+    const session = WA.getSession();
+    session.activeFormActionId = null;
+    WA.clearFieldHighlights();
+    WA.saveSession(session);
+    WA.resetFormState();
+    WA.setState('action', 'none');
+    setTimeout(() => WA.reconnectBridge(), 800);
+  }
+
+  function repopulateFields(action) {
+    action.payload.fields.forEach(f => {
+      if (f.value !== null) {
+        const el = WA.getFieldElement(f);
+        if (el) WA.fillField(el, f.value);
+      }
+    });
+  }
 
   // ─── URL VALIDATION ───────────────────────────────────────────────────────
 
@@ -403,8 +695,8 @@
     const activeAction = session.actions.find(a => a.status === 'active');
     if (!activeAction) return;
 
-    if (WA.formState?.active && WA.abandonFormFill) {
-      WA.abandonFormFill();
+    if (WA.formState?.active) {
+      abandonFormFill();
       return;
     }
 
@@ -429,5 +721,11 @@
   WA.denyAction            = denyAction;
   WA.dismissPendingActions = dismissPendingActions;
   WA.abortCurrentAction    = abortCurrentAction;
+  WA.startFormFill         = startFormFill;
+  WA.routeFormInput        = routeFormInput;
+  WA.submitForm            = submitForm;
+  WA.cancelFormFill        = cancelFormFill;
+  WA.abandonFormFill       = abandonFormFill;
+  WA.repopulateFields      = repopulateFields;
 
 })();
