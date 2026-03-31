@@ -413,8 +413,8 @@
     // Step 1: Build individual maps (for backward compatibility)
     WA.PAGE_MAP = discoverSitePages();
     WA.FORM_MAP = discoverForms();
-    const { sections, _refs } = discoverSections(); 
-    WA.CONTENT_MAP = discoverSections();
+    const { sections, _refs } = discoverSections();  // Destructure the return
+    WA.CONTENT_MAP = sections;  // Assign the array
     
     // Step 2: Calculate stats
     const totalOriginalTokens = WA.CONTENT_MAP.reduce((sum, s) => sum + s.tokenCountOriginal, 0);
@@ -438,7 +438,7 @@
       ? `${pageTitle} — ${heroSection.summary || heroSection.title}`
       : pageTitle;
     
-    // Step 5: Build unified PAGE_CONTEXT
+    // Step 5: Build unified PAGE_CONTEXT (with _refs for scrolling)
     WA.PAGE_CONTEXT = {
       page: {
         title: pageTitle,
@@ -457,7 +457,7 @@
       },
       sitePages,
       summary,
-      _refs
+      _refs  // DOM references for scroll actions
     };
     
     registerCF7Listeners();
