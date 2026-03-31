@@ -708,21 +708,24 @@
   }
 
   function filterPageContext(pageContext, knowledge) {
-    if (!pageContext?.elements || !knowledge) return pageContext;
-
-    const scored = pageContext.elements.map(el => ({
-      ...el,
-      _score: scoreElement(el, knowledge)
+    if (!pageContext?.page?.sections || !knowledge) return pageContext;
+  
+    const scored = pageContext.page.sections.map(section => ({
+      ...section,
+      _score: scoreElement(section, knowledge)
     }));
-
+  
     const filtered = scored
-      .filter(el => el._score > 0)
+      .filter(section => section._score > 0)
       .sort((a, b) => b._score - a._score)
       .slice(0, 12); // limit size
-
+  
     return {
       ...pageContext,
-      elements: filtered
+      page: {
+        ...pageContext.page,
+        sections: filtered
+      }
     };
   }
 
