@@ -580,6 +580,421 @@
     };
   }
 
+  // ─── CONTENT MAP ──────────────────────────────────────────────────────────
+
+  // Stopwords: filtered from all keyword scoring
+  const CONTENT_STOPWORDS = new Set([
+    "the","a","an","and","but","or","so","to","of","in","on","at","for","with",
+    "is","are","was","were","be","been","being","have","has","had","do","does",
+    "did","will","would","could","should","may","might","must","can","that","this",
+    "these","those","it","its","we","our","you","your","they","their","he","she",
+    "his","her","us","me","my","by","from","up","out","about","into","then","than",
+    "also","all","any","each","few","more","most","other","some","such","no","not",
+    "only","own","same","too","very","just","what","which","who","how","when","where",
+    "get","use","using","used","make","makes","made","new","need","take","give","come"
+  ]);
+
+  // Generic marketing/CTA words that add noise to keyword scoring — penalised
+  const BOILERPLATE_WORDS = new Set([
+    "learn","click","here","read","find","started","contact","today","call","visit",
+    "see","view","discover","explore","check","download","signup","sign","login",
+    "register","subscribe","follow","share","send","submit","buy","shop","order",
+    "schedule","book","trial","demo","quote","estimate","consultation","appointment",
+    "welcome","thanks","thank","please","available","provide","provides","providing",
+    "offer","offers","offering","ensure","ensures","help","helps","helping",
+    "include","includes","including","allow","allows","enable","enables"
+  ]);
+
+  // Containers to skip entirely during section discovery
+  const CONTENT_SKIP = 'nav, header, footer, form, script, style, ' +
+    '#wa-panel, #wa-bubble, [class*="cookie"], [class*="consent"], ' +
+    '[class*="gdpr"], [class*="newsletter"], [class*="popup"], ' +
+    '[class*="banner"], [class*="notice"], [class*="alert"], ' +
+    '[role="banner"], [role="navigation"], [role="contentinfo"]';
+
+  /**
+   * Extract the best available title from a container element.
+   * Priority: h1 → h2 → h3 → first meaningful sentence.
+   */
+  function extractTitle(el) {
+    for (const tag of ['h1', 'h2', 'h3']) {
+      const h = el.querySelector(tag);
+      if (h) {
+        const text = h.textContent.trim();
+        if (text.length > 2) return text;
+      }
+    }
+    const raw = el.textContent.replace(/\s+/g, ' ').trim();
+    const sentence = raw.match(/[^.!?]{10,}[.!?]?/);
+    return sentence ? sentence[0].trim().slice(0, 80) : raw.slice(0, 80);
+  }
+
+  /**
+   * Collect all meaningful text from p, li, dt, dd inside a container.
+   * Skips nav/footer/form subtrees and link-saturated nodes (nav menus
+   * embedded in content areas). Falls back to raw textContent if needed.
+   */
+  function aggregateText(el) {
+    const parts = [];
+    el.querySelectorAll('p, li, dt, dd').forEach(node => {
+      if (node.closest('nav, header, footer, form, #wa-panel, #wa-bubble')) return;
+      const text = node.textContent.replace(/\s+/g, ' ').trim();
+      if (text.length < 30) return;
+      // Skip nodes where the majority of text is anchor text (nav-like)
+      const linkChars = Array.from(node.querySelectorAll('a'))
+        .reduce((sum, a) => sum + a.textContent.length, 0);
+      if (linkChars / text.length > 0.7) return;
+      parts.push(text);
+    });
+
+    if (!parts.length) {
+      const raw = el.textContent.replace(/\s+/g, ' ').trim();
+      if (raw.length >= 30) parts.push(raw.slice(0, 600));
+    }
+
+    return [...new Set(parts)].join(' ');
+  }
+
+  /**
+   * Naive suffix-stripping stemmer.
+   * Collapses common forms so "design / designer / designing" count together.
+   * Not linguistically perfect — intentionally lightweight.
+   */
+  function stemWord(word) {
+    if (word.length < 5) return word;
+    return word
+      .replace(/ings?$/, '')    // designing → design
+      .replace(/ment$/, '')     // development → develop
+      .replace(/ness$/, '')     // happiness → happi
+      .replace(/ation$/, 'e')   // creation → cre­ate (approx)
+      .replace(/ies$/, 'y')     // companies → company
+      .replace(/ers?$/, '')     // designers → design
+      .replace(/ed$/, '')       // designed → design
+      .replace(/ly$/, '')       // quickly → quick
+      .replace(/s$/, '');       // services → service
+  }
+
+  /**
+   * Deterministic keyword extraction.
+   *
+   * Improvements over the naive version:
+   *   - Stem-based grouping: "design/designer/designing" → single bucket
+   *   - Boilerplate penalty: CTA/fluff words are silently dropped
+   *   - Bigram detection: adjacent content words scored as phrases (e.g. "web design")
+   *     — bigrams require freq ≥ 2 to filter coincidental pairings
+   *   - Heading words get 3× frequency boost (vs 2× before)
+   *   - Output: top bigrams first, then single words not already covered
+   */
+  function extractKeywords(text, headingText) {
+    headingText = headingText || '';
+
+    const stemMap    = {};  // stem → canonical word form (most common)
+    const stemFreq   = {};  // stem → accumulated score
+    const bigramFreq = {};  // "w1 w2" → count
+
+    // Collect heading words for boost
+    const headingWords = new Set();
+    headingText.toLowerCase()
+      .split(/[\s\-_,;:.!?()[\]"'\/]+/)
+      .forEach(w => {
+        const c = w.replace(/[^a-z]/g, '');
+        if (c.length >= 3 && !CONTENT_STOPWORDS.has(c) && !BOILERPLATE_WORDS.has(c))
+          headingWords.add(c);
+      });
+
+    // Tokenise combined text (heading first so boosts flow through)
+    const tokens = (headingText + ' ' + text).toLowerCase()
+      .split(/[\s\-_,;:.!?()[\]"'\/]+/)
+      .map(w => w.replace(/[^a-z]/g, ''))
+      .filter(w => w.length >= 3 && !CONTENT_STOPWORDS.has(w));
+
+    tokens.forEach((word, i) => {
+      if (BOILERPLATE_WORDS.has(word)) return;  // silently discard fluff
+
+      const boost = headingWords.has(word) ? 3 : 1;
+      const stem  = stemWord(word);
+
+      // Single-word: keep whichever surface form is most frequent
+      if (!stemMap[stem]) stemMap[stem] = word;
+      stemFreq[stem] = (stemFreq[stem] || 0) + boost;
+
+      // Bigram: pair with the next valid (non-stopword) token
+      if (i < tokens.length - 1) {
+        const next = tokens[i + 1];
+        if (next.length >= 3 && !CONTENT_STOPWORDS.has(next) && !BOILERPLATE_WORDS.has(next)) {
+          const bigram = word + ' ' + next;
+          bigramFreq[bigram] = (bigramFreq[bigram] || 0) + boost;
+        }
+      }
+    });
+
+    // Top unigrams (by stem score)
+    const topWords = Object.entries(stemFreq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([stem]) => stemMap[stem]);
+
+    // Top bigrams — require freq ≥ 2 to suppress coincidental pairs
+    const topBigrams = Object.entries(bigramFreq)
+      .filter(([, score]) => score >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([bigram]) => bigram);
+
+    // Merge: bigrams first, then unigrams not already represented in a bigram
+    const result = [...topBigrams];
+    for (const word of topWords) {
+      if (result.length >= 12) break;
+      if (!result.some(b => b.includes(word))) result.push(word);
+    }
+    return result;
+  }
+
+  /**
+   * Pick the most representative sentence from a text block (non-AI).
+   * Scores each sentence by how many extracted keywords it contains —
+   * the highest-scoring sentence is the summary. Falls back to first
+   * sentence. Capped at 140 characters for readability.
+   */
+  function extractSummary(text, keywords) {
+    if (!text || text.length < 40) return text || '';
+    const kws = new Set(keywords.map(k => k.toLowerCase()));
+    const sentences = text.match(/[^.!?]{20,}[.!?]*/g) || [text];
+
+    let best = sentences[0];
+    let bestScore = -1;
+
+    for (const sentence of sentences) {
+      const lower = sentence.toLowerCase();
+      let score = 0;
+      kws.forEach(k => { if (lower.includes(k)) score++; });
+      if (score > bestScore) { bestScore = score; best = sentence; }
+    }
+
+    const trimmed = best.replace(/\s+/g, ' ').trim();
+    return trimmed.length > 140 ? trimmed.slice(0, 137) + '...' : trimmed;
+  }
+
+  /**
+   * Returns true when a candidate element should be rejected for low content quality:
+   *   - Majority of text is link text (navigation disguised as content)
+   *   - Too few words to be a meaningful section
+   */
+  function isLowQuality(el, text) {
+    const totalChars = el.textContent.length;
+    if (!totalChars) return true;
+
+    const linkChars = Array.from(el.querySelectorAll('a'))
+      .reduce((sum, a) => sum + a.textContent.length, 0);
+    if (linkChars / totalChars > 0.55) return true;  // >55% link text = nav-like
+
+    if (text.trim().split(/\s+/).length < 8) return true;  // too thin
+
+    return false;
+  }
+
+  /**
+   * Returns true when an element covers >75% of the page's text — it's a
+   * mega-wrapper (e.g. <div class="site-content">) not a real section.
+   */
+  function isMegaWrapper(el, bodyTextLen) {
+    return bodyTextLen > 0 && el.textContent.length / bodyTextLen > 0.75;
+  }
+
+  /**
+   * Classify a section into a semantic type using three confidence tiers:
+   *
+   *   Tier 1 — class/id names     (highest confidence, checked first)
+   *   Tier 2 — DOM structure      (medium confidence)
+   *   Tier 3 — text body signals  (lowest confidence, fallback only)
+   *
+   * Splitting into tiers prevents a page whose *body text* mentions "FAQ"
+   * from misclassifying an unrelated services section.
+   */
+  function classifySection(el, text, keywords) {
+    const classSig = (el.className + ' ' + el.id).toLowerCase();
+    const textSig  = text.toLowerCase();
+
+    // ── Tier 1: class/id ──────────────────────────────────────────────────
+    if (/faq|accordion/.test(classSig))                             return 'faq';
+    if (/testimonial|review|rating|quote|feedback/.test(classSig)) return 'testimonials';
+    if (/pric(e|ing)|plan|package|tier/.test(classSig))            return 'pricing';
+    if (/team|staff|about|our.story|who.we/.test(classSig))        return 'about';
+    if (/contact|touch|reach/.test(classSig))                      return 'contact';
+    if (/service|solution|offering/.test(classSig))                return 'services';
+    if (/feature|benefit|highlight|why.us/.test(classSig))         return 'features';
+    if (/portfolio|case.stud|our.work|project/.test(classSig))     return 'portfolio';
+    if (/blog|news|article|post|update/.test(classSig))            return 'blog';
+    if (/gallery|photo|image.grid|lightbox/.test(classSig))        return 'gallery';
+    if (/compar|versus|vs\b/.test(classSig))                       return 'comparison';
+
+    // ── Tier 2: DOM structure ─────────────────────────────────────────────
+    if (el.querySelector('h1')) return 'hero';
+
+    // FAQ: details/summary accordion or definition list pairs
+    if (el.querySelectorAll('details, summary, dt').length >= 3) return 'faq';
+
+    // Comparison: data table present
+    if (el.querySelector('table')) return 'comparison';
+
+    // Testimonials: blockquotes
+    if (el.querySelectorAll('blockquote').length >= 2) return 'testimonials';
+
+    // Features: icon + short-text card grid
+    const iconCount = el.querySelectorAll(
+      'svg, img[class*="icon"], i[class*="icon"], [class*="icon"]'
+    ).length;
+    const cardCount = el.querySelectorAll(
+      '[class*="card"], [class*="feature"], [class*="item"]'
+    ).length;
+    if (iconCount >= 3 && cardCount >= 3) return 'features';
+
+    // Hero fallback: h2 + prominent CTA + short copy
+    const hasCTA = el.querySelector('a.btn, a.button, a[class*="btn"], a[class*="button"]');
+    const hasH2  = el.querySelector('h2');
+    if (hasCTA && hasH2 && text.length < 600) return 'hero';
+
+    // Listing: many links or card-like repeated children
+    const linkCount = el.querySelectorAll('a').length;
+    const listCards = el.querySelectorAll('[class*="card"], [class*="item"], li').length;
+    if (linkCount > 8 || listCards > 5) return 'listing';
+
+    // ── Tier 3: text body signals (low confidence) ────────────────────────
+    if (/frequently.asked|question.*answer/.test(textSig))              return 'faq';
+    if (/testimonial|said about|our client|customer.*said/.test(textSig)) return 'testimonials';
+    if (/starting at|per month|per year|\$\d|£\d|€\d/.test(textSig))  return 'pricing';
+    if (/our service|what we do|we offer|we provide/.test(textSig))    return 'services';
+    if (/our team|meet the|about us|our story/.test(textSig))          return 'about';
+    if (/get in touch|contact us|send.*message/.test(textSig))         return 'contact';
+
+    return 'content';
+  }
+
+  /**
+   * Score section importance.
+   *   +3  contains h1
+   *   +2  contains h2
+   *   +1  contains h3
+   *   +1  text > 150 words (rich content)
+   *   +1  appears in earliest 30% of candidates (above-the-fold proxy)
+   *   -1  text < 25 words (thin / teaser)
+   */
+  function weightSection(el, text, domIndex, totalCandidates) {
+    let weight = 0;
+    if (el.querySelector('h1'))      weight += 3;
+    else if (el.querySelector('h2')) weight += 2;
+    else if (el.querySelector('h3')) weight += 1;
+
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount > 150) weight += 1;
+    if (wordCount < 25)  weight -= 1;
+
+    if (totalCandidates > 0 && domIndex / totalCandidates < 0.3) weight += 1;
+
+    return weight;
+  }
+
+  /**
+   * Stopword-stripped Jaccard similarity. Returns 0..1.
+   * Stripping stopwords means two sections that differ only in surrounding
+   * boilerplate copy (e.g. mobile vs desktop clones) are still caught.
+   */
+  function textSimilarity(a, b) {
+    const wordsOf = str => new Set(
+      str.toLowerCase()
+        .split(/\s+/)
+        .filter(w => w.length > 3 && !CONTENT_STOPWORDS.has(w))
+    );
+    const setA = wordsOf(a);
+    const setB = wordsOf(b);
+    if (!setA.size || !setB.size) return 0;
+    let inter = 0;
+    setA.forEach(w => { if (setB.has(w)) inter++; });
+    return inter / (setA.size + setB.size - inter);
+  }
+
+  /**
+   * Build a cheap fingerprint from the first 6 meaningful content words (sorted).
+   * Used as a fast exact-match pre-check before computing full Jaccard.
+   */
+  function sectionFingerprint(text) {
+    return text.toLowerCase()
+      .split(/\s+/)
+      .filter(w => w.length > 4 && !CONTENT_STOPWORDS.has(w))
+      .slice(0, 6)
+      .sort()
+      .join('|');
+  }
+
+  /**
+   * Main entry point for content section discovery.
+   *
+   * Pipeline:
+   *   1. Query structural candidates (single DOM pass)
+   *   2. Filter: skip containers, mega-wrappers, nested section descendants
+   *   3. Extract title, text, keywords, summary, type, weight per candidate
+   *   4. Quality filter: drop low-density / nav-heavy sections
+   *   5. Sort by weight (so dedup keeps the most important copy)
+   *   6. Two-phase dedup: fingerprint fast-path → Jaccard similarity
+   */
+  function discoverSections() {
+    const bodyTextLen = document.body.textContent.length;
+
+    const structuralCandidates = Array.from(document.querySelectorAll(
+      'section, main, article, ' +
+      'div[class*="section"], div[class*="block"], div[class*="container"], ' +
+      'div[class*="wrapper"], div[class*="content"]'
+    ));
+
+    const candidates = structuralCandidates.filter(el => {
+      if (el.closest(CONTENT_SKIP)) return false;
+      if (el.textContent.trim().length < 60) return false;
+      if (isMegaWrapper(el, bodyTextLen)) return false;
+      // Prefer outermost semantic containers — drop children of section/main/article
+      return !structuralCandidates.some(
+        other => other !== el &&
+                 other.contains(el) &&
+                 (other.tagName === 'SECTION' || other.tagName === 'MAIN' || other.tagName === 'ARTICLE')
+      );
+    });
+
+    const total = candidates.length;
+    const raw   = [];
+
+    candidates.forEach((el, idx) => {
+      const title = extractTitle(el);
+      const text  = aggregateText(el);
+      if (!text || text.length < 60) return;
+      if (isLowQuality(el, text)) return;
+
+      const keywords = extractKeywords(text, title);
+      const summary  = extractSummary(text, keywords);
+      const type     = classifySection(el, text, keywords);
+      const weight   = weightSection(el, text, idx, total);
+
+      raw.push({ title, text, summary, keywords, type, weight, _text: text });
+    });
+
+    // Sort by weight so dedup retains the most important version of a duplicate
+    raw.sort((a, b) => b.weight - a.weight);
+
+    // Two-phase deduplication:
+    //   Phase 1 — fingerprint pre-check (O(1) per candidate, catches exact clones)
+    //   Phase 2 — Jaccard similarity (catches near-clones, e.g. mobile/desktop pairs)
+    const seenFp = new Set();
+    const deduped = [];
+    for (const section of raw) {
+      const fp = sectionFingerprint(section._text);
+      if (seenFp.has(fp)) continue;
+      if (deduped.some(kept => textSimilarity(kept._text, section._text) > 0.78)) continue;
+      seenFp.add(fp);
+      deduped.push(section);
+    }
+
+    // Strip internal helper field before exposing on WA.CONTENT_MAP
+    return deduped.map(({ _text, ...rest }) => rest);
+  }
+
   // ─── CF7 EVENT LISTENERS ──────────────────────────────────────────────────
   function registerCF7Listeners() {
     document.addEventListener('wpcf7mailsent', e => WA.bus.emit('form:submitted', { detail: e.detail }));
@@ -603,6 +1018,7 @@
     WA.PAGE_MAP     = discoverPages();
     WA.FORM_MAP     = discoverForms();
     WA.PAGE_CONTEXT = buildPageContext();
+    WA.CONTENT_MAP  = discoverSections();
     registerCF7Listeners();
 
     if (DEBUG) {
@@ -673,6 +1089,21 @@
         }
       }
       
+      if (WA.CONTENT_MAP?.length) {
+        const byType = WA.CONTENT_MAP.reduce((acc, s) => {
+          acc[s.type] = (acc[s.type] || 0) + 1;
+          return acc;
+        }, {});
+        console.group(`[WA] 🗂 Content Map (${WA.CONTENT_MAP.length} sections)`);
+        console.log('Types:', byType);
+        WA.CONTENT_MAP.forEach((s, i) => {
+          console.log(`  ${i + 1}. [${s.type}] w=${s.weight} "${s.title}"`);
+          console.log(`     summary:  ${s.summary}`);
+          console.log(`     keywords: ${s.keywords.slice(0, 6).join(', ')}`);
+        });
+        console.groupEnd();
+      }
+
       console.group(`[WA] 📋 Forms (${WA.FORM_MAP.length})`);
       WA.FORM_MAP.forEach(f => {
         console.group(`  Form ${f.index}${f.isCF7 ? ' [CF7]' : ''}${f.formEl.id ? ' #' + f.formEl.id : ''}`);
@@ -684,7 +1115,7 @@
         console.groupEnd();
       });
       console.groupEnd();
-      
+
       console.groupEnd();
     }
   }
