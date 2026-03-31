@@ -666,44 +666,42 @@
 
   function scoreElement(el, ctx) {
     let score = 0;
-
+  
     const keywords = (ctx?.keywords || []).map(normalise);
     const targetSection = normalise(ctx?.section || "");
-
+  
+    // Build haystack from section properties
     const haystack = normalise(
       (el.title || "") + " " +
       (el.summary || "") + " " +
-      (el.text || "")
+      (el.keywords || []).join(" ")  // Add keywords array
     );
-
+  
     // keyword match
     keywords.forEach(k => {
       if (haystack.includes(k)) score += 5;
     });
-
+  
     // strong section match
     if (targetSection && el.title && normalise(el.title).includes(targetSection)) {
       score += 20;
     }
-
+  
+    // section type match (hero, features, pricing, etc.)
+    if (targetSection && el.type && normalise(el.type).includes(targetSection)) {
+      score += 15;
+    }
+  
     // subsection relevance
     if (el.subsections) {
       el.subsections.forEach(sub => {
-        const subText = normalise(sub.title + " " + sub.description);
+        const subText = normalise(sub.title + " " + (sub.summary || ""));  // Changed from sub.description
         keywords.forEach(k => {
           if (subText.includes(k)) score += 3;
         });
       });
     }
-
-    // CTA context boost
-    if (el.context) {
-      const ctxText = normalise(el.context);
-      keywords.forEach(k => {
-        if (ctxText.includes(k)) score += 2;
-      });
-    }
-
+  
     return score;
   }
 
@@ -823,22 +821,29 @@
   }
 
   async function executeDecidedAction(action) {
-    const { type, auto, element_id, target_url, target_label, reason, confidence } = action;
+    const { type, auto, section_id, element_id, target_url, target_label, reason, confidence } = action;
     const isAuto = auto === true;
   
     if (type === 'scroll_to') {
-      const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
-      const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
-      if (!el) return;
+      // Try section_id first (new structure), fallback to element_id (old structure)
+      const sectionIdToFind = section_id || element_id;
       
-      // Use target_label from AI if provided, otherwise fallback
-      const label = target_label || el.text || el.title || el.number || el.email || element_id;
+      // Find section in PAGE_CONTEXT
+      const section = WA.PAGE_CONTEXT?.page?.sections?.find(s => s.id === sectionIdToFind);
+      
+      if (!section) {
+        console.warn('[WA] Could not find section:', sectionIdToFind);
+        return;
+      }
+      
+      // Use target_label from AI if provided, otherwise fallback to section title
+      const label = target_label || section.title || sectionIdToFind;
       const description = reason || `Show you the ${label} section`;
       
       WA.proposeAction(session, 'scroll_to', description, {
-        elementId:    el.id,
-        elementText:  label,
-        elementTitle: el.title || el.text || label,
+        sectionId:    section.id,
+        sectionTitle: label,
+        elementTitle: section.title || label,  // For backward compatibility
         confidence:   confidence
       }, isAuto !== false); // scroll_to is auto by default
       return;
@@ -898,25 +903,6 @@
         return result;
       }
       return;
-    }
-  
-    if (type === 'click_element' && element_id) {
-      const expandedId = element_id?.startsWith('wa_el_') ? element_id : `wa_el_${element_id}`;
-      const el = WA.PAGE_CONTEXT?.elements?.find(e => e.id === expandedId);
-      if (!el) return;
-      
-      const label = target_label || el.text || el.title;
-      const description = reason || `Click "${label}" for you`;
-      
-      WA.proposeAction(session, 'click_element',
-        description,
-        { 
-          elementId: el.id, 
-          elementText: label,
-          confidence: confidence
-        },
-        isAuto
-      );
     }
   }
 
