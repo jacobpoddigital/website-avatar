@@ -101,28 +101,40 @@
           <input type="text" id="wa-input" placeholder="Type a message…" />
           <button id="wa-send">Send</button>
         </div>
-        <div class="wa-history-panel" id="wa-history-panel" aria-hidden="true">
-          <div class="wa-history-header">
-            <span class="wa-history-title">Past Conversations</span>
-            <button class="wa-history-close" id="wa-history-close" aria-label="Close">✕</button>
-          </div>
-          <div class="wa-history-list" id="wa-history-list"></div>
-        </div>
-        <div class="wa-history-view" id="wa-history-view" aria-hidden="true">
-          <div class="wa-history-view-header">
-            <button class="wa-history-back" id="wa-history-back" aria-label="Back to list">← Back</button>
-            <span class="wa-history-view-date" id="wa-history-view-date"></span>
-          </div>
-          <div class="wa-history-view-msgs" id="wa-history-view-msgs"></div>
-        </div>
       `;
       document.body.appendChild(panel);
 
+      // History overlays — injected as body-level siblings of #wa-panel so they
+      // sit on top of the whole panel without touching the active messages area.
+      const historyPanel = document.createElement('div');
+      historyPanel.id = 'wa-history-panel';
+      historyPanel.setAttribute('aria-hidden', 'true');
+      historyPanel.innerHTML = `
+        <div class="wa-history-header">
+          <span class="wa-history-title">Past Conversations</span>
+          <button class="wa-history-close" id="wa-history-close" aria-label="Close">✕</button>
+        </div>
+        <div class="wa-history-list" id="wa-history-list"></div>
+      `;
+      document.body.appendChild(historyPanel);
+
+      const historyView = document.createElement('div');
+      historyView.id = 'wa-history-view';
+      historyView.setAttribute('aria-hidden', 'true');
+      historyView.innerHTML = `
+        <div class="wa-history-view-header">
+          <button class="wa-history-back" id="wa-history-back" aria-label="Back to list">← Back</button>
+          <span class="wa-history-view-date" id="wa-history-view-date"></span>
+        </div>
+        <div class="wa-history-view-msgs" id="wa-history-view-msgs"></div>
+      `;
+      document.body.appendChild(historyView);
+
       panel.querySelector('#wa-send').onclick    = () => WebsiteAvatar.sendMessage();
       panel.querySelector('#wa-input').onkeydown = (e) => WebsiteAvatar.handleKey(e);
-      panel.querySelector('#wa-history-btn').onclick   = () => WebsiteAvatar.openHistoryPanel?.();
-      panel.querySelector('#wa-history-close').onclick = () => WebsiteAvatar.closeHistoryPanel?.();
-      panel.querySelector('#wa-history-back').onclick  = () => WebsiteAvatar.closeHistorySession?.();
+      panel.querySelector('#wa-history-btn').onclick      = () => WebsiteAvatar.openHistoryPanel?.();
+      historyPanel.querySelector('#wa-history-close').onclick = () => WebsiteAvatar.closeHistoryPanel?.();
+      historyView.querySelector('#wa-history-back').onclick   = () => WebsiteAvatar.closeHistorySession?.();
     }
   }
 

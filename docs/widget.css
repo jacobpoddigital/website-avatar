@@ -601,14 +601,19 @@ span.wa-msg-text {
 .wa-history-btn:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
 
 /* ── PAST CONVERSATIONS PANEL & SESSION VIEW ─────────────────────────────────── */
+/* These sit at body level, overlaying #wa-panel from above. */
 .wa-history-panel,
 .wa-history-view {
-  position: absolute; inset: 0; z-index: 10;
+  position: fixed;
+  bottom: 104px; left: 32px;
+  width: 360px; max-height: 520px;
+  z-index: 9999999999999;
   background: var(--wa-glass-bg);
   backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
-  border-radius: 20px;
-  display: flex; flex-direction: column;
-  transform: translateX(100%);
+  border: 1px solid var(--wa-glass-border);
+  border-radius: 20px; box-shadow: var(--wa-shadow);
+  display: flex; flex-direction: column; overflow: hidden;
+  transform: translateX(calc(100% + 48px));
   transition: transform .3s cubic-bezier(0.34,1.10,0.64,1);
   pointer-events: none;
 }
