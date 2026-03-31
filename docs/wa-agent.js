@@ -382,12 +382,12 @@
     // Debug full vs filtered
     debugFilteredContext(WA.PAGE_CONTEXT, filteredContext, knowledgeContext);
   
-    // GATE: Skip OpenAI if filtering did nothing
+    // GATE: Skip OpenAI if filtering did nothing AND there are many sections
     const fullSections = WA.PAGE_CONTEXT?.page?.sections || [];
     const filteredSections = filteredContext?.page?.sections || [];
-    
-    if (filteredSections.length === fullSections.length) {
-      if (WA.DEBUG) console.log('[WA] No filtering applied (0% reduction) — skipping OpenAI');
+
+    if (filteredSections.length === fullSections.length && fullSections.length >= 5) {
+      if (WA.DEBUG) console.log('[WA] No filtering applied (0% reduction, >=5 sections) — skipping OpenAI');
       return;
     }
   
