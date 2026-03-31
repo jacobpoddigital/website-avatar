@@ -592,18 +592,18 @@ span.wa-msg-text {
 }
 
 /* ── THREE-DOT HISTORY BUTTON ────────────────────────────────────────────────── */
-.wa-history-btn {
+#wa-panel .wa-history-btn {
   background: none; border: none; cursor: pointer;
   color: var(--wa-text-mid); font-size: 18px; padding: 4px 8px;
-  border-radius: 8px; line-height: 1; letter-spacing: 2px;
+  border-radius: 8px; line-height: 1;
   transition: color .15s, background .15s; flex-shrink: 0;
 }
-.wa-history-btn:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
+#wa-panel .wa-history-btn:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
 
 /* ── PAST CONVERSATIONS PANEL & SESSION VIEW ─────────────────────────────────── */
 /* Position absolute inside #wa-panel (which is position:fixed), covering it fully. */
-.wa-history-panel,
-.wa-history-view {
+#wa-panel .wa-history-panel,
+#wa-panel .wa-history-view {
   position: absolute; inset: 0; z-index: 10;
   background: var(--wa-glass-bg);
   backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
@@ -612,69 +612,69 @@ span.wa-msg-text {
   transition: transform .3s cubic-bezier(0.34,1.10,0.64,1);
   pointer-events: none;
 }
-.wa-history-panel.wa-history-visible,
-.wa-history-view.wa-history-visible {
+#wa-panel .wa-history-panel.wa-history-visible,
+#wa-panel .wa-history-view.wa-history-visible {
   transform: translateX(0);
   pointer-events: all;
 }
 
-.wa-history-header,
-.wa-history-view-header {
+#wa-panel .wa-history-header,
+#wa-panel .wa-history-view-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--wa-glass-border-dim);
   background: var(--wa-glass-subtle); flex-shrink: 0;
   border-radius: 20px 20px 0 0;
 }
-.wa-history-title { font-size: 13px; font-weight: 600; color: var(--wa-text); }
+#wa-panel .wa-history-title { font-size: 13px; font-weight: 600; color: var(--wa-text); }
 
-.wa-history-close {
+#wa-panel .wa-history-close {
   background: none; border: none; cursor: pointer;
   font-size: 14px; color: var(--wa-text-mid); padding: 4px 6px;
   border-radius: 6px; transition: color .15s, background .15s;
 }
-.wa-history-close:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
+#wa-panel .wa-history-close:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
 
-.wa-history-list {
+#wa-panel .wa-history-list {
   flex: 1; overflow-y: auto; padding: 8px;
 }
-.wa-history-list::-webkit-scrollbar { width: 4px; }
-.wa-history-list::-webkit-scrollbar-thumb { background: var(--wa-glass-border); border-radius: 2px; }
+#wa-panel .wa-history-list::-webkit-scrollbar { width: 4px; }
+#wa-panel .wa-history-list::-webkit-scrollbar-thumb { background: var(--wa-glass-border); border-radius: 2px; }
 
-.wa-history-item {
+#wa-panel .wa-history-item {
   display: block; width: 100%; text-align: left;
   background: var(--wa-glass-subtle); border: 1px solid var(--wa-glass-border-dim);
   border-radius: 10px; padding: 10px 12px; margin-bottom: 6px;
   cursor: pointer; font-family: inherit;
   transition: background .15s, border-color .15s;
 }
-.wa-history-item:hover { background: var(--wa-glass-strong); border-color: var(--wa-glass-border); }
+#wa-panel .wa-history-item:hover { background: var(--wa-glass-strong); border-color: var(--wa-glass-border); }
 
-.wa-history-item-meta {
+#wa-panel .wa-history-item-meta {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
 }
-.wa-history-item-date  { font-size: 11px; font-weight: 500; color: var(--wa-text); }
-.wa-history-item-count { font-size: 10px; color: var(--wa-text-light); }
-.wa-history-item-snippet { font-size: 12px; color: var(--wa-text-mid); line-height: 1.4; }
+#wa-panel .wa-history-item-date  { font-size: 11px; font-weight: 500; color: var(--wa-text); }
+#wa-panel .wa-history-item-count { font-size: 10px; color: var(--wa-text-light); }
+#wa-panel .wa-history-item-snippet { font-size: 12px; color: var(--wa-text-mid); line-height: 1.4; }
 
-.wa-history-empty {
+#wa-panel .wa-history-empty {
   text-align: center; font-size: 12px; color: var(--wa-text-mid);
   padding: 32px 16px; font-style: italic; margin: 0;
 }
 
 /* Session read-only view */
-.wa-history-back {
+#wa-panel .wa-history-back {
   background: none; border: none; cursor: pointer;
   font-size: 12px; color: var(--wa-accent); padding: 4px 8px;
   border-radius: 6px; font-family: inherit; font-weight: 500;
   transition: background .15s;
 }
-.wa-history-back:hover { background: var(--wa-glass-subtle); }
+#wa-panel .wa-history-back:hover { background: var(--wa-glass-subtle); }
 
-.wa-history-view-date { font-size: 12px; color: var(--wa-text-mid); }
+#wa-panel .wa-history-view-date { font-size: 12px; color: var(--wa-text-mid); }
 
-.wa-history-view-msgs {
+#wa-panel .wa-history-view-msgs {
   flex: 1; overflow-y: auto; padding: 16px;
   display: flex; flex-direction: column; gap: 10px;
 }
-.wa-history-view-msgs::-webkit-scrollbar { width: 4px; }
-.wa-history-view-msgs::-webkit-scrollbar-thumb { background: var(--wa-glass-border); border-radius: 2px; }
+#wa-panel .wa-history-view-msgs::-webkit-scrollbar { width: 4px; }
+#wa-panel .wa-history-view-msgs::-webkit-scrollbar-thumb { background: var(--wa-glass-border); border-radius: 2px; }
