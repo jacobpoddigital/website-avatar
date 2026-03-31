@@ -313,7 +313,7 @@ Reply with JSON only:
     {
       "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"none",
       "auto": true|false,
-      "section_id": "id from sections array or null",
+      "section_id": "id from sections array or null",  // ← Good!
       "target_url": "exact url from pages list or null",
       "target_label": "human-readable page/section name",
       "reason": "brief user-friendly message for why this is relevant to the intent",

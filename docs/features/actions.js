@@ -160,14 +160,24 @@
     permissionLevel: 'auto',
 
     execute: async (action) => {
-      const { elementId, elementTitle } = action.payload;
-      const ctx = WA.PAGE_CONTEXT;
-      const el  = ctx?._refs?.[elementId];
-      if (!el) throw new Error(`Section ${elementId} not found`);
+      const { sectionId, sectionTitle, elementId, elementTitle } = action.payload;
+      
+      // Use sectionId (new structure) or fallback to elementId (old structure)
+      const idToFind = sectionId || elementId;
+      const titleToShow = sectionTitle || elementTitle;
+      
+      // Find the section DOM element by its ID
+      const el = document.getElementById(idToFind);
+      
+      if (!el) {
+        console.warn('[WA] Section not found, trying to find in DOM:', idToFind);
+        throw new Error(`Section ${idToFind} not found`);
+      }
+      
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       await WA.sleep(600);
       if (WA.spawnSparkles) WA.spawnSparkles(el);
-      if (WA.agentSay) WA.agentSay(`Here's the ${elementTitle}.`);
+      if (WA.agentSay) WA.agentSay(`Here's the ${titleToShow}.`);
 
       // Skip turn - prevent disconnect during scroll
       if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
