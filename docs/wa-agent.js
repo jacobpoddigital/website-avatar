@@ -94,11 +94,7 @@
   // ─── NAVIGATION ───────────────────────────────────────────────────────────
 
   function navigateTo(url, label) {
-    const overlay  = document.getElementById('wa-transition');
-    const navLabel = overlay ? overlay.querySelector('.wa-nav-label') : null;
-    if (navLabel) navLabel.textContent = `Heading to ${label}…`;
-    if (overlay)  overlay.classList.add('active');
-
+    WA.showTransition(label);
     WA.clearQueue();
     WA.disconnectBridge();
     setTimeout(() => { window.location.href = url; }, 400);
@@ -175,12 +171,6 @@
     WA.openPanel();
     WA.updateAbortButton(true);
     repopulateFields(action);
-
-    // Re-enable send button
-    const sendBtn = document.getElementById('wa-send');
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.title = ''; }
-
-    // Start AI conversation
     routeFormInput('__RESUME__');
   }
 
@@ -346,7 +336,7 @@
         clearTimeout(timeout);
         cleanup();
         agentSay("The form was flagged — please click the submit button manually to complete your enquiry.");
-        highlightSubmitButton();
+        WA.highlightSubmitButton();
         WA.reconnectBridge();
         resolve();
       };
@@ -394,14 +384,14 @@
       finishFormFill('success');
     } else {
       agentSay("The form is filled — please click the submit button to send your enquiry.");
-      highlightSubmitButton();
+      WA.highlightSubmitButton();
       WA.resetFormState();
       WA.setState('action', 'none');
     }
   }
 
   function finishFormFill(outcome) {
-    document.querySelectorAll('.wa-filling').forEach(el => el.classList.remove('wa-filling'));
+    WA.clearFieldHighlights();
     session.activeFormActionId = null;
     WA.saveSession(session);
     if (WA.formState.action) {
@@ -430,16 +420,8 @@
 
   function handleFormSubmitFallback() {
     agentSay("The form is filled — please click the submit button to send your enquiry.");
-    highlightSubmitButton();
+    WA.highlightSubmitButton();
     WA.reconnectBridge();
-  }
-
-  function highlightSubmitButton() {
-    const btn = document.querySelector('.wpcf7-submit, [type="submit"], .btn-submit');
-    if (btn) {
-      btn.style.boxShadow = '0 0 0 3px rgba(200,75,47,0.5)';
-      btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
   }
 
   function cancelFormFill() {
@@ -462,7 +444,7 @@
       if (WA.formState.action._resolveFormFill) WA.formState.action._resolveFormFill();
     }
     session.activeFormActionId = null;
-    document.querySelectorAll('.wa-filling').forEach(el => el.classList.remove('wa-filling'));
+    WA.clearFieldHighlights();
     WA.saveSession(session);
     WA.resetFormState();
     WA.setState('action', 'none');
@@ -529,25 +511,10 @@
     WA.State.session      = 'fresh';
 
     WA.inactivity.reset();
-
-    const msgs = document.getElementById('wa-messages');
-    if (msgs) msgs.innerHTML = '';
-
-    const endBtn   = document.getElementById('wa-end-session-btn');
-    const abortBtn = document.getElementById('wa-abort-btn');
-    if (endBtn)   endBtn.remove();
-    if (abortBtn) abortBtn.remove();
-
-    const panel = document.getElementById('wa-panel');
-    if (panel) panel.classList.remove('wa-open');
+    WA.resetChatUI();
 
     setTimeout(() => {
-      if (msgs) {
-        const el = document.createElement('div');
-        el.className   = 'wa-msg wa-agent';
-        el.textContent = 'Session ended. Open the chat to start a new conversation.';
-        msgs.appendChild(el);
-      }
+      WA.appendMessage('agent', 'Session ended. Open the chat to start a new conversation.');
     }, 300);
 
     WA.saveSession(session);
@@ -556,103 +523,6 @@
   }
 
   // ─── ACTION CARD RENDERING ────────────────────────────────────────────────
-
-  function renderActionCard(action) {
-    // Action type labels for buttons
-    const actionTypeLabels = {
-      'navigate': 'Navigate',
-      'fill_form': 'Fill Form',
-      'navigate_then_fill': 'Navigate',
-      'click_element': 'Click',
-      'scroll_to': 'Scroll'
-    };
-    
-    const actionTypeLabel = actionTypeLabels[action.type] || action.type;
-    
-    // Build message with context (no bold formatting)
-    const messageParts = [action.description];
-  
-    // Add destination/element context if available
-    if (action.payload?.targetLabel) {
-      messageParts.push(`Destination: ${action.payload.targetLabel}`);
-    } else if (action.payload?.elementTitle) {
-      messageParts.push(`Section: ${action.payload.elementTitle}`);
-    } else if (action.payload?.elementText) {
-      messageParts.push(`Element: ${action.payload.elementText}`);
-    }
-  
-    WA.renderCard({
-      label:    'Proposed action',
-      message:  messageParts.join('\n\n'),
-      actionId: action.id,
-      buttons: [
-        { 
-          text: "Let's do it", 
-          label: actionTypeLabel,  // Add action type as button label
-          style: 'confirm', 
-          action: () => WA.confirmAction(action.id, session) 
-        },
-        { text: 'No thanks', style: 'deny', action: () => WA.denyAction(action.id, session) }
-      ]
-    });
-  }
-  
-  function renderMultiActionCard(actions) {
-    // Action type labels
-    const actionTypeLabels = {
-      'navigate': 'Navigate',
-      'fill_form': 'Fill Form',
-      'navigate_then_fill': 'Navigate',
-      'click_element': 'Click',
-      'scroll_to': 'Scroll'
-    };
-    
-    // Sort by confidence (if available)
-    const sorted = [...actions].sort((a, b) => 
-      (b.confidence || 0.8) - (a.confidence || 0.8)
-    );
-    
-    // Build button options from actions
-    const buttons = sorted.map(action => {
-      let label = action.description || action.type;
-      
-      // Add destination context to button label
-      if (action.target_label) {
-        label = `${action.target_label}`;
-      }
-      
-      // Add confidence indicator for uncertain actions
-      const conf = action.confidence || 0.8;
-      const indicator = conf < 0.7 ? ' (?)' : '';
-      
-      // Get action type label
-      const actionTypeLabel = actionTypeLabels[action.type] || action.type;
-      
-      return {
-        text: label + indicator,
-        label: actionTypeLabel,  // Add action type as button label
-        style: 'confirm',
-        action: async () => {
-          await executeDecidedAction(action);
-        }
-      };
-    });
-    
-    // Add "No thanks" option
-    buttons.push({ 
-      text: 'No thanks', 
-      style: 'deny', 
-      action: () => { 
-        if (WA.setState) WA.setState('action', 'none');
-      } 
-    });
-    
-    WA.renderCard({
-      label: 'Choose an action',
-      message: 'I found a few options for you:',
-      buttons: buttons
-    });
-  }
 
   // ─── CONTEXT FILTERING (INTENT-AWARE) ─────────────────────────────────────
 
@@ -950,26 +820,11 @@
     const hasFormResume    = !!(session.activeFormActionId &&
                                session.actions.find(a => a.id === session.activeFormActionId && a.status === 'active'));
 
-    // Restore messages with timestamp
+    // Restore messages
     const msgs = document.getElementById('wa-messages');
     if (msgs) {
       msgs.innerHTML = '';
-      session.messages.forEach(m => {
-        const el = document.createElement('div');
-        el.className = `wa-msg wa-${m.role}`;
-        el.textContent = m.text;
-
-        // Add timestamp
-        const tsEl = document.createElement('span');
-        tsEl.className = 'wa-msg-ts';
-        tsEl.textContent = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        tsEl.style.marginLeft = '0.5em';
-        tsEl.style.fontSize = '0.8em';
-        tsEl.style.opacity = 0.7;
-        el.appendChild(tsEl);
-
-        msgs.appendChild(el);
-      });
+      session.messages.forEach(m => WA.appendMessage(m.role, m.text, m.ts));
     }
 
     // Restore pending action cards
@@ -1030,21 +885,20 @@
 
   // ─── EXPOSE PUBLIC API ────────────────────────────────────────────────────
 
-  WA.sendMessage         = sendMessage;
-  WA.handleKey           = handleKey;
-  WA.agentSay            = agentSay;
-  WA.userSay             = userSay;
-  WA.navigateTo          = navigateTo;
-  WA.startFormFill       = startFormFill;
-  WA.submitForm          = submitForm;
-  WA.cancelFormFill      = cancelFormFill;
-  WA.abandonFormFill     = abandonFormFill;
-  WA.endSession          = endSession;
-  WA.renderActionCard    = renderActionCard;
-  WA.renderMultiActionCard = renderMultiActionCard;
-  WA.handleAgentMessage  = handleAgentMessage;
-  WA.routeFormInput      = routeFormInput;
-  WA._lastUserMessage    = '';
+  WA.sendMessage           = sendMessage;
+  WA.handleKey             = handleKey;
+  WA.agentSay              = agentSay;
+  WA.userSay               = userSay;
+  WA.navigateTo            = navigateTo;
+  WA.startFormFill         = startFormFill;
+  WA.submitForm            = submitForm;
+  WA.cancelFormFill        = cancelFormFill;
+  WA.abandonFormFill       = abandonFormFill;
+  WA.endSession            = endSession;
+  WA.executeDecidedAction  = executeDecidedAction;
+  WA.handleAgentMessage    = handleAgentMessage;
+  WA.routeFormInput        = routeFormInput;
+  WA._lastUserMessage      = '';
 
   // ─── START ────────────────────────────────────────────────────────────────
 

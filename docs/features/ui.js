@@ -293,6 +293,87 @@
     }
   }
 
+  // ─── ACTION CARDS ─────────────────────────────────────────────────────────
+
+  const ACTION_TYPE_LABELS = {
+    navigate:          'Navigate',
+    fill_form:         'Fill Form',
+    navigate_then_fill:'Navigate',
+    click_element:     'Click',
+    scroll_to:         'Scroll'
+  };
+
+  function renderActionCard(action) {
+    const actionTypeLabel = ACTION_TYPE_LABELS[action.type] || action.type;
+    const messageParts = [action.description];
+    if (action.payload?.targetLabel)  messageParts.push(`Destination: ${action.payload.targetLabel}`);
+    else if (action.payload?.elementTitle) messageParts.push(`Section: ${action.payload.elementTitle}`);
+    else if (action.payload?.elementText)  messageParts.push(`Element: ${action.payload.elementText}`);
+
+    WA.renderCard({
+      label:    'Proposed action',
+      message:  messageParts.join('\n\n'),
+      actionId: action.id,
+      buttons: [
+        { text: "Let's do it", label: actionTypeLabel, style: 'confirm', action: () => WA.confirmAction(action.id, WA.getSession()) },
+        { text: 'No thanks', style: 'deny', action: () => WA.denyAction(action.id, WA.getSession()) }
+      ]
+    });
+  }
+
+  function renderMultiActionCard(actions) {
+    const sorted = [...actions].sort((a, b) => (b.confidence || 0.8) - (a.confidence || 0.8));
+    const buttons = sorted.map(action => {
+      const label    = action.target_label || action.description || action.type;
+      const conf     = action.confidence || 0.8;
+      const indicator = conf < 0.7 ? ' (?)' : '';
+      return {
+        text:   label + indicator,
+        label:  ACTION_TYPE_LABELS[action.type] || action.type,
+        style:  'confirm',
+        action: async () => { if (WA.executeDecidedAction) await WA.executeDecidedAction(action); }
+      };
+    });
+    buttons.push({ text: 'No thanks', style: 'deny', action: () => { if (WA.setState) WA.setState('action', 'none'); } });
+    WA.renderCard({ label: 'Choose an action', message: 'I found a few options for you:', buttons });
+  }
+
+  // ─── FIELD & FORM HELPERS ─────────────────────────────────────────────────
+
+  function clearFieldHighlights() {
+    document.querySelectorAll('.wa-filling').forEach(el => el.classList.remove('wa-filling'));
+  }
+
+  function highlightSubmitButton() {
+    const btn = document.querySelector('.wpcf7-submit, [type="submit"], .btn-submit');
+    if (btn) {
+      btn.style.boxShadow = '0 0 0 3px rgba(200,75,47,0.5)';
+      btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  // ─── NAVIGATION TRANSITION ────────────────────────────────────────────────
+
+  function showTransition(label) {
+    const overlay  = document.getElementById('wa-transition');
+    const navLabel = overlay ? overlay.querySelector('.wa-nav-label') : null;
+    if (navLabel) navLabel.textContent = `Heading to ${label}…`;
+    if (overlay)  overlay.classList.add('active');
+  }
+
+  // ─── RESET CHAT UI ────────────────────────────────────────────────────────
+
+  function resetChatUI() {
+    const msgs     = document.getElementById('wa-messages');
+    const endBtn   = document.getElementById('wa-end-session-btn');
+    const abortBtn = document.getElementById('wa-abort-btn');
+    const panel    = document.getElementById('wa-panel');
+    if (msgs)     msgs.innerHTML = '';
+    if (endBtn)   endBtn.remove();
+    if (abortBtn) abortBtn.remove();
+    if (panel)    panel.classList.remove('wa-open');
+  }
+
   // ─── DEBUG ────────────────────────────────────────────────────────────────
 
   function renderDebug() {
@@ -310,20 +391,26 @@
 
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
-  WA.showTyping            = showTyping;
-  WA.hideTyping            = hideTyping;
-  WA.showWaitingHint       = showWaitingHint;
-  WA.hideWaitingHint       = hideWaitingHint;
-  WA.appendMessage         = appendMessage;
-  WA.renderCard            = renderCard;
+  WA.showTyping             = showTyping;
+  WA.hideTyping             = hideTyping;
+  WA.showWaitingHint        = showWaitingHint;
+  WA.hideWaitingHint        = hideWaitingHint;
+  WA.appendMessage          = appendMessage;
+  WA.renderCard             = renderCard;
   WA.updateActionCardStatus = updateActionCardStatus;
-  WA.renderOptionsCard     = renderOptionsCard;
-  WA.toggleChat            = toggleChat;
-  WA.openPanel             = openPanel;
-  WA.openPanelDirect       = openPanelDirect;
-  WA.scrollToBottom        = scrollToBottom;
-  WA.updateAbortButton     = updateAbortButton;
-  WA.updateSessionButton   = updateSessionButton;
-  WA.renderDebug           = renderDebug;
+  WA.renderOptionsCard      = renderOptionsCard;
+  WA.renderActionCard       = renderActionCard;
+  WA.renderMultiActionCard  = renderMultiActionCard;
+  WA.toggleChat             = toggleChat;
+  WA.openPanel              = openPanel;
+  WA.openPanelDirect        = openPanelDirect;
+  WA.scrollToBottom         = scrollToBottom;
+  WA.updateAbortButton      = updateAbortButton;
+  WA.updateSessionButton    = updateSessionButton;
+  WA.clearFieldHighlights   = clearFieldHighlights;
+  WA.highlightSubmitButton  = highlightSubmitButton;
+  WA.showTransition         = showTransition;
+  WA.resetChatUI            = resetChatUI;
+  WA.renderDebug            = renderDebug;
 
 })();
