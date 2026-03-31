@@ -12,6 +12,16 @@
   const DEBUG = window.WebsiteAvatar.DEBUG;
   const WA = window.WebsiteAvatar;
 
+  // ─── EVENT BUS (create immediately) ───────────────────────────────────────
+  if (!WA.bus) {
+    const listeners = {};
+    WA.bus = {
+      on: (evt, fn) => { (listeners[evt] = listeners[evt] || []).push(fn); },
+      off: (evt, fn) => { listeners[evt] = (listeners[evt] || []).filter(f => f !== fn); },
+      emit: (evt, data) => { (listeners[evt] || []).forEach(f => f(data)); }
+    };
+  }
+
   function log(...args)  { if (DEBUG) console.log('[WA:Discover]', ...args); }
   function warn(...args) { if (DEBUG) console.warn('[WA:Discover]', ...args); }
 
