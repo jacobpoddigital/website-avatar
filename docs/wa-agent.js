@@ -312,19 +312,29 @@
     return score;
   }
 
+  function filterSubsections(subsections, knowledge) {
+    if (!Array.isArray(subsections) || !knowledge) return subsections;
+
+    return subsections
+      .map(sub => ({ ...sub, _score: scoreElement(sub, knowledge) }))
+      .filter(sub => sub._score > 0)
+      .slice(0, 5);
+  }
+
   function filterPageContext(pageContext, knowledge) {
     if (!pageContext?.page?.sections || !knowledge) return pageContext;
-  
+
     const scored = pageContext.page.sections.map(section => ({
       ...section,
+      subsections: filterSubsections(section.subsections, knowledge),
       _score: scoreElement(section, knowledge)
     }));
-  
+
     const filtered = scored
       .filter(section => section._score > 0)
       .sort((a, b) => b._score - a._score)
       .slice(0, 12); // limit size
-  
+
     return {
       ...pageContext,
       page: {
