@@ -855,6 +855,35 @@ export default {
       }
     }
     
+    // ── POST /consent ─────────────────────────────────────────────
+    if (url.pathname === '/consent' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch (e) {
+        return json({ error: 'Invalid JSON' }, 400, cors);
+      }
+
+      const { visitor_id, consent_given } = body;
+
+      if (typeof visitor_id !== 'string' || visitor_id.trim() === '') {
+        return json({ error: 'Missing or invalid visitor_id' }, 400, cors);
+      }
+      if (typeof consent_given !== 'boolean') {
+        return json({ error: 'consent_given must be a boolean' }, 400, cors);
+      }
+
+      try {
+        const result = await env.website_avatar_db
+          .prepare(`INSERT INTO consent (visitor_id, consent_given) VALUES (?, ?)`)
+          .bind(visitor_id.trim(), consent_given ? 1 : 0)
+          .run();
+
+        return json({ success: true, id: result.meta.last_row_id }, 200, cors);
+      } catch (e) {
+        console.error('[Consent] DB error:', e.message);
+        return json({ error: 'Database error' }, 500, cors);
+      }
+    }
+
     // ── POST /webhook/call-complete ─────────────────────────────
     if (url.pathname === '/webhook/call-complete' && request.method === 'POST') {
       try {

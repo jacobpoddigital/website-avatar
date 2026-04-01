@@ -135,19 +135,32 @@
       // ── GDPR CONSENT ──────────────────────────────────────────────────────
       // Check if the user has already consented in a previous session.
       const CONSENT_KEY = 'wa_gdpr_consent';
+      const CONSENT_URL = 'https://backend.jacob-e87.workers.dev/consent';
+
       if (localStorage.getItem(CONSENT_KEY)) {
         _applyConsent(panel);
       } else {
-        panel.querySelector('#wa-consent-btn').onclick = () => {
-          // ▼ COMPLIANCE HOOK ▼
-          // Record consent here before enabling the chat.
-          // Replace the console.log below with your server-side logging call,
-          // e.g. fetch('/api/consent', { method: 'POST', body: JSON.stringify({
-          //   visitorId: localStorage.getItem('wc_visitor'),
-          //   timestamp: new Date().toISOString(),
-          //   consentVersion: '1.0',
-          // })});
-          console.log('[WA] GDPR consent recorded at', new Date().toISOString());
+        panel.querySelector('#wa-consent-btn').onclick = async () => {
+          const visitorId = localStorage.getItem('wc_visitor') || '';
+
+          // Persist consent to the backend compliance log.
+          // The /consent endpoint inserts a row into the D1 `consent` table.
+          try {
+            const res = await fetch(CONSENT_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ visitor_id: visitorId, consent_given: true }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+              console.warn('[WA] Consent record failed:', data.error || res.status);
+              // Non-blocking: still allow the user to chat even if logging fails.
+            }
+          } catch (e) {
+            // Network failure — log locally and continue; do not block the user.
+            console.warn('[WA] Consent POST error:', e.message);
+          }
+
           localStorage.setItem(CONSENT_KEY, new Date().toISOString());
           _applyConsent(panel);
         };
