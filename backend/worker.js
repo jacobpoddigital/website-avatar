@@ -204,8 +204,116 @@ async function appendToSheet(data, env) {
   }
 }
 
+// ── PROFILE HELPERS ──────────────────────────────────────────────────────────
+
+/**
+ * Upsert profile fields for an authenticated user.
+ * Only fills blank/null columns — never overwrites existing data.
+ * Returns true if any row was changed.
+ */
+async function upsertUserProfile(db, userId, { name, phone, company, job_title } = {}) {
+  await db.prepare(`
+    INSERT INTO user_profiles (user_id, name, phone, company, job_title, updated_at)
+    VALUES (?, ?, ?, ?, ?, unixepoch())
+    ON CONFLICT(user_id) DO UPDATE SET
+      name      = COALESCE(name,      CASE WHEN excluded.name      != '' THEN excluded.name      ELSE NULL END),
+      phone     = COALESCE(phone,     CASE WHEN excluded.phone     != '' THEN excluded.phone     ELSE NULL END),
+      company   = COALESCE(company,   CASE WHEN excluded.company   != '' THEN excluded.company   ELSE NULL END),
+      job_title = COALESCE(job_title, CASE WHEN excluded.job_title != '' THEN excluded.job_title ELSE NULL END),
+      updated_at = unixepoch()
+  `).bind(
+    userId,
+    name      || null,
+    phone     || null,
+    company   || null,
+    job_title || null
+  ).run();
+}
+
+/**
+ * Generate (or refresh) the persona_summary for a user via OpenAI.
+ * Pulls the profile + last 3 conversation transcripts for context.
+ * Saves the result back to user_profiles.persona_summary.
+ * Safe to call fire-and-forget via ctx.waitUntil().
+ */
+async function refreshPersonaSummary(db, userId, env) {
+  if (!env.OPENAI_KEY) return;
+
+  const profile = await db.prepare(
+    'SELECT name, phone, company, job_title FROM user_profiles WHERE user_id = ?'
+  ).bind(userId).first();
+
+  if (!profile) return;
+
+  const knownFields = [profile.name, profile.company, profile.phone, profile.job_title].filter(Boolean);
+  if (knownFields.length < 1) return;
+
+  // Pull a sample of recent messages for tone/style context
+  const recentRows = await db.prepare(`
+    SELECT transcript FROM conversations
+    WHERE user_id = ? ORDER BY created_at DESC LIMIT 3
+  `).bind(userId).all();
+
+  const snippets = [];
+  for (const row of (recentRows.results || [])) {
+    try {
+      const msgs = typeof row.transcript === 'string' ? JSON.parse(row.transcript) : row.transcript;
+      if (Array.isArray(msgs)) {
+        snippets.push(...msgs.slice(0, 6).map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
+      }
+    } catch (_) {}
+    if (snippets.length >= 10) break;
+  }
+
+  const profileLines = [
+    profile.name      ? `Name: ${profile.name}`           : null,
+    profile.company   ? `Company: ${profile.company}`     : null,
+    profile.phone     ? `Phone provided: yes`             : null,
+    profile.job_title ? `Role: ${profile.job_title}`      : null,
+  ].filter(Boolean).join('\n');
+
+  const prompt = `You are helping an AI voice assistant greet and engage a returning user warmly.
+
+Based on this user's profile and a sample of their past conversation, write 2–3 sentences the AI can use as internal context. Cover: how to address them, their professional background, and any signals about communication style or interests. Be concise and factual — no fluff.
+
+Profile:
+${profileLines}
+
+${snippets.length ? `Recent conversation sample:\n${snippets.join('\n')}` : ''}
+
+Write only the persona description. No preamble or labels.`;
+
+  try {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${env.OPENAI_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 150,
+        temperature: 0.4,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const summary = data.choices?.[0]?.message?.content?.trim();
+    if (!summary) return;
+
+    await db.prepare(`
+      UPDATE user_profiles
+      SET persona_summary = ?, persona_updated_at = unixepoch(), updated_at = unixepoch()
+      WHERE user_id = ?
+    `).bind(summary, userId).run();
+
+    console.log('[Profile] ✅ Persona refreshed for user:', userId);
+  } catch (err) {
+    console.error('[Profile] ❌ Persona generation error:', err.message);
+  }
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
     // Get origin from request for CORS
@@ -404,6 +512,50 @@ export default {
         return json({ message: 'Session saved', conversation_id: conversationId, client_id: clientId }, 200, cors);
       } catch (err) {
         console.error('[Session] ❌ DB error:', err);
+        return json({ error: 'Database error' }, 500, cors);
+      }
+    }
+
+    // ── GET /profile?user_id=xxx ──────────────────────────────────────────────
+    if (url.pathname === '/profile' && request.method === 'GET') {
+      const userId = url.searchParams.get('user_id');
+      if (!userId) return json({ error: 'Missing user_id' }, 400, cors);
+
+      try {
+        const profile = await env.website_avatar_db.prepare(
+          'SELECT user_id, name, phone, company, job_title, persona_summary, persona_updated_at, created_at, updated_at FROM user_profiles WHERE user_id = ?'
+        ).bind(userId).first();
+
+        return json(profile || {}, 200, cors);
+      } catch (err) {
+        console.error('[Profile] ❌ GET error:', err);
+        return json({ error: 'Database error' }, 500, cors);
+      }
+    }
+
+    // ── POST /profile ──────────────────────────────────────────────────────────
+    // Upserts profile fields for an authenticated user.
+    // Only fills blank columns — never overwrites existing data.
+    // Triggers a persona_summary refresh via OpenAI after saving.
+    if (url.pathname === '/profile' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch(e) {
+        return json({ error: 'Invalid JSON' }, 400, cors);
+      }
+
+      const { user_id, name, phone, company, job_title } = body || {};
+      if (!user_id) return json({ error: 'Missing user_id' }, 400, cors);
+
+      try {
+        await upsertUserProfile(env.website_avatar_db, user_id, { name, phone, company, job_title });
+        console.log('[Profile] ✅ Upserted for user:', user_id);
+
+        // Refresh persona summary in the background — doesn't block response
+        ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, user_id, env));
+
+        return json({ success: true, user_id }, 200, cors);
+      } catch (err) {
+        console.error('[Profile] ❌ POST error:', err);
         return json({ error: 'Database error' }, 500, cors);
       }
     }
@@ -974,6 +1126,32 @@ Summary: ${callSummary}`;
           console.log('[Webhook] ✅ Thank you email sent to:', email);
         } catch (thankYouErr) {
           console.error('[Webhook] ❌ Thank you email error:', thankYouErr.message);
+        }
+
+        // ── Persist profile & refresh persona ──────────────────────────────
+        // Look up the authenticated user by email and upsert their profile.
+        // persona_summary is regenerated in the background via OpenAI.
+        try {
+          const authUser = await env.website_avatar_db
+            .prepare('SELECT id FROM authenticated_users WHERE email = ?')
+            .bind(email)
+            .first();
+
+          if (authUser) {
+            await upsertUserProfile(env.website_avatar_db, authUser.id, {
+              name:    name    !== 'Unknown'      ? name    : null,
+              phone:   phone   !== 'Not provided' ? phone   : null,
+              company: company !== 'Not provided' ? company : null,
+            });
+            console.log('[Webhook] ✅ Profile upserted for user:', authUser.id);
+
+            // Refresh persona summary without blocking the response
+            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUser.id, env));
+          } else {
+            console.log('[Webhook] No authenticated user found for email:', email);
+          }
+        } catch (profileErr) {
+          console.error('[Webhook] ❌ Profile upsert error:', profileErr.message);
         }
 
         return json({

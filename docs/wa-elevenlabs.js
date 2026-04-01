@@ -29,6 +29,74 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   log('Module ready | agentId:', AGENT_ID || '(MISSING)');
 
   let session = null;
+  let _userProfile = null; // cached for the lifetime of this page load
+
+  // ─── PROFILE ──────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch the authenticated user's profile from the backend.
+   * Result is cached in _userProfile and used when building ElevenLabs context.
+   */
+  async function loadUserProfile() {
+    if (!WA.auth) return null;
+    const user = WA.auth.getCurrentUser();
+    if (!user?.isAuthenticated) return null;
+
+    const base = 'https://backend.jacob-e87.workers.dev';
+    try {
+      const resp = await fetch(`${base}/profile?user_id=${encodeURIComponent(user.id)}`);
+      if (!resp.ok) return null;
+      const profile = await resp.json();
+      // Treat an empty object (no row yet) as null
+      _userProfile = profile?.user_id ? profile : null;
+      log('Profile loaded:', _userProfile ? JSON.stringify({ name: _userProfile.name, company: _userProfile.company }) : 'none');
+      return _userProfile;
+    } catch (err) {
+      warn('Failed to load profile:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Save profile fields to the backend for an authenticated user.
+   * Safe to call fire-and-forget — errors are swallowed.
+   */
+  function saveProfileFields(fields) {
+    if (!WA.auth) return;
+    const user = WA.auth.getCurrentUser();
+    if (!user?.isAuthenticated) return;
+
+    const base = 'https://backend.jacob-e87.workers.dev';
+    fetch(`${base}/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id, ...fields })
+    }).catch(err => warn('saveProfileFields error:', err.message));
+  }
+
+  /**
+   * Format the loaded profile into a context block for ElevenLabs.
+   * Returns null if no meaningful data is available.
+   */
+  function buildProfileContext() {
+    const p = _userProfile;
+    if (!p) return null;
+
+    const lines = ['USER PROFILE:'];
+    if (p.name)      lines.push(`  Name: ${p.name}`);
+    if (p.company)   lines.push(`  Company: ${p.company}`);
+    if (p.job_title) lines.push(`  Role: ${p.job_title}`);
+    if (p.phone)     lines.push(`  Phone on file: yes`);
+
+    if (p.persona_summary) {
+      lines.push('');
+      lines.push('PERSONA NOTES (use to guide tone and rapport):');
+      lines.push(`  ${p.persona_summary}`);
+    }
+
+    // Only emit the block if we have at least one real field
+    return lines.length > 1 ? lines.join('\n') : null;
+  }
 
   // ─── CONTEXT BUILDERS ─────────────────────────────────────────────────────
 
@@ -46,6 +114,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         lines.push(`  - ${f.label}${f.required ? ' *' : ''} (${f.name})`);
       });
     }
+
+    // Prepend profile block so it appears at the top of the context
+    const profileCtx = buildProfileContext();
+    if (profileCtx) {
+      lines.unshift('');
+      lines.unshift(profileCtx);
+    }
+
     return lines.join('\n');
   }
 
@@ -237,6 +313,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
 
     if (typeof WA.onBridgeConnecting === 'function') WA.onBridgeConnecting();
+
+    // ✅ LOAD USER PROFILE (authenticated users only — no-op for anonymous)
+    await loadUserProfile();
 
     // ✅ GET SESSION METADATA
     const metadata = WA.getConversationMetadata ? WA.getConversationMetadata() : {
@@ -517,7 +596,33 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
 
+  // ─── FORM-FILL PROFILE CAPTURE ────────────────────────────────────────────
+  // When an authenticated user submits the contact form, save any name/email/company
+  // fields from the completed fill_form action to their profile immediately.
+  // This runs before the ElevenLabs call-complete webhook fires, so the data is
+  // available on the very next session start.
   if (WA.bus) {
+    WA.bus.on('form:submitted', () => {
+      const s = WA.getSession ? WA.getSession() : {};
+      const completedForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'complete');
+      if (!completedForm) return;
+
+      const fields = completedForm.payload?.fields || [];
+      const extract = (labels) => {
+        const f = fields.find(f => labels.some(l => f.label?.toLowerCase().includes(l)));
+        return f?.value && !Array.isArray(f.value) ? f.value : null;
+      };
+
+      const name    = extract(['name', 'full name']);
+      const phone   = extract(['phone', 'tel', 'mobile', 'number']);
+      const company = extract(['company', 'organisation', 'organization', 'business']);
+
+      if (name || phone || company) {
+        log('Form submitted — saving profile fields:', { name, phone, company });
+        saveProfileFields({ name, phone, company });
+      }
+    });
+
     WA.bus.emit('bridge:ready');
     log('bridge:ready emitted');
   } else {

@@ -1,6 +1,7 @@
 name = "backend"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+account_id = "e8708d3a24ff324134615ffb944a5250"
 
 [vars]
 APP_URL = "https://jacobpoddigital.github.io/website-avatar"
