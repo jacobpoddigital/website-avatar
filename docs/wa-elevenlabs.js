@@ -336,6 +336,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
 
     log('Starting session | context:', contextToSend?.length || 0, 'chars');
+    console.log('[WA:Bridge] 📋 CONTEXT SENT TO ELEVENLABS:\n', contextToSend);
 
     try {
       session = await Conversation.startSession({
