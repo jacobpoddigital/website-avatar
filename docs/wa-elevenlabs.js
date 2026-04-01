@@ -105,15 +105,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     const forms = WA.FORM_MAP || [];
     const lines = [
       `CURRENT PAGE: ${document.title} (${window.location.href})`,
-      `AVAILABLE PAGES (${pages.length}):`,
-      ...pages.map(p => `  - ${p.label}: ${p.file}`),
+      // TESTING: pages and form fields temporarily disabled
+      // `AVAILABLE PAGES (${pages.length}):`,
+      // ...pages.map(p => `  - ${p.label}: ${p.file}`),
     ];
-    if (forms.length) {
-      lines.push(`CONTACT FORM FIELDS:`);
-      forms[0]?.fields?.forEach(f => {
-        lines.push(`  - ${f.label}${f.required ? ' *' : ''} (${f.name})`);
-      });
-    }
+    // if (forms.length) {
+    //   lines.push(`CONTACT FORM FIELDS:`);
+    //   forms[0]?.fields?.forEach(f => {
+    //     lines.push(`  - ${f.label}${f.required ? ' *' : ''} (${f.name})`);
+    //   });
+    // }
 
     // Prepend profile block so it appears at the top of the context
     const profileCtx = buildProfileContext();
