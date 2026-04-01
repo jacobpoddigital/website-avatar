@@ -97,9 +97,17 @@
           <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">•••</button>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
+        <div class="wa-consent-banner" id="wa-consent-banner">
+          <p class="wa-consent-text">
+            This chat uses an AI to provide responses. Messages will be stored
+            and processed, and may be used to improve our service.
+            See our <a href="/privacy-policy" target="_blank" rel="noopener" class="wa-consent-link">Privacy Policy</a>.
+          </p>
+          <button id="wa-consent-btn" class="wa-consent-start-btn">Start Chat</button>
+        </div>
         <div class="wa-input-row">
-          <input type="text" id="wa-input" placeholder="Type a message…" />
-          <button id="wa-send">Send</button>
+          <input type="text" id="wa-input" placeholder="Type a message…" disabled />
+          <button id="wa-send" disabled>Send</button>
         </div>
         <div class="wa-history-panel" id="wa-history-panel" aria-hidden="true">
           <div class="wa-history-header">
@@ -123,6 +131,37 @@
       panel.querySelector('#wa-history-btn').onclick   = () => WebsiteAvatar.openHistoryPanel?.();
       panel.querySelector('#wa-history-close').onclick = () => WebsiteAvatar.closeHistoryPanel?.();
       panel.querySelector('#wa-history-back').onclick  = () => WebsiteAvatar.closeHistorySession?.();
+
+      // ── GDPR CONSENT ──────────────────────────────────────────────────────
+      // Check if the user has already consented in a previous session.
+      const CONSENT_KEY = 'wa_gdpr_consent';
+      if (localStorage.getItem(CONSENT_KEY)) {
+        _applyConsent(panel);
+      } else {
+        panel.querySelector('#wa-consent-btn').onclick = () => {
+          // ▼ COMPLIANCE HOOK ▼
+          // Record consent here before enabling the chat.
+          // Replace the console.log below with your server-side logging call,
+          // e.g. fetch('/api/consent', { method: 'POST', body: JSON.stringify({
+          //   visitorId: localStorage.getItem('wc_visitor'),
+          //   timestamp: new Date().toISOString(),
+          //   consentVersion: '1.0',
+          // })});
+          console.log('[WA] GDPR consent recorded at', new Date().toISOString());
+          localStorage.setItem(CONSENT_KEY, new Date().toISOString());
+          _applyConsent(panel);
+        };
+      }
+
+      function _applyConsent(panel) {
+        const banner = panel.querySelector('#wa-consent-banner');
+        const input  = panel.querySelector('#wa-input');
+        const send   = panel.querySelector('#wa-send');
+        if (banner) banner.style.display = 'none';
+        if (input)  input.disabled = false;
+        if (send)   send.disabled  = false;
+        if (input)  input.focus();
+      }
     }
   }
 
