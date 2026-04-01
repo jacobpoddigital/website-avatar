@@ -712,3 +712,41 @@ span.wa-msg-text {
 }
 #wa-panel .wa-history-view-msgs::-webkit-scrollbar { width: 4px; }
 #wa-panel .wa-history-view-msgs::-webkit-scrollbar-thumb { background: var(--wa-glass-border); border-radius: 2px; }
+
+/* ── History panel auth footer ── */
+#wa-panel .wa-history-auth {
+  border-top: 1px solid var(--wa-glass-border);
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+#wa-panel .wa-history-auth-hint {
+  font-size: 11px; color: var(--wa-text-light); margin: 0 0 8px; line-height: 1.4;
+}
+#wa-panel .wa-history-auth-row {
+  display: flex; gap: 6px;
+}
+#wa-panel .wa-history-auth-input {
+  flex: 1; font-size: 12px; padding: 7px 10px;
+  border: 1px solid var(--wa-glass-border); border-radius: 6px;
+  background: var(--wa-glass-subtle); color: var(--wa-text);
+  outline: none;
+}
+#wa-panel .wa-history-auth-input:focus { border-color: var(--wa-primary); }
+#wa-panel .wa-history-auth-btn {
+  font-size: 12px; font-weight: 600; padding: 7px 12px;
+  background: var(--wa-primary); color: #fff;
+  border: none; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+#wa-panel .wa-history-auth-btn:disabled { opacity: 0.6; cursor: default; }
+#wa-panel .wa-history-auth-msg {
+  font-size: 11px; color: #c84b2f; margin: 6px 0 0;
+}
+#wa-panel .wa-history-auth-status {
+  display: flex; flex-direction: column; gap: 2px;
+}
+#wa-panel .wa-history-auth-label {
+  font-size: 10px; color: var(--wa-text-light); text-transform: uppercase; letter-spacing: 0.05em;
+}
+#wa-panel .wa-history-auth-email {
+  font-size: 12px; font-weight: 500; color: var(--wa-text);
+}

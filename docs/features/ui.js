@@ -387,10 +387,72 @@
 
   const PAST_SESSIONS_KEY = 'wa_past_sessions';
 
+  function renderHistoryAuth() {
+    const el = document.getElementById('wa-history-auth');
+    if (!el) return;
+
+    const user = WA.auth ? WA.auth.getCurrentUser() : null;
+
+    if (user?.isAuthenticated) {
+      el.innerHTML = `
+        <div class="wa-history-auth-status">
+          <span class="wa-history-auth-label">Signed in as</span>
+          <span class="wa-history-auth-email">${user.email}</span>
+        </div>
+      `;
+      return;
+    }
+
+    // Unauthenticated — show email sign-in form
+    el.innerHTML = `
+      <div class="wa-history-auth-form">
+        <p class="wa-history-auth-hint">Sign in to save &amp; sync conversations across devices.</p>
+        <div class="wa-history-auth-row">
+          <input type="email" id="wa-history-auth-input" class="wa-history-auth-input"
+            placeholder="your@email.com" autocomplete="email" />
+          <button id="wa-history-auth-btn" class="wa-history-auth-btn">Send link</button>
+        </div>
+        <p id="wa-history-auth-msg" class="wa-history-auth-msg"></p>
+      </div>
+    `;
+
+    const input  = el.querySelector('#wa-history-auth-input');
+    const btn    = el.querySelector('#wa-history-auth-btn');
+    const msg    = el.querySelector('#wa-history-auth-msg');
+
+    async function submit() {
+      const email = input.value.trim();
+      if (!WA.auth?.isValidEmail(email)) {
+        input.style.borderColor = '#c84b2f';
+        input.focus();
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      const result = await WA.auth.requestMagicLink(email);
+      if (result.success) {
+        el.innerHTML = `
+          <div class="wa-history-auth-status">
+            <span class="wa-history-auth-label">Check your inbox</span>
+            <span class="wa-history-auth-email">${email}</span>
+          </div>
+        `;
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Send link';
+        msg.textContent = result.error || 'Something went wrong — please try again.';
+      }
+    }
+
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  }
+
   function openHistoryPanel() {
     const panel = document.getElementById('wa-history-panel');
     if (!panel) return;
     renderHistoryList();
+    renderHistoryAuth();
     panel.classList.add('wa-history-visible');
     panel.setAttribute('aria-hidden', 'false');
   }
@@ -671,5 +733,6 @@
   WA.renderDebug            = renderDebug;
   WA.showMagicLinkPrompt    = showMagicLinkPrompt;
   WA.detectEmailInMessage   = detectEmailInMessage;
+  WA.renderHistoryAuth      = renderHistoryAuth;
 
 })();

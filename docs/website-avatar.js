@@ -115,6 +115,7 @@
             <button class="wa-history-close" id="wa-history-close" aria-label="Close">✕</button>
           </div>
           <div class="wa-history-list" id="wa-history-list"></div>
+          <div class="wa-history-auth" id="wa-history-auth"></div>
         </div>
         <div class="wa-history-view" id="wa-history-view" aria-hidden="true">
           <div class="wa-history-view-header">
