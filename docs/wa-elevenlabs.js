@@ -29,7 +29,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   log('Module ready | agentId:', AGENT_ID || '(MISSING)');
 
   let session = null;
-  let _userProfile = null; // cached for the lifetime of this page load
+  let _userProfile = null;    // cached for the lifetime of this page load
+  let _pendingGreeting = null; // AI-generated greeting for fresh sessions
 
   // ─── PROFILE ──────────────────────────────────────────────────────────────
 
@@ -96,6 +97,33 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
     // Only emit the block if we have at least one real field
     return lines.length > 1 ? lines.join('\n') : null;
+  }
+
+  /**
+   * Fetch an AI-generated personalised greeting from the backend.
+   * Returns null for anonymous users or if the backend has no profile data yet.
+   * Stored in _pendingGreeting and consumed once by buildReconnectPrompt().
+   */
+  async function fetchPersonalisedGreeting() {
+    if (!WA.auth) return null;
+    const user = WA.auth.getCurrentUser();
+    if (!user?.isAuthenticated) return null;
+    if (!_userProfile?.name) return null; // no name = can't personalise
+
+    const base = 'https://backend.jacob-e87.workers.dev';
+    try {
+      const resp = await fetch(`${base}/greeting`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id, page_title: document.title })
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.greeting || null;
+    } catch (err) {
+      warn('fetchPersonalisedGreeting error:', err.message);
+      return null;
+    }
   }
 
   // ─── CONTEXT BUILDERS ─────────────────────────────────────────────────────
@@ -209,6 +237,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   function buildReconnectPrompt() {
     // Use in-memory session instead of sessionStorage.
     const s = WA.getSession ? WA.getSession() : {};
+
+    // Fresh session: if a personalised greeting was shown to the user, tell
+    // ElevenLabs so it knows the conversation has already been opened and
+    // doesn't introduce itself or re-greet.
+    if (!s.messages?.length && _pendingGreeting) {
+      return `[SYSTEM: The user was shown this greeting when they opened the chat: "${_pendingGreeting}". Do not repeat it or re-introduce yourself. Wait for their response and continue naturally from there.]`;
+    }
+
     if (!s.messages?.length) return null;
 
     // sentPrompts is now a field on the session object (replaces wa_sent_prompts sessionStorage key)
@@ -597,6 +633,117 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
 
   WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
+
+  // ─── PERSONALISED GREETING BUBBLE ────────────────────────────────────────
+  // Shows a small speech bubble above wa-bubble on page load for authenticated
+  // users. Hides when the panel opens, then injects the greeting as the first
+  // message in the panel and passes it to ElevenLabs context.
+
+  (function injectPreviewBubbleCSS() {
+    if (document.getElementById('wa-preview-bubble-style')) return;
+    const style = document.createElement('style');
+    style.id = 'wa-preview-bubble-style';
+    style.textContent = `
+      #wa-preview-bubble {
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        background: #fff;
+        color: #1f2937;
+        font-size: 13px;
+        line-height: 1.45;
+        max-width: 220px;
+        padding: 10px 13px;
+        border-radius: 14px 14px 2px 14px;
+        box-shadow: 0 3px 14px rgba(0,0,0,0.14);
+        z-index: 9997;
+        opacity: 0;
+        transform: translateY(6px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        pointer-events: none;
+        cursor: default;
+      }
+      #wa-preview-bubble.wa-preview-visible {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+    `;
+    document.head.appendChild(style);
+  })();
+
+  function showPreviewBubble(text) {
+    let el = document.getElementById('wa-preview-bubble');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'wa-preview-bubble';
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    // Trigger transition on next frame
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => el.classList.add('wa-preview-visible'));
+    });
+    // Auto-dismiss after 10 seconds
+    setTimeout(() => hidePreviewBubble(), 10000);
+  }
+
+  function hidePreviewBubble() {
+    const el = document.getElementById('wa-preview-bubble');
+    if (!el) return;
+    el.classList.remove('wa-preview-visible');
+    setTimeout(() => el.remove(), 350);
+  }
+
+  /**
+   * Async init: load profile → determine greeting → show bubble.
+   * Authenticated users with a profile get an OpenAI-personalised greeting.
+   * Guest users fall back to WA_CONFIG.greetingMessage (no OpenAI call).
+   * In both cases the bubble shows, the greeting appears as the first panel
+   * message, and ElevenLabs is told not to re-greet.
+   */
+  async function initPersonalisedGreeting() {
+    await loadUserProfile();
+
+    let greeting = null;
+
+    if (_userProfile?.name) {
+      // Authenticated user with profile — ask OpenAI for a personalised line
+      greeting = await fetchPersonalisedGreeting();
+    }
+
+    if (!greeting) {
+      // Guest or no profile yet — use the configured default greeting
+      greeting = CONFIG.greetingMessage || null;
+    }
+
+    if (!greeting) return;
+
+    _pendingGreeting = greeting;
+
+    // Only show the preview bubble on a fresh session (no prior messages)
+    const s = WA.getSession ? WA.getSession() : {};
+    if (!s.messages?.length) {
+      showPreviewBubble(greeting);
+    }
+
+    // Patch onPanelOpened: hide bubble + inject greeting as first message
+    const _orig = WA.onPanelOpened;
+    WA.onPanelOpened = function () {
+      hidePreviewBubble();
+
+      const msgs = document.getElementById('wa-messages');
+      // Only inject if panel has no messages rendered yet
+      if (_pendingGreeting && msgs && !msgs.querySelector('.wa-msg')) {
+        WA.appendMessage('agent', _pendingGreeting);
+      }
+
+      if (typeof _orig === 'function') _orig.call(this);
+    };
+  }
+
+  // Fire and forget — doesn't block anything
+  initPersonalisedGreeting().catch(err => warn('initPersonalisedGreeting error:', err.message));
 
   // ─── FORM-FILL PROFILE CAPTURE ────────────────────────────────────────────
   // When an authenticated user submits the contact form, save any name/email/company

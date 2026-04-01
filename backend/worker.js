@@ -361,6 +361,66 @@ export default {
       return json(updated, 200, cors);
     }
 
+    // ── POST /greeting ────────────────────────────────────────────────────────
+    // Generates a personalised one-sentence greeting using the user's profile.
+    // Designed for low token usage: ~50 in, 40 out.
+    if (url.pathname === '/greeting' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch(e) {
+        return json({ error: 'Invalid JSON' }, 400, cors);
+      }
+
+      const { user_id, page_title } = body || {};
+      if (!user_id) return json({ greeting: null }, 200, cors);
+      if (!env.OPENAI_KEY) return json({ greeting: null }, 200, cors);
+
+      try {
+        const profile = await env.website_avatar_db.prepare(
+          'SELECT name, company, persona_summary FROM user_profiles WHERE user_id = ?'
+        ).bind(user_id).first();
+
+        const firstName = profile?.name?.split(' ')[0];
+        if (!firstName) return json({ greeting: null }, 200, cors);
+
+        const countRow = await env.website_avatar_db.prepare(
+          'SELECT COUNT(*) as n FROM conversations WHERE user_id = ?'
+        ).bind(user_id).first();
+        const visits = countRow?.n || 1;
+
+        // Keep this prompt tight — every token counts
+        const lines = [
+          `Write one warm greeting sentence for a returning website visitor.`,
+          `Name: ${firstName} | Company: ${profile.company || 'unknown'} | Visits: ${visits} | Page: ${page_title || 'Homepage'}`,
+        ];
+        if (profile.persona_summary) {
+          lines.push(`Notes: ${profile.persona_summary.slice(0, 100)}`);
+        }
+        lines.push(`Output: one sentence only. Use first name. Casual, friendly. No self-introduction.`);
+
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${env.OPENAI_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            max_tokens: 40,
+            temperature: 0.7,
+            messages: [{ role: 'user', content: lines.join('\n') }]
+          })
+        });
+
+        if (!resp.ok) return json({ greeting: null }, 200, cors);
+        const data = await resp.json();
+        const greeting = data.choices?.[0]?.message?.content?.trim() || null;
+
+        console.log('[Greeting] ✅ Generated for:', firstName, '|', greeting);
+        return json({ greeting }, 200, cors);
+
+      } catch (err) {
+        console.error('[Greeting] ❌ Error:', err.message);
+        return json({ greeting: null }, 200, cors);
+      }
+    }
+
     // ── POST /classify ────────────────────────────────────
     if (url.pathname === '/classify' && request.method === 'POST') {
       let body;
