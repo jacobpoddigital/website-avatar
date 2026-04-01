@@ -314,7 +314,7 @@ export default {
             FROM conversations
             WHERE user_id = ?
             ORDER BY created_at DESC
-            LIMIT 10
+            LIMIT 50
           `)
           .bind(userId)
           .all();

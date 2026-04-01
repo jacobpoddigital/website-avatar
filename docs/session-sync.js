@@ -113,10 +113,38 @@
 
       const lastSession = sessions[0];
 
-      // Parse transcript
+      // Parse transcript for the most recent session (used as active chat)
       let transcript = lastSession.transcript;
       if (typeof transcript === 'string') {
         transcript = JSON.parse(transcript);
+      }
+
+      // Sync all sessions into localStorage history so the history panel shows them.
+      // Only backfills entries that aren't already there (matched by conversation_id).
+      try {
+        const existing = JSON.parse(localStorage.getItem('wa_past_sessions') || '[]');
+        const existingIds = new Set(existing.map(s => s.id));
+        const toAdd = sessions
+          .filter(s => !existingIds.has(s.conversation_id))
+          .map(s => {
+            let msgs = s.transcript;
+            if (typeof msgs === 'string') { try { msgs = JSON.parse(msgs); } catch { msgs = []; } }
+            return {
+              id:           s.conversation_id,
+              startedAt:    msgs[0]?.ts || new Date(s.created_at).getTime(),
+              endedAt:      msgs[msgs.length - 1]?.ts || new Date(s.created_at).getTime(),
+              messages:     msgs,
+              messageCount: msgs.length,
+              snippet:      msgs[0]?.text?.slice(0, 80) || ''
+            };
+          });
+        if (toAdd.length) {
+          const merged = [...toAdd, ...existing].slice(0, 50);
+          localStorage.setItem('wa_past_sessions', JSON.stringify(merged));
+          console.log('[SessionSync] 📚 Synced', toAdd.length, 'session(s) to history panel');
+        }
+      } catch (e) {
+        console.warn('[SessionSync] Could not sync history:', e);
       }
 
       console.log('[SessionSync] ✅ Loaded previous session —', transcript.length, 'messages');
