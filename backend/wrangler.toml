@@ -2,6 +2,10 @@ name = "backend"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
+[vars]
+APP_URL = "https://jacobpoddigital.github.io/website-avatar"
+FROM_EMAIL = "mail@websiteavatar.co.uk"
+
 # KV namespace you already have
 [[kv_namespaces]]
 binding = "CONFIGS"

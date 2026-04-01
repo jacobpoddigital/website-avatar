@@ -11,8 +11,13 @@
   let saveTimeout = null;
 
   // ─── GET USER ID ──────────────────────────────────────────────────────────
+  // Returns authenticated user ID if signed in, otherwise falls back to wc_visitor.
 
   function getUserId() {
+    if (WA.auth) {
+      const user = WA.auth.getCurrentUser();
+      return user.id;
+    }
     return localStorage.getItem('wc_visitor') || null;
   }
 
@@ -55,18 +60,22 @@
     // ElevenLabs bridge should set session.elevenlabsConversationId when it connects
     const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
 
+    // Distinguish authenticated user vs anonymous visitor for the backend
+    const isAuthenticated = WA.auth ? WA.auth.getCurrentUser().isAuthenticated : false;
+
     const payload = {
-      user_id: userId,
+      user_id:         isAuthenticated ? userId : null,
+      visitor_id:      isAuthenticated ? null : userId,
       conversation_id: conversationId,
-      client_id: getClientId(), // account that owns this conversation
-      transcript: session.messages,
+      client_id:       getClientId(),
+      transcript:      session.messages,
       analysis: {
-        lastSaved: new Date().toISOString(),
+        lastSaved:    new Date().toISOString(),
         messageCount: session.messages.length
       }
     };
 
-    if (WA.DEBUG) console.log('[SessionSync] 💾 Saving session...', { userId, clientId: payload.client_id, messageCount: session.messages.length, conversationId });
+    if (WA.DEBUG) console.log('[SessionSync] 💾 Saving session...', { userId, isAuthenticated, clientId: payload.client_id, messageCount: session.messages.length, conversationId });
 
     try {
       const response = await fetch(SESSION_URL, {
@@ -97,8 +106,12 @@
 
     if (!userId) return null;
 
+    // Use the correct query param based on auth state
+    const isAuthenticated = WA.auth ? WA.auth.getCurrentUser().isAuthenticated : false;
+    const param = isAuthenticated ? `user_id=${userId}` : `visitor_id=${userId}`;
+
     try {
-      const response = await fetch(`${SESSION_URL}?user_id=${userId}`);
+      const response = await fetch(`${SESSION_URL}?${param}`);
 
       if (!response.ok) return null;
 
@@ -141,15 +154,17 @@
 
       const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
 
+      const isAuthenticated = WA.auth ? WA.auth.getCurrentUser().isAuthenticated : false;
       const payload = {
-        user_id: userId,
+        user_id:         isAuthenticated ? userId : null,
+        visitor_id:      isAuthenticated ? null : userId,
         conversation_id: conversationId,
-        client_id: getClientId(), // account that owns this conversation
-        transcript: session.messages,
+        client_id:       getClientId(),
+        transcript:      session.messages,
         analysis: {
-          lastSaved: new Date().toISOString(),
+          lastSaved:    new Date().toISOString(),
           messageCount: session.messages.length,
-          savedVia: 'page_unload'
+          savedVia:     'page_unload'
         }
       };
 

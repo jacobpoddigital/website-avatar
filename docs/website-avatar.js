@@ -255,7 +255,8 @@
         await Promise.all([
           loadScript(BASE_URL + '/core/state.js'),
           loadScript(BASE_URL + '/core/ai.js'),
-          loadScript(BASE_URL + '/core/utils.js')
+          loadScript(BASE_URL + '/core/utils.js'),
+          loadScript(BASE_URL + '/core/auth.js')   // must load before session-sync.js
         ]);
 
         await Promise.all([

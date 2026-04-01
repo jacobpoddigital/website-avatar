@@ -1,5 +1,6 @@
 import { parseHTML } from 'linkedom';
 import * as jose from 'jose';
+import { generateMagicToken, generateAuthToken, verifyJWT } from './src/auth.js';
 
 // ── HELPER FUNCTIONS ─────────────────────────────
 function generateAdminEmail({ name, phone, email, company, callSummary, callDuration }) {
@@ -81,7 +82,7 @@ async function sendEmail({ from, to, subject, html }, env) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
+      personalizations: [{ to: (Array.isArray(to) ? to : [to]).map(email => ({ email })) }],
       from: { email: from, name: 'Website Avatar' },
       subject: subject,
       content: [{ type: 'text/html', value: html }]
@@ -295,6 +296,7 @@ export default {
     if (url.pathname === '/session' && request.method === 'GET') {
       const sessionId = url.searchParams.get('session_id');
       const userId    = url.searchParams.get('user_id');
+      const visitorId = url.searchParams.get('visitor_id');
 
       if (sessionId) {
         // Client session state (KV) — keyed with prefix to avoid collisions with config keys
@@ -303,18 +305,20 @@ export default {
         return new Response(raw, { headers: cors });
       }
 
-      if (userId) {
+      if (userId || visitorId) {
         // Conversation transcript history (D1) — used by session-sync.js loadSessionFromBackend
-        console.log('[Session] GET request for user:', userId);
+        const idType = userId ? 'user_id' : 'visitor_id';
+        const idValue = userId || visitorId;
+        console.log('[Session] GET request for', idType, ':', idValue);
         try {
           const result = await env.website_avatar_db.prepare(`
             SELECT conversation_id, transcript, analysis, created_at
             FROM conversations
-            WHERE user_id = ?
+            WHERE ${idType} = ?
             ORDER BY created_at DESC
             LIMIT 10
           `)
-          .bind(userId)
+          .bind(idValue)
           .all();
 
           console.log('[Session] Found', result.results?.length || 0, 'sessions');
@@ -339,7 +343,7 @@ export default {
         }
       }
 
-      return json({ error: 'Missing session_id or user_id' }, 400, cors);
+      return json({ error: 'Missing session_id, user_id, or visitor_id' }, 400, cors);
     }
 
     // ── POST /session (frontend save) ─────────────────────────────
@@ -368,32 +372,35 @@ export default {
         }
       }
 
-      // Route B: transcript save → D1 (requires user_id + conversation_id)
-      const userId         = body?.user_id;
+      // Route B: transcript save → D1 (requires conversation_id + either user_id or visitor_id)
+      const userId         = body?.user_id   || null;
+      const visitorId      = body?.visitor_id || null;
       const conversationId = body?.conversation_id;
       // client_id identifies which account (data-account-id) owns this conversation.
       // Empty string is stored when not provided so existing rows are not broken.
       const clientId       = body?.client_id || '';
 
-      console.log('[Session] Frontend save:', { userId, clientId, conversationId, messageCount: body?.transcript?.length });
+      console.log('[Session] Frontend save:', { userId, visitorId, clientId, conversationId, messageCount: body?.transcript?.length });
 
-      if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
+      if ((!userId && !visitorId) || !conversationId) return json({ error: 'Missing conversation_id and one of user_id or visitor_id' }, 400, cors);
 
       const transcript = JSON.stringify(body.transcript || []);
       const analysis   = JSON.stringify(body.analysis || {});
 
       try {
         await env.website_avatar_db.prepare(`
-          INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO conversations (user_id, visitor_id, conversation_id, client_id, transcript, analysis)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(conversation_id)
           DO UPDATE SET
+            user_id    = excluded.user_id,
+            visitor_id = excluded.visitor_id,
             client_id  = excluded.client_id,
             transcript = excluded.transcript,
             analysis   = excluded.analysis,
             created_at = CURRENT_TIMESTAMP
         `)
-        .bind(userId, conversationId, clientId, transcript, analysis)
+        .bind(userId, visitorId, conversationId, clientId, transcript, analysis)
         .run();
 
         console.log('[Session] ✅ Saved to DB:', conversationId, '| client:', clientId);
@@ -934,7 +941,7 @@ export default {
           const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
           await sendEmail({
             from: 'mail@websiteavatar.co.uk',
-            to: 'jacob@poddigital.co.uk',
+            to: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
             subject: `New Website Avatar Lead: ${name}`,
             html: adminEmailHtml
           }, env);
@@ -952,6 +959,7 @@ Phone: ${phone}
 Email: ${email}
 Summary: ${callSummary}`;
           await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
+          await sendSMS({ to: '+447468621246', body: smsBody }, env);
           console.log('[Webhook] ✅ Admin SMS sent');
         } catch (smsErr) {
           console.error('[Webhook] ❌ Admin SMS error:', smsErr.message);
@@ -973,8 +981,8 @@ Summary: ${callSummary}`;
 
         return json({
           message: 'Webhook processed successfully',
-          adminEmail: 'jacob@poddigital.co.uk',
-          adminSMS: env.ADMIN_PHONE_NUMBER,
+          adminEmail: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
+          adminSMS: [env.ADMIN_PHONE_NUMBER, '+447468621246'],
           userEmail: email
         }, 200, cors);
 
@@ -984,9 +992,143 @@ Summary: ${callSummary}`;
       }
     }
     
+    // ── POST /auth/magic-link ──────────────────────────────────────
+    if (url.pathname === '/auth/magic-link' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch (e) {
+        return json({ error: 'Invalid JSON' }, 400, cors);
+      }
+
+      const { email, visitor_id, conversation_id, origin } = body;
+
+      if (!email || !email.includes('@')) return json({ error: 'Invalid email' }, 400, cors);
+      if (!visitor_id) return json({ error: 'Missing visitor_id' }, 400, cors);
+      if (!env.JWT_SECRET) return json({ error: 'Server misconfigured' }, 500, cors);
+
+      const appUrl = env.APP_URL || origin || 'https://jacobpoddigital.github.io/website-avatar';
+      const fromEmail = env.FROM_EMAIL || 'mail@websiteavatar.co.uk';
+
+      try {
+        const token = await generateMagicToken(email, conversation_id || '', visitor_id, origin || appUrl, env.JWT_SECRET);
+        const magicUrl = `https://backend.jacob-e87.workers.dev/auth/verify?token=${token}`;
+
+        const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sign in to Website Avatar</title>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f3f7; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .header { background-color: #072138; padding: 32px 24px; text-align: center; border-radius: 12px 12px 0 0; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+    .content { padding: 40px 24px; }
+    .message { font-size: 16px; line-height: 1.6; color: #374151; margin-bottom: 24px; }
+    .btn { display: inline-block; background-color: #c84b2f; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600; }
+    .note { font-size: 13px; color: #9ca3af; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>Website Avatar</h1></div>
+    <div class="content">
+      <p class="message">Click the button below to sign in and save your conversation. This link expires in 1 hour.</p>
+      <a href="${magicUrl}" class="btn">Sign in &amp; save conversation</a>
+      <p class="note">If you didn't request this, you can safely ignore this email.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+        await sendEmail({
+          from: fromEmail,
+          to: email,
+          subject: 'Your sign-in link for Website Avatar',
+          html
+        }, env);
+
+        console.log('[Auth] Magic link sent to:', email);
+        return json({ success: true }, 200, cors);
+      } catch (err) {
+        console.error('[Auth] Magic link error:', err);
+        return json({ error: 'Failed to send email' }, 500, cors);
+      }
+    }
+
+    // ── GET /auth/verify?token=xxx ─────────────────────────────────
+    if (url.pathname === '/auth/verify' && request.method === 'GET') {
+      const token = url.searchParams.get('token');
+      if (!token) return new Response('Missing token', { status: 400 });
+      if (!env.JWT_SECRET) return new Response('Server misconfigured', { status: 500 });
+
+      const payload = await verifyJWT(token, env.JWT_SECRET);
+      if (!payload || payload.type !== 'magic') {
+        return new Response(errorPage('This sign-in link is invalid or has expired. Please request a new one.'), {
+          status: 400,
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+
+      const { email, visitorId, origin } = payload;
+
+      try {
+        // Create or find authenticated user
+        const userId = crypto.randomUUID();
+        const now = Date.now();
+
+        await env.website_avatar_db.prepare(`
+          INSERT INTO authenticated_users (id, email, created_at, last_login)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(email) DO UPDATE SET last_login = ?
+        `).bind(userId, email, now, now, now).run();
+
+        // Get actual user ID (may differ if user already existed)
+        const userRow = await env.website_avatar_db.prepare(
+          `SELECT id FROM authenticated_users WHERE email = ?`
+        ).bind(email).first();
+        const authUserId = userRow?.id || userId;
+
+        // Migrate all anonymous sessions for this visitor to the authenticated user
+        if (visitorId) {
+          await env.website_avatar_db.prepare(`
+            UPDATE conversations
+            SET user_id = ?, visitor_id = NULL
+            WHERE visitor_id = ?
+          `).bind(authUserId, visitorId).run();
+          console.log('[Auth] Migrated sessions for visitor:', visitorId, '→ user:', authUserId);
+        }
+
+        // Generate 30-day auth token
+        const authToken = await generateAuthToken(authUserId, email, env.JWT_SECRET);
+
+        // Redirect back to origin with auth token in hash
+        const redirectBase = (origin || env.APP_URL || 'https://jacobpoddigital.github.io/website-avatar').split('#')[0];
+        const redirectUrl = `${redirectBase}#wa_auth=${authToken}`;
+
+        console.log('[Auth] User authenticated:', email, '| Redirecting to origin');
+        return Response.redirect(redirectUrl, 302);
+
+      } catch (err) {
+        console.error('[Auth] Verify error:', err);
+        return new Response(errorPage('Something went wrong. Please try again.'), {
+          status: 500,
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+    }
+
     return json({ error: 'Not found' }, 404, cors);
   }
 };
+
+function errorPage(message) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sign-in Error</title>
+  <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f4f3f7;}
+  .box{background:#fff;padding:40px;border-radius:12px;text-align:center;max-width:400px;box-shadow:0 4px 6px rgba(0,0,0,0.1);}
+  h2{color:#c84b2f;margin-top:0;}p{color:#374151;line-height:1.6;}</style>
+  </head><body><div class="box"><h2>Sign-in Failed</h2><p>${message}</p></div></body></html>`;
+}
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {

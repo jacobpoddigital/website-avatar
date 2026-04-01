@@ -74,6 +74,11 @@
     }
     WA.saveSession(session);
     WA.appendMessage('user', text);
+
+    // Auto-detect email address in user message and offer to send magic link
+    if (typeof WA.detectEmailInMessage === 'function') {
+      WA.detectEmailInMessage(text);
+    }
   }
 
   function agentSay(text) {
@@ -86,6 +91,14 @@
     }
     WA.saveSession(session);
     WA.appendMessage('agent', text);
+
+    // After 6 messages, prompt unauthenticated users to save their conversation
+    const msgCount = session.messages.length;
+    if (msgCount >= 6 && msgCount % 6 === 0) {
+      if (typeof WA.showMagicLinkPrompt === 'function') {
+        WA.showMagicLinkPrompt();
+      }
+    }
   }
 
   // ─── NAVIGATION ───────────────────────────────────────────────────────────

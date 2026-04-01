@@ -476,6 +476,103 @@
     msgsEl.scrollTop = msgsEl.scrollHeight;
   }
 
+  // ─── MAGIC LINK PROMPT ────────────────────────────────────────────────────
+
+  const MAGIC_PROMPT_ID = 'wa-magic-link-prompt';
+
+  function showMagicLinkPrompt() {
+    // Don't show if already visible or user is authenticated
+    if (document.getElementById(MAGIC_PROMPT_ID)) return;
+    if (WA.auth && WA.auth.getCurrentUser().isAuthenticated) return;
+
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+
+    const card = document.createElement('div');
+    card.id = MAGIC_PROMPT_ID;
+    card.className = 'wa-action-card';
+    card.innerHTML = `
+      <div class="wa-card-label">Save your conversation</div>
+      <p>Enter your email to pick up this chat on any device — no password needed.</p>
+      <div class="wa-magic-input-row">
+        <input type="email" class="wa-magic-email" placeholder="you@example.com" autocomplete="email" />
+        <button class="wa-btn wa-btn-confirm wa-magic-submit">Send link</button>
+      </div>
+      <button class="wa-magic-dismiss">No thanks</button>
+    `;
+
+    const emailInput  = card.querySelector('.wa-magic-email');
+    const submitBtn   = card.querySelector('.wa-magic-submit');
+    const dismissBtn  = card.querySelector('.wa-magic-dismiss');
+
+    submitBtn.addEventListener('click', () => handleMagicLinkSubmit(card, emailInput.value.trim()));
+    emailInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleMagicLinkSubmit(card, emailInput.value.trim()); });
+    dismissBtn.addEventListener('click', () => card.remove());
+
+    msgs.appendChild(card);
+    scrollToBottom();
+    setTimeout(() => emailInput.focus(), 100);
+  }
+
+  async function handleMagicLinkSubmit(card, email) {
+    if (!WA.auth || !WA.auth.isValidEmail(email)) {
+      const input = card.querySelector('.wa-magic-email');
+      if (input) { input.style.borderColor = '#c84b2f'; input.focus(); }
+      return;
+    }
+
+    const submitBtn = card.querySelector('.wa-magic-submit');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending…'; }
+
+    const result = await WA.auth.requestMagicLink(email);
+
+    if (result.success) {
+      card.innerHTML = `
+        <div class="wa-card-label">Check your inbox</div>
+        <p>We sent a sign-in link to <strong>${email}</strong>. Click it to save your conversation.</p>
+      `;
+    } else {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send link'; }
+      const row = card.querySelector('.wa-magic-input-row');
+      if (row) {
+        let err = row.querySelector('.wa-magic-error');
+        if (!err) { err = document.createElement('p'); err.className = 'wa-magic-error'; err.style.cssText = 'color:#c84b2f;font-size:13px;margin:4px 0 0'; row.appendChild(err); }
+        err.textContent = result.error || 'Something went wrong. Please try again.';
+      }
+    }
+    scrollToBottom();
+  }
+
+  function detectEmailInMessage(text) {
+    if (!WA.auth) return;
+    if (WA.auth.getCurrentUser().isAuthenticated) return;
+
+    const email = WA.auth.extractEmail(text);
+    if (!email) return;
+
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+    if (document.getElementById(MAGIC_PROMPT_ID)) return;
+
+    const card = document.createElement('div');
+    card.id = MAGIC_PROMPT_ID;
+    card.className = 'wa-action-card';
+    card.innerHTML = `
+      <div class="wa-card-label">Save your conversation</div>
+      <p>Want us to send a sign-in link to <strong>${email}</strong> so you can continue this chat later?</p>
+      <div class="wa-card-btns">
+        <button class="wa-btn wa-btn-confirm wa-magic-confirm">Yes, send it</button>
+        <button class="wa-btn wa-btn-deny wa-magic-deny">No thanks</button>
+      </div>
+    `;
+
+    card.querySelector('.wa-magic-confirm').addEventListener('click', () => handleMagicLinkSubmit(card, email));
+    card.querySelector('.wa-magic-deny').addEventListener('click', () => card.remove());
+
+    msgs.appendChild(card);
+    scrollToBottom();
+  }
+
   // ─── DEBUG ────────────────────────────────────────────────────────────────
 
   function renderDebug() {
@@ -518,5 +615,7 @@
   WA.closeHistorySession    = closeHistorySession;
   WA.renderHistorySession   = renderHistorySession;
   WA.renderDebug            = renderDebug;
+  WA.showMagicLinkPrompt    = showMagicLinkPrompt;
+  WA.detectEmailInMessage   = detectEmailInMessage;
 
 })();
