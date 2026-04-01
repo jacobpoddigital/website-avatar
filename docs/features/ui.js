@@ -407,6 +407,41 @@
     if (view) { view.classList.remove('wa-history-visible'); view.setAttribute('aria-hidden', 'true'); }
   }
 
+  // Groups sessions where consecutive items started within gapMs of each other
+  // into a single combined entry, merging their messages chronologically.
+  function groupSessionsByGap(sessions, gapMs = 20 * 60 * 1000) {
+    if (!sessions.length) return [];
+
+    // Ensure newest-first order
+    const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
+    const groups = [];
+    let current = [sorted[0]];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const gap = current[current.length - 1].startedAt - sorted[i].startedAt;
+      if (gap <= gapMs) {
+        current.push(sorted[i]);
+      } else {
+        groups.push(current);
+        current = [sorted[i]];
+      }
+    }
+    groups.push(current);
+
+    return groups.map(group => {
+      const allMessages = group
+        .flatMap(s => s.messages || [])
+        .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      const firstUserMsg = allMessages.find(m => m.role === 'user');
+      return {
+        startedAt:    Math.min(...group.map(s => s.startedAt)),
+        messageCount: allMessages.length,
+        messages:     allMessages,
+        snippet:      firstUserMsg?.text || ''
+      };
+    });
+  }
+
   function renderHistoryList() {
     const listEl = document.getElementById('wa-history-list');
     if (!listEl) return;
@@ -419,8 +454,10 @@
       return;
     }
 
+    const grouped = groupSessionsByGap(sessions);
+
     listEl.innerHTML = '';
-    sessions.forEach(s => {
+    grouped.forEach(s => {
       const date    = new Date(s.startedAt);
       const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
       const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
