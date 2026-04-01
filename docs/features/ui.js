@@ -407,44 +407,53 @@
     if (view) { view.classList.remove('wa-history-visible'); view.setAttribute('aria-hidden', 'true'); }
   }
 
-  // Groups sessions where consecutive items started within gapMs of each other
-  // into a single combined entry, merging their messages chronologically.
+  // Groups sessions into conversations using actual message timestamps.
+  // The gap is measured between the last message of one session and the first
+  // message of the next — if under 20 mins they belong to the same conversation.
+  // Messages are deduplicated by ts so repeated saves don't double up.
   function groupSessionsByGap(sessions, gapMs = 20 * 60 * 1000) {
     if (!sessions.length) return [];
 
-    // Ensure newest-first order
-    const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
-    const groups = [];
-    let current = [sorted[0]];
+    // Flatten to individual messages, each tagged with their source session
+    const allMsgs = sessions.flatMap(s =>
+      (s.messages || []).map(m => ({ ...m, _sessionId: s.id }))
+    );
 
-    for (let i = 1; i < sorted.length; i++) {
-      const gap = current[current.length - 1].startedAt - sorted[i].startedAt;
-      if (gap <= gapMs) {
-        current.push(sorted[i]);
-      } else {
-        groups.push(current);
-        current = [sorted[i]];
+    // Deduplicate by ts (same message saved in multiple snapshots)
+    const seen = new Set();
+    const unique = allMsgs.filter(m => {
+      const key = m.ts ? String(m.ts) : `${m.role}:${m.text}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Sort all unique messages chronologically
+    unique.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+    if (!unique.length) return [];
+
+    // Split into conversations wherever there is a gap > 20 mins between messages
+    const conversations = [];
+    let current = [unique[0]];
+
+    for (let i = 1; i < unique.length; i++) {
+      const gap = (unique[i].ts || 0) - (unique[i - 1].ts || 0);
+      if (gap > gapMs) {
+        conversations.push(current);
+        current = [];
       }
+      current.push(unique[i]);
     }
-    groups.push(current);
+    conversations.push(current);
 
-    return groups.map(group => {
-      const seen = new Set();
-      const allMessages = group
-        .flatMap(s => s.messages || [])
-        .filter(m => {
-          // Deduplicate by timestamp, falling back to role+text for messages without one
-          const key = m.ts ? String(m.ts) : `${m.role}:${m.text}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .sort((a, b) => (a.ts || 0) - (b.ts || 0));
-      const firstUserMsg = allMessages.find(m => m.role === 'user');
+    // Return newest-first
+    return conversations.reverse().map(msgs => {
+      const firstUserMsg = msgs.find(m => m.role === 'user');
       return {
-        startedAt:    Math.min(...group.map(s => s.startedAt)),
-        messageCount: allMessages.length,
-        messages:     allMessages,
+        startedAt:    msgs[0]?.ts || 0,
+        messageCount: msgs.length,
+        messages:     msgs,
         snippet:      firstUserMsg?.text || ''
       };
     });
