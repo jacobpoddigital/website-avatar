@@ -296,7 +296,6 @@ export default {
     if (url.pathname === '/session' && request.method === 'GET') {
       const sessionId = url.searchParams.get('session_id');
       const userId    = url.searchParams.get('user_id');
-      const visitorId = url.searchParams.get('visitor_id');
 
       if (sessionId) {
         // Client session state (KV) — keyed with prefix to avoid collisions with config keys
@@ -305,20 +304,19 @@ export default {
         return new Response(raw, { headers: cors });
       }
 
-      if (userId || visitorId) {
+      if (userId) {
         // Conversation transcript history (D1) — used by session-sync.js loadSessionFromBackend
-        const idType = userId ? 'user_id' : 'visitor_id';
-        const idValue = userId || visitorId;
-        console.log('[Session] GET request for', idType, ':', idValue);
+        // user_id is always set: visitor ID for anonymous, authenticated_users.id after sign-in
+        console.log('[Session] GET request for user:', userId);
         try {
           const result = await env.website_avatar_db.prepare(`
             SELECT conversation_id, transcript, analysis, created_at
             FROM conversations
-            WHERE ${idType} = ?
+            WHERE user_id = ?
             ORDER BY created_at DESC
             LIMIT 10
           `)
-          .bind(idValue)
+          .bind(userId)
           .all();
 
           console.log('[Session] Found', result.results?.length || 0, 'sessions');
@@ -343,7 +341,7 @@ export default {
         }
       }
 
-      return json({ error: 'Missing session_id, user_id, or visitor_id' }, 400, cors);
+      return json({ error: 'Missing session_id or user_id' }, 400, cors);
     }
 
     // ── POST /session (frontend save) ─────────────────────────────
@@ -372,35 +370,34 @@ export default {
         }
       }
 
-      // Route B: transcript save → D1 (requires conversation_id + either user_id or visitor_id)
-      const userId         = body?.user_id   || null;
-      const visitorId      = body?.visitor_id || null;
+      // Route B: transcript save → D1 (requires user_id + conversation_id)
+      // user_id is always set: visitor ID for anonymous, authenticated_users.id after sign-in
+      const userId         = body?.user_id;
       const conversationId = body?.conversation_id;
       // client_id identifies which account (data-account-id) owns this conversation.
       // Empty string is stored when not provided so existing rows are not broken.
       const clientId       = body?.client_id || '';
 
-      console.log('[Session] Frontend save:', { userId, visitorId, clientId, conversationId, messageCount: body?.transcript?.length });
+      console.log('[Session] Frontend save:', { userId, clientId, conversationId, messageCount: body?.transcript?.length });
 
-      if ((!userId && !visitorId) || !conversationId) return json({ error: 'Missing conversation_id and one of user_id or visitor_id' }, 400, cors);
+      if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
 
       const transcript = JSON.stringify(body.transcript || []);
       const analysis   = JSON.stringify(body.analysis || {});
 
       try {
         await env.website_avatar_db.prepare(`
-          INSERT INTO conversations (user_id, visitor_id, conversation_id, client_id, transcript, analysis)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(conversation_id)
           DO UPDATE SET
             user_id    = excluded.user_id,
-            visitor_id = excluded.visitor_id,
             client_id  = excluded.client_id,
             transcript = excluded.transcript,
             analysis   = excluded.analysis,
             created_at = CURRENT_TIMESTAMP
         `)
-        .bind(userId, visitorId, conversationId, clientId, transcript, analysis)
+        .bind(userId, conversationId, clientId, transcript, analysis)
         .run();
 
         console.log('[Session] ✅ Saved to DB:', conversationId, '| client:', clientId);
@@ -1077,11 +1074,13 @@ Summary: ${callSummary}`;
         const userId = crypto.randomUUID();
         const now = Date.now();
 
+        // visitor_id is only stored on first sign-in — it's the bridge to the consent table.
+        // On subsequent sign-ins we only update last_login; visitor_id stays as originally set.
         await env.website_avatar_db.prepare(`
-          INSERT INTO authenticated_users (id, email, created_at, last_login)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO authenticated_users (id, email, created_at, last_login, visitor_id)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(email) DO UPDATE SET last_login = ?
-        `).bind(userId, email, now, now, now).run();
+        `).bind(userId, email, now, now, visitorId || null, now).run();
 
         // Get actual user ID (may differ if user already existed)
         const userRow = await env.website_avatar_db.prepare(
@@ -1089,12 +1088,14 @@ Summary: ${callSummary}`;
         ).bind(email).first();
         const authUserId = userRow?.id || userId;
 
-        // Migrate all anonymous sessions for this visitor to the authenticated user
+        // Migrate all anonymous sessions for this visitor to the authenticated user.
+        // user_id currently holds the wc_visitor value for anonymous sessions —
+        // replace it with the permanent authenticated user ID.
         if (visitorId) {
           await env.website_avatar_db.prepare(`
             UPDATE conversations
-            SET user_id = ?, visitor_id = NULL
-            WHERE visitor_id = ?
+            SET user_id = ?, visitor_id = user_id
+            WHERE user_id = ?
           `).bind(authUserId, visitorId).run();
           console.log('[Auth] Migrated sessions for visitor:', visitorId, '→ user:', authUserId);
         }

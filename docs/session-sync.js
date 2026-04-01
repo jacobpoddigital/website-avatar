@@ -60,12 +60,8 @@
     // ElevenLabs bridge should set session.elevenlabsConversationId when it connects
     const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
 
-    // Distinguish authenticated user vs anonymous visitor for the backend
-    const isAuthenticated = WA.auth ? WA.auth.getCurrentUser().isAuthenticated : false;
-
     const payload = {
-      user_id:         isAuthenticated ? userId : null,
-      visitor_id:      isAuthenticated ? null : userId,
+      user_id:         userId,
       conversation_id: conversationId,
       client_id:       getClientId(),
       transcript:      session.messages,
@@ -75,7 +71,7 @@
       }
     };
 
-    if (WA.DEBUG) console.log('[SessionSync] 💾 Saving session...', { userId, isAuthenticated, clientId: payload.client_id, messageCount: session.messages.length, conversationId });
+    if (WA.DEBUG) console.log('[SessionSync] 💾 Saving session...', { userId, clientId: payload.client_id, messageCount: session.messages.length, conversationId });
 
     try {
       const response = await fetch(SESSION_URL, {
@@ -106,12 +102,8 @@
 
     if (!userId) return null;
 
-    // Use the correct query param based on auth state
-    const isAuthenticated = WA.auth ? WA.auth.getCurrentUser().isAuthenticated : false;
-    const param = isAuthenticated ? `user_id=${userId}` : `visitor_id=${userId}`;
-
     try {
-      const response = await fetch(`${SESSION_URL}?${param}`);
+      const response = await fetch(`${SESSION_URL}?user_id=${userId}`);
 
       if (!response.ok) return null;
 
@@ -154,10 +146,8 @@
 
       const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
 
-      const isAuthenticated = WA.auth ? WA.auth.getCurrentUser().isAuthenticated : false;
       const payload = {
-        user_id:         isAuthenticated ? userId : null,
-        visitor_id:      isAuthenticated ? null : userId,
+        user_id:         userId,
         conversation_id: conversationId,
         client_id:       getClientId(),
         transcript:      session.messages,
