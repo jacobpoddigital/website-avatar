@@ -429,8 +429,16 @@
     groups.push(current);
 
     return groups.map(group => {
+      const seen = new Set();
       const allMessages = group
         .flatMap(s => s.messages || [])
+        .filter(m => {
+          // Deduplicate by timestamp, falling back to role+text for messages without one
+          const key = m.ts ? String(m.ts) : `${m.role}:${m.text}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
         .sort((a, b) => (a.ts || 0) - (b.ts || 0));
       const firstUserMsg = allMessages.find(m => m.role === 'user');
       return {
