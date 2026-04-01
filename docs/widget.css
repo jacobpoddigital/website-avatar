@@ -253,7 +253,7 @@
 
 /* ── INPUT ROW ───────────────────────────────────────────────────────────────── */
 /* ── GDPR CONSENT BANNER ─────────────────────────────────────────────────────── */
-.wa-consent-banner {
+#wa-panel > .wa-consent-banner {
   padding: 12px 14px 10px;
   border-top: 1px solid var(--wa-glass-border-dim);
   background: var(--wa-glass-subtle);
