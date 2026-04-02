@@ -45,7 +45,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
     const base = 'https://backend.jacob-e87.workers.dev';
     try {
-      const resp = await fetch(`${base}/profile?user_id=${encodeURIComponent(user.id)}`);
+      const resp = await fetch(`${base}/profile?user_id=${encodeURIComponent(user.id)}`, {
+        headers: { 'Authorization': `Bearer ${user.token}` }
+      });
       if (!resp.ok) return null;
       const profile = await resp.json();
       // Treat an empty object (no row yet) as null
@@ -70,7 +72,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     const base = 'https://backend.jacob-e87.workers.dev';
     fetch(`${base}/profile`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
       body: JSON.stringify({ user_id: user.id, ...fields })
     }).catch(err => warn('saveProfileFields error:', err.message));
   }

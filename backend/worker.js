@@ -648,6 +648,15 @@ export default {
       const userId = url.searchParams.get('user_id');
       if (!userId) return json({ error: 'Missing user_id' }, 400, cors);
 
+      // Require a valid auth token — profile contains PII
+      const authHeader = request.headers.get('Authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const payload = token ? await verifyJWT(token, env.JWT_SECRET) : null;
+      if (!payload || payload.type !== 'auth' || payload.sub !== userId) {
+        console.warn('[Profile] ❌ Unauthorised GET for user:', userId);
+        return json({ error: 'Unauthorised' }, 401, cors);
+      }
+
       try {
         const profile = await env.website_avatar_db.prepare(
           'SELECT user_id, name, phone, company, job_title, persona_summary, persona_updated_at, created_at, updated_at FROM user_profiles WHERE user_id = ?'
@@ -672,6 +681,15 @@ export default {
 
       const { user_id, name, phone, company, job_title } = body || {};
       if (!user_id) return json({ error: 'Missing user_id' }, 400, cors);
+
+      // Require a valid auth token — only a user can write their own profile
+      const authHeader = request.headers.get('Authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const payload = token ? await verifyJWT(token, env.JWT_SECRET) : null;
+      if (!payload || payload.type !== 'auth' || payload.sub !== user_id) {
+        console.warn('[Profile] ❌ Unauthorised POST for user:', user_id);
+        return json({ error: 'Unauthorised' }, 401, cors);
+      }
 
       try {
         await upsertUserProfile(env.website_avatar_db, user_id, { name, phone, company, job_title });
