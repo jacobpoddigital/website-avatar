@@ -1159,11 +1159,12 @@ export default {
     if (url.pathname === '/webhook/call-complete' && request.method === 'POST') {
       try {
         const callData = await request.json();
-        console.log('[Webhook] Received call data');
+        const convId = callData.data?.conversation_id || 'unknown';
+        console.log('[Webhook] Received call data | conv:', convId);
 
         // Only process successful calls
         if (callData?.data?.analysis?.call_successful !== 'success') {
-          console.log('[Webhook] Skipping - call not successful');
+          console.log('[Webhook] Skipping - call not successful | conv:', convId);
           return json({ message: 'Call not successful, skipping notifications' }, 200, cors);
         }
 
@@ -1200,7 +1201,6 @@ export default {
         //    (speech-to-text errors, user may give a different address).
         try {
           const dynVars = callData.data?.conversation_initiation_client_data?.dynamic_variables || {};
-          const convId  = callData.data?.conversation_id || 'unknown';
 
           // ── DEBUG: log everything we received so we can trace resolution ──
           console.log('[Webhook] 🔍 DEBUG conversation:', convId);
@@ -1351,7 +1351,7 @@ export default {
 
       try {
         const token = await generateMagicToken(email, conversation_id || '', visitor_id, origin || appUrl, env.JWT_SECRET);
-        const magicUrl = `https://backend.jacob-e87.workers.dev/auth/verify?token=${token}`;
+        const magicUrl = `${new URL('/auth/verify', request.url).href}?token=${token}`;
 
         const html = `
 <!DOCTYPE html>

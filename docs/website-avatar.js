@@ -34,8 +34,8 @@
 
     const agentName = config.agentName || 'Website Avatar';
     const avatarUrl = config.avatar_url || '';
-    const greetingMessage = config.greetingMessage || 
-      `Hi, I'm ${config.agentName || 'Mike'} - founder of ${config.businessName || 'Pod Digital'}. This AI version of me is trained on everything we do. Can we have a quick chat?`;
+    const greetingMessage = config.greetingMessage ||
+      `Hi, I'm ${agentName}${config.businessName ? ` from ${config.businessName}` : ''}. I'm an AI trained on everything we do. Can we have a quick chat?`;
 
     const greeting = document.createElement('div');
     greeting.id = 'wa-greeting';
