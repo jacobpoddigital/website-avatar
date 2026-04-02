@@ -87,7 +87,11 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (p.name)      lines.push(`  Name: ${p.name}`);
     if (p.company)   lines.push(`  Company: ${p.company}`);
     if (p.job_title) lines.push(`  Role: ${p.job_title}`);
-    if (p.phone)     lines.push(`  Phone on file: yes`);
+    if (p.phone)     lines.push(`  Phone: ${p.phone}`);
+
+    // Email lives in the auth token, not the profile row
+    const authEmail = WA.auth?.getCurrentUser?.()?.email;
+    if (authEmail)   lines.push(`  Email: ${authEmail}`);
 
     if (p.persona_summary) {
       lines.push('');
@@ -149,6 +153,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (profileCtx) {
       lines.unshift('');
       lines.unshift(profileCtx);
+    }
+
+    // If a greeting was already shown to the user in the chat panel, tell the
+    // agent here (as static context) so it doesn't re-greet when it connects.
+    // This is intentionally in context rather than sent as a sendUserMessage —
+    // sending it as a message triggers a response and causes a double greeting.
+    if (_pendingGreeting) {
+      lines.push('');
+      lines.push(`GREETING ALREADY SHOWN: The user can already see this message in the chat: "${_pendingGreeting}"`);
+      lines.push('Do not repeat this greeting or re-introduce yourself. Wait for the user to respond.');
     }
 
     return lines.join('\n');
@@ -238,13 +252,10 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     // Use in-memory session instead of sessionStorage.
     const s = WA.getSession ? WA.getSession() : {};
 
-    // Fresh session: if a personalised greeting was shown to the user, tell
-    // ElevenLabs so it knows the conversation has already been opened and
-    // doesn't introduce itself or re-greet.
-    if (!s.messages?.length && _pendingGreeting) {
-      return `[SYSTEM: The user was shown this greeting when they opened the chat: "${_pendingGreeting}". Do not repeat it or re-introduce yourself. Wait for their response and continue naturally from there.]`;
-    }
-
+    // Fresh session: greeting instruction is already in the context dynamic
+    // variable (buildPageContext adds it). Returning null here means no
+    // sendUserMessage is fired, so the agent stays quiet and waits for the
+    // user — no double greeting.
     if (!s.messages?.length) return null;
 
     // sentPrompts is now a field on the session object (replaces wa_sent_prompts sessionStorage key)
