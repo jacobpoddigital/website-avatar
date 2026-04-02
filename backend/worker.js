@@ -399,6 +399,18 @@ export default {
 
     // ── POST /config ───────────────────────────────────────
     if (url.pathname === '/config' && request.method === 'POST') {
+      // Admin-only route — requires Authorization: Bearer <ADMIN_SECRET>
+      if (env.ADMIN_SECRET) {
+        const authHeader = request.headers.get('Authorization') || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (token !== env.ADMIN_SECRET) {
+          console.warn('[Config] ❌ Unauthorised write attempt');
+          return json({ error: 'Unauthorised' }, 401, cors);
+        }
+      } else {
+        console.warn('[Config] ⚠️ ADMIN_SECRET not set — POST /config is unprotected');
+      }
+
       const id = url.searchParams.get('id');
       if (!id) return json({ error: 'Missing id' }, 400, cors);
 
