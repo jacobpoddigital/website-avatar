@@ -17,6 +17,3 @@ id = "4c0d294800474fe28ba486a34b13c461"
 binding = "website_avatar_db"
 database_name = "website-avatar-db"
 database_id = "4b05176c-787a-4cdc-817c-f4ef6917a84f"
-
-[env.production]
-WEBHOOK_SECRET = "wsec_d6c29aa6c67574c03c7cbea90c9c4a6854af1e2088468521f9df1aef87494a94"

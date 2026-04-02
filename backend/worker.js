@@ -42,7 +42,7 @@ function generateAdminEmail({ name, phone, email, company, callSummary, callDura
 </html>`;
 }
 
-function generateThankYouEmail({ name }) {
+function generateThankYouEmail({ name, brandName = 'our team' }) {
   const firstName = name.split(' ')[0];
   return `
 <!DOCTYPE html>
@@ -67,7 +67,7 @@ function generateThankYouEmail({ name }) {
       <p class="message">Hi ${firstName},</p>
       <p class="message">Thank you for getting in touch with us through our Website Avatar. We've received your information and one of our team members will be in contact with you shortly.</p>
       <p class="message">If you have any urgent questions in the meantime, please don't hesitate to reach out to us directly.</p>
-      <p class="message">Best regards,<br><strong>The Pod Digital Team</strong></p>
+      <p class="message">Best regards,<br><strong>The ${brandName} Team</strong></p>
     </div>
   </div>
 </body>
@@ -371,19 +371,43 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // Get origin from request for CORS
-    const origin = request.headers.get('Origin') || '*';
+    // ── CORS ─────────────────────────────────────────────────────────────────
+    // Allowed origins are stored in KV under 'wa_cors_origins' as a JSON map
+    // of { "https://domain.com": "acct_xxx" }, populated during client onboarding.
+    // If the key doesn't exist yet (fresh deploy), fall back to permissive mode
+    // with a warning so live sites aren't broken during rollout.
+    const requestOrigin = request.headers.get('Origin') || '';
+
+    let allowedOrigin = null;
+    let corsOrigins = {}; // hoisted — reused by auth routes to validate redirect origins
+    const rawCorsOrigins = await env.CONFIGS.get('wa_cors_origins');
+    if (rawCorsOrigins) {
+      corsOrigins = JSON.parse(rawCorsOrigins);
+      if (requestOrigin && corsOrigins[requestOrigin]) {
+        allowedOrigin = requestOrigin;
+      }
+    } else {
+      // wa_cors_origins not yet configured — allow all with a warning
+      console.warn('[CORS] ⚠️ wa_cors_origins not set — running in permissive mode');
+      allowedOrigin = requestOrigin || '*';
+    }
 
     const cors = {
-      'Access-Control-Allow-Origin':  origin,
+      'Access-Control-Allow-Origin':  allowedOrigin || 'null',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': allowedOrigin ? 'true' : 'false',
       'Content-Type':                 'application/json'
     };
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: cors });
+      return new Response(null, { status: allowedOrigin ? 204 : 403, headers: cors });
+    }
+
+    // Block credentialed requests from unrecognised origins
+    if (requestOrigin && !allowedOrigin) {
+      console.warn('[CORS] ❌ Blocked request from unrecognised origin:', requestOrigin);
+      return json({ error: 'Origin not allowed' }, 403, cors);
     }
 
     // ── GET /config?id=acct_xxx ─────────────────────────────
@@ -399,6 +423,18 @@ export default {
 
     // ── POST /config ───────────────────────────────────────
     if (url.pathname === '/config' && request.method === 'POST') {
+      // Admin-only route — requires Authorization: Bearer <ADMIN_SECRET>
+      if (env.ADMIN_SECRET) {
+        const authHeader = request.headers.get('Authorization') || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (token !== env.ADMIN_SECRET) {
+          console.warn('[Config] ❌ Unauthorised write attempt');
+          return json({ error: 'Unauthorised' }, 401, cors);
+        }
+      } else {
+        console.warn('[Config] ⚠️ ADMIN_SECRET not set — POST /config is unprotected');
+      }
+
       const id = url.searchParams.get('id');
       if (!id) return json({ error: 'Missing id' }, 400, cors);
 
@@ -412,6 +448,15 @@ export default {
       const updated = { ...config, ...body };
 
       await env.CONFIGS.put(id, JSON.stringify(updated));
+
+      // Keep the cors origins map in sync whenever allowedOrigin is set
+      if (updated.allowedOrigin) {
+        const rawCors = await env.CONFIGS.get('wa_cors_origins');
+        const corsMap = rawCors ? JSON.parse(rawCors) : {};
+        corsMap[updated.allowedOrigin] = id;
+        await env.CONFIGS.put('wa_cors_origins', JSON.stringify(corsMap));
+        console.log('[Config] ✅ CORS origins updated:', updated.allowedOrigin, '→', id);
+      }
 
       return json(updated, 200, cors);
     }
@@ -530,17 +575,25 @@ export default {
       if (userId) {
         // Conversation transcript history (D1) — used by session-sync.js loadSessionFromBackend
         // user_id is always set: visitor ID for anonymous, authenticated_users.id after sign-in
-        console.log('[Session] GET request for user:', userId);
+        // client_id filters to the requesting client's conversations only.
+        const clientIdFilter = url.searchParams.get('client_id') || '';
+        console.log('[Session] GET request for user:', userId, '| client:', clientIdFilter || '(none)');
         try {
-          const result = await env.website_avatar_db.prepare(`
-            SELECT conversation_id, transcript, analysis, created_at
-            FROM conversations
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 50
-          `)
-          .bind(userId)
-          .all();
+          const result = clientIdFilter
+            ? await env.website_avatar_db.prepare(`
+                SELECT conversation_id, client_id, transcript, analysis, created_at
+                FROM conversations
+                WHERE user_id = ? AND client_id = ?
+                ORDER BY created_at DESC
+                LIMIT 50
+              `).bind(userId, clientIdFilter).all()
+            : await env.website_avatar_db.prepare(`
+                SELECT conversation_id, client_id, transcript, analysis, created_at
+                FROM conversations
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT 50
+              `).bind(userId).all();
 
           console.log('[Session] Found', result.results?.length || 0, 'sessions');
 
@@ -636,6 +689,15 @@ export default {
       const userId = url.searchParams.get('user_id');
       if (!userId) return json({ error: 'Missing user_id' }, 400, cors);
 
+      // Require a valid auth token — profile contains PII
+      const authHeader = request.headers.get('Authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const payload = token ? await verifyJWT(token, env.JWT_SECRET) : null;
+      if (!payload || payload.type !== 'auth' || payload.sub !== userId) {
+        console.warn('[Profile] ❌ Unauthorised GET for user:', userId);
+        return json({ error: 'Unauthorised' }, 401, cors);
+      }
+
       try {
         const profile = await env.website_avatar_db.prepare(
           'SELECT user_id, name, phone, company, job_title, persona_summary, persona_updated_at, created_at, updated_at FROM user_profiles WHERE user_id = ?'
@@ -660,6 +722,15 @@ export default {
 
       const { user_id, name, phone, company, job_title } = body || {};
       if (!user_id) return json({ error: 'Missing user_id' }, 400, cors);
+
+      // Require a valid auth token — only a user can write their own profile
+      const authHeader = request.headers.get('Authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const payload = token ? await verifyJWT(token, env.JWT_SECRET) : null;
+      if (!payload || payload.type !== 'auth' || payload.sub !== user_id) {
+        console.warn('[Profile] ❌ Unauthorised POST for user:', user_id);
+        return json({ error: 'Unauthorised' }, 401, cors);
+      }
 
       try {
         await upsertUserProfile(env.website_avatar_db, user_id, { name, phone, company, job_title });
@@ -1157,13 +1228,66 @@ export default {
 
     // ── POST /webhook/call-complete ─────────────────────────────
     if (url.pathname === '/webhook/call-complete' && request.method === 'POST') {
+      // Read raw body first — signature verification must happen before JSON parsing
+      // as request.json() consumes the stream.
+      let rawBody;
+      try { rawBody = await request.text(); } catch (e) {
+        return json({ error: 'Failed to read request body' }, 400, cors);
+      }
+
+      // ── ElevenLabs signature verification ──────────────────────────────────
+      // Header format: ElevenLabs-Signature: t=<unix_ts>,v0=<hmac_sha256_hex>
+      // Signed string: "<timestamp>.<raw_body>"
+      // Skipped only when secret is not configured (local dev / testing).
+      if (env.ELEVENLABS_WEBHOOK_SECRET) {
+        const sigHeader = request.headers.get('ElevenLabs-Signature') || '';
+        const parts = Object.fromEntries(sigHeader.split(',').map(p => p.split('=')));
+        const timestamp = parts['t'];
+        const signature = parts['v0'];
+
+        if (!timestamp || !signature) {
+          console.warn('[Webhook] ❌ Missing or malformed signature header');
+          return json({ error: 'Missing signature' }, 401, cors);
+        }
+
+        // Reject requests older than 5 minutes to block replay attacks
+        const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
+        if (age > 300) {
+          console.warn('[Webhook] ❌ Signature too old:', Math.round(age), 'seconds');
+          return json({ error: 'Request too old' }, 401, cors);
+        }
+
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode(env.ELEVENLABS_WEBHOOK_SECRET),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`${timestamp}.${rawBody}`));
+        const expected = Array.from(new Uint8Array(mac))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        if (expected !== signature) {
+          console.warn('[Webhook] ❌ Signature mismatch');
+          return json({ error: 'Invalid signature' }, 401, cors);
+        }
+
+        console.log('[Webhook] ✅ Signature verified');
+      } else {
+        console.warn('[Webhook] ⚠️ ELEVENLABS_WEBHOOK_SECRET not set — skipping signature check');
+      }
+
       try {
-        const callData = await request.json();
-        console.log('[Webhook] Received call data');
+        const callData = JSON.parse(rawBody);
+        const convId = callData.data?.conversation_id || 'unknown';
+        console.log('[Webhook] Received call data | conv:', convId);
 
         // Only process successful calls
         if (callData?.data?.analysis?.call_successful !== 'success') {
-          console.log('[Webhook] Skipping - call not successful');
+          console.log('[Webhook] Skipping - call not successful | conv:', convId);
           return json({ message: 'Call not successful, skipping notifications' }, 200, cors);
         }
 
@@ -1200,7 +1324,6 @@ export default {
         //    (speech-to-text errors, user may give a different address).
         try {
           const dynVars = callData.data?.conversation_initiation_client_data?.dynamic_variables || {};
-          const convId  = callData.data?.conversation_id || 'unknown';
 
           // ── DEBUG: log everything we received so we can trace resolution ──
           console.log('[Webhook] 🔍 DEBUG conversation:', convId);
@@ -1265,6 +1388,23 @@ export default {
           console.error('[Webhook] ❌ Profile upsert error:', profileErr.message);
         }
 
+        // ── Resolve client config for per-client notification routing ──────────
+        const clientId = dynVars.client_id || '';
+        let clientConfig = {};
+        if (clientId) {
+          try {
+            const raw = await env.CONFIGS.get(clientId);
+            if (raw) clientConfig = JSON.parse(raw);
+          } catch (e) {
+            console.warn('[Webhook] ⚠️ Could not load client config for:', clientId);
+          }
+        }
+        // Notification values — per-client config with Pod Digital as fallback
+        const notifyEmails  = clientConfig.notifyEmails  || ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'];
+        const notifyPhone   = clientConfig.notifyPhone   || '+447468621246';
+        const brandName     = clientConfig.brandName     || 'Pod Digital';
+        console.log('[Webhook] 📋 Routing notifications | client:', clientId || '(none)', '| brand:', brandName);
+
         // ── Lead notifications ─────────────────────────────────────────────
         // Only fire when the user spoke their name and email — these go to
         // Google Sheet, admin email/SMS, and a thank-you to the user.
@@ -1288,31 +1428,31 @@ export default {
         try {
           const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
           await sendEmail({
-            from: 'mail@websiteavatar.co.uk',
-            to: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
+            from: env.FROM_EMAIL || 'mail@websiteavatar.co.uk',
+            to: notifyEmails,
             subject: `New Website Avatar Lead: ${name}`,
             html: adminEmailHtml
           }, env);
-          console.log('[Webhook] ✅ Admin email sent');
+          console.log('[Webhook] ✅ Admin email sent to:', notifyEmails);
         } catch (emailErr) {
           console.error('[Webhook] ❌ Admin email error:', emailErr.message);
         }
 
         try {
           const smsBody = `New Website Avatar Lead!\nName: ${name}\nCompany: ${company}\nPhone: ${phone}\nEmail: ${email}\nSummary: ${callSummary}`;
-          await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
-          await sendSMS({ to: '+447468621246', body: smsBody }, env);
+          if (env.ADMIN_PHONE_NUMBER) await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
+          await sendSMS({ to: notifyPhone, body: smsBody }, env);
           console.log('[Webhook] ✅ Admin SMS sent');
         } catch (smsErr) {
           console.error('[Webhook] ❌ Admin SMS error:', smsErr.message);
         }
 
         try {
-          const thankYouHtml = generateThankYouEmail({ name });
+          const thankYouHtml = generateThankYouEmail({ name, brandName });
           await sendEmail({
-            from: 'mail@websiteavatar.co.uk',
+            from: env.FROM_EMAIL || 'mail@websiteavatar.co.uk',
             to: email,
-            subject: 'Thank you for contacting Pod Digital',
+            subject: `Thank you for contacting ${brandName}`,
             html: thankYouHtml
           }, env);
           console.log('[Webhook] ✅ Thank you email sent to:', email);
@@ -1322,8 +1462,9 @@ export default {
 
         return json({
           message: 'Webhook processed successfully',
-          adminEmail: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
-          adminSMS: [env.ADMIN_PHONE_NUMBER, '+447468621246'],
+          client: clientId,
+          adminEmails: notifyEmails,
+          adminSMS: notifyPhone,
           userEmail: email
         }, 200, cors);
 
@@ -1346,12 +1487,21 @@ export default {
       if (!visitor_id) return json({ error: 'Missing visitor_id' }, 400, cors);
       if (!env.JWT_SECRET) return json({ error: 'Server misconfigured' }, 500, cors);
 
-      const appUrl = env.APP_URL || origin || 'https://jacobpoddigital.github.io/website-avatar';
+      // Validate origin against known client domains before embedding in JWT.
+      // Prevents an attacker crafting a magic link request with a malicious redirect URL.
+      const knownOrigins = Object.keys(corsOrigins);
+      const safeOrigin = (origin && knownOrigins.includes(origin)) ? origin : (env.APP_URL || null);
+      if (!safeOrigin) {
+        console.warn('[Auth] ❌ Magic link request with unrecognised origin:', origin);
+        return json({ error: 'Unrecognised origin' }, 400, cors);
+      }
+
+      const appUrl = env.APP_URL || safeOrigin;
       const fromEmail = env.FROM_EMAIL || 'mail@websiteavatar.co.uk';
 
       try {
-        const token = await generateMagicToken(email, conversation_id || '', visitor_id, origin || appUrl, env.JWT_SECRET);
-        const magicUrl = `https://backend.jacob-e87.workers.dev/auth/verify?token=${token}`;
+        const token = await generateMagicToken(email, conversation_id || '', visitor_id, safeOrigin, env.JWT_SECRET);
+        const magicUrl = `${new URL('/auth/verify', request.url).href}?token=${token}`;
 
         const html = `
 <!DOCTYPE html>
@@ -1447,8 +1597,23 @@ export default {
         // Generate 30-day auth token
         const authToken = await generateAuthToken(authUserId, email, env.JWT_SECRET);
 
+        // Validate the redirect origin from the JWT payload against known client domains.
+        // The origin was already validated when the magic link was issued, but we
+        // re-check here as a second line of defence in case of token reuse or tampering.
+        const knownOrigins = Object.keys(corsOrigins);
+        const verifiedOrigin = (origin && knownOrigins.includes(origin))
+          ? origin
+          : (env.APP_URL || null);
+        if (!verifiedOrigin) {
+          console.warn('[Auth] ❌ Unrecognised redirect origin in JWT payload:', origin);
+          return new Response(errorPage('Invalid sign-in link. Please request a new one.'), {
+            status: 400,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        }
+
         // Redirect back to origin with auth token in hash
-        const redirectBase = (origin || env.APP_URL || 'https://jacobpoddigital.github.io/website-avatar').split('#')[0];
+        const redirectBase = verifiedOrigin.split('#')[0];
         const redirectUrl = `${redirectBase}#wa_auth=${authToken}`;
 
         console.log('[Auth] User authenticated:', email, '| Redirecting to origin');
