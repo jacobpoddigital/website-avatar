@@ -574,17 +574,25 @@ export default {
       if (userId) {
         // Conversation transcript history (D1) — used by session-sync.js loadSessionFromBackend
         // user_id is always set: visitor ID for anonymous, authenticated_users.id after sign-in
-        console.log('[Session] GET request for user:', userId);
+        // client_id filters to the requesting client's conversations only.
+        const clientIdFilter = url.searchParams.get('client_id') || '';
+        console.log('[Session] GET request for user:', userId, '| client:', clientIdFilter || '(none)');
         try {
-          const result = await env.website_avatar_db.prepare(`
-            SELECT conversation_id, transcript, analysis, created_at
-            FROM conversations
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 50
-          `)
-          .bind(userId)
-          .all();
+          const result = clientIdFilter
+            ? await env.website_avatar_db.prepare(`
+                SELECT conversation_id, client_id, transcript, analysis, created_at
+                FROM conversations
+                WHERE user_id = ? AND client_id = ?
+                ORDER BY created_at DESC
+                LIMIT 50
+              `).bind(userId, clientIdFilter).all()
+            : await env.website_avatar_db.prepare(`
+                SELECT conversation_id, client_id, transcript, analysis, created_at
+                FROM conversations
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT 50
+              `).bind(userId).all();
 
           console.log('[Session] Found', result.results?.length || 0, 'sessions');
 

@@ -103,7 +103,11 @@
     if (!userId) return null;
 
     try {
-      const response = await fetch(`${SESSION_URL}?user_id=${userId}`);
+      const clientId = getClientId();
+      const sessionQuery = clientId
+        ? `${SESSION_URL}?user_id=${userId}&client_id=${encodeURIComponent(clientId)}`
+        : `${SESSION_URL}?user_id=${userId}`;
+      const response = await fetch(sessionQuery);
 
       if (!response.ok) return null;
 
