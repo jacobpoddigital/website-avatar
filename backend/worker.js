@@ -371,19 +371,42 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // Get origin from request for CORS
-    const origin = request.headers.get('Origin') || '*';
+    // ── CORS ─────────────────────────────────────────────────────────────────
+    // Allowed origins are stored in KV under 'wa_cors_origins' as a JSON map
+    // of { "https://domain.com": "acct_xxx" }, populated during client onboarding.
+    // If the key doesn't exist yet (fresh deploy), fall back to permissive mode
+    // with a warning so live sites aren't broken during rollout.
+    const requestOrigin = request.headers.get('Origin') || '';
+
+    let allowedOrigin = null;
+    const rawCorsOrigins = await env.CONFIGS.get('wa_cors_origins');
+    if (rawCorsOrigins) {
+      const corsOrigins = JSON.parse(rawCorsOrigins);
+      if (requestOrigin && corsOrigins[requestOrigin]) {
+        allowedOrigin = requestOrigin;
+      }
+    } else {
+      // wa_cors_origins not yet configured — allow all with a warning
+      console.warn('[CORS] ⚠️ wa_cors_origins not set — running in permissive mode');
+      allowedOrigin = requestOrigin || '*';
+    }
 
     const cors = {
-      'Access-Control-Allow-Origin':  origin,
+      'Access-Control-Allow-Origin':  allowedOrigin || 'null',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': allowedOrigin ? 'true' : 'false',
       'Content-Type':                 'application/json'
     };
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: cors });
+      return new Response(null, { status: allowedOrigin ? 204 : 403, headers: cors });
+    }
+
+    // Block credentialed requests from unrecognised origins
+    if (requestOrigin && !allowedOrigin) {
+      console.warn('[CORS] ❌ Blocked request from unrecognised origin:', requestOrigin);
+      return json({ error: 'Origin not allowed' }, 403, cors);
     }
 
     // ── GET /config?id=acct_xxx ─────────────────────────────
@@ -424,6 +447,15 @@ export default {
       const updated = { ...config, ...body };
 
       await env.CONFIGS.put(id, JSON.stringify(updated));
+
+      // Keep the cors origins map in sync whenever allowedOrigin is set
+      if (updated.allowedOrigin) {
+        const rawCors = await env.CONFIGS.get('wa_cors_origins');
+        const corsMap = rawCors ? JSON.parse(rawCors) : {};
+        corsMap[updated.allowedOrigin] = id;
+        await env.CONFIGS.put('wa_cors_origins', JSON.stringify(corsMap));
+        console.log('[Config] ✅ CORS origins updated:', updated.allowedOrigin, '→', id);
+      }
 
       return json(updated, 200, cors);
     }
