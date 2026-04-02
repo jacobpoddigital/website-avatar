@@ -45,7 +45,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
     const base = 'https://backend.jacob-e87.workers.dev';
     try {
-      const resp = await fetch(`${base}/profile?user_id=${encodeURIComponent(user.id)}`, {
+      const clientId = WA.getClientId ? WA.getClientId() : '';
+      const profileUrl = `${base}/profile?user_id=${encodeURIComponent(user.id)}${clientId ? `&client_id=${encodeURIComponent(clientId)}` : ''}`;
+      const resp = await fetch(profileUrl, {
         headers: { 'Authorization': `Bearer ${user.token}` }
       });
       if (!resp.ok) return null;
@@ -70,10 +72,11 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (!user?.isAuthenticated) return;
 
     const base = 'https://backend.jacob-e87.workers.dev';
+    const clientId = WA.getClientId ? WA.getClientId() : '';
     fetch(`${base}/profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
-      body: JSON.stringify({ user_id: user.id, ...fields })
+      body: JSON.stringify({ user_id: user.id, client_id: clientId, ...fields })
     }).catch(err => warn('saveProfileFields error:', err.message));
   }
 

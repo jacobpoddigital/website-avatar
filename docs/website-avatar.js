@@ -150,7 +150,7 @@
             const res = await fetch(CONSENT_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ visitor_id: visitorId, consent_given: true }),
+              body: JSON.stringify({ visitor_id: visitorId, consent_given: true, client_id: accountId }),
             });
             const data = await res.json();
             if (!res.ok || !data.success) {
