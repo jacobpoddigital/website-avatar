@@ -211,11 +211,11 @@ async function appendToSheet(data, env) {
  * Only fills blank/null columns — never overwrites existing data.
  * Returns true if any row was changed.
  */
-async function upsertUserProfile(db, userId, { name, phone, company, job_title } = {}) {
+async function upsertUserProfile(db, userId, clientId = '', { name, phone, company, job_title } = {}) {
   await db.prepare(`
-    INSERT INTO user_profiles (user_id, name, phone, company, job_title, updated_at)
-    VALUES (?, ?, ?, ?, ?, unixepoch())
-    ON CONFLICT(user_id) DO UPDATE SET
+    INSERT INTO user_profiles (user_id, client_id, name, phone, company, job_title, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+    ON CONFLICT(user_id, client_id) DO UPDATE SET
       name      = COALESCE(name,      CASE WHEN excluded.name      != '' THEN excluded.name      ELSE NULL END),
       phone     = COALESCE(phone,     CASE WHEN excluded.phone     != '' THEN excluded.phone     ELSE NULL END),
       company   = COALESCE(company,   CASE WHEN excluded.company   != '' THEN excluded.company   ELSE NULL END),
@@ -223,6 +223,7 @@ async function upsertUserProfile(db, userId, { name, phone, company, job_title }
       updated_at = unixepoch()
   `).bind(
     userId,
+    clientId  || '',
     name      || null,
     phone     || null,
     company   || null,
@@ -265,12 +266,12 @@ const PERSONA_SCHEMA = {
   metadata: { persona_created_at: '', last_updated_at: '' }
 };
 
-async function refreshPersonaSummary(db, userId, env, transcriptSummary = null) {
+async function refreshPersonaSummary(db, userId, env, transcriptSummary = null, clientId = '') {
   if (!env.OPENAI_KEY) return;
 
   const profile = await db.prepare(
-    'SELECT name, company, job_title, persona_summary FROM user_profiles WHERE user_id = ?'
-  ).bind(userId).first();
+    'SELECT name, company, job_title, persona_summary FROM user_profiles WHERE user_id = ? AND client_id = ?'
+  ).bind(userId, clientId || '').first();
 
   if (!profile) return;
 
@@ -358,8 +359,8 @@ ${transcriptSummary ? `New conversation summary: ${transcriptSummary}` : ''}`;
     await db.prepare(`
       UPDATE user_profiles
       SET persona_summary = ?, persona_updated_at = unixepoch(), updated_at = unixepoch()
-      WHERE user_id = ?
-    `).bind(summary, userId).run();
+      WHERE user_id = ? AND client_id = ?
+    `).bind(summary, userId, clientId || '').run();
 
     console.log('[Profile] ✅ Persona', isFirstTime ? 'created' : 'updated', 'for user:', userId);
   } catch (err) {
@@ -686,7 +687,8 @@ export default {
 
     // ── GET /profile?user_id=xxx ──────────────────────────────────────────────
     if (url.pathname === '/profile' && request.method === 'GET') {
-      const userId = url.searchParams.get('user_id');
+      const userId   = url.searchParams.get('user_id');
+      const clientId = url.searchParams.get('client_id') || '';
       if (!userId) return json({ error: 'Missing user_id' }, 400, cors);
 
       // Require a valid auth token — profile contains PII
@@ -700,8 +702,8 @@ export default {
 
       try {
         const profile = await env.website_avatar_db.prepare(
-          'SELECT user_id, name, phone, company, job_title, persona_summary, persona_updated_at, created_at, updated_at FROM user_profiles WHERE user_id = ?'
-        ).bind(userId).first();
+          'SELECT user_id, client_id, name, phone, company, job_title, persona_summary, persona_updated_at, created_at, updated_at FROM user_profiles WHERE user_id = ? AND client_id = ?'
+        ).bind(userId, clientId).first();
 
         return json(profile || {}, 200, cors);
       } catch (err) {
@@ -720,7 +722,7 @@ export default {
         return json({ error: 'Invalid JSON' }, 400, cors);
       }
 
-      const { user_id, name, phone, company, job_title } = body || {};
+      const { user_id, client_id = '', name, phone, company, job_title } = body || {};
       if (!user_id) return json({ error: 'Missing user_id' }, 400, cors);
 
       // Require a valid auth token — only a user can write their own profile
@@ -733,11 +735,11 @@ export default {
       }
 
       try {
-        await upsertUserProfile(env.website_avatar_db, user_id, { name, phone, company, job_title });
-        console.log('[Profile] ✅ Upserted for user:', user_id);
+        await upsertUserProfile(env.website_avatar_db, user_id, client_id, { name, phone, company, job_title });
+        console.log('[Profile] ✅ Upserted for user:', user_id, '| client:', client_id || '(none)');
 
         // Refresh persona summary in the background — doesn't block response
-        ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, user_id, env));
+        ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, user_id, env, null, client_id));
 
         return json({ success: true, user_id }, 200, cors);
       } catch (err) {
@@ -1204,7 +1206,7 @@ export default {
         return json({ error: 'Invalid JSON' }, 400, cors);
       }
 
-      const { visitor_id, consent_given } = body;
+      const { visitor_id, consent_given, client_id: consentClientId = '' } = body;
 
       if (typeof visitor_id !== 'string' || visitor_id.trim() === '') {
         return json({ error: 'Missing or invalid visitor_id' }, 400, cors);
@@ -1215,8 +1217,8 @@ export default {
 
       try {
         const result = await env.website_avatar_db
-          .prepare(`INSERT INTO consent (visitor_id, consent_given) VALUES (?, ?)`)
-          .bind(visitor_id.trim(), consent_given ? 1 : 0)
+          .prepare(`INSERT INTO consent (visitor_id, consent_given, client_id) VALUES (?, ?, ?)`)
+          .bind(visitor_id.trim(), consent_given ? 1 : 0, consentClientId)
           .run();
 
         return json({ success: true, id: result.meta.last_row_id }, 200, cors);
@@ -1322,8 +1324,8 @@ export default {
         //
         // 3. Spoken email from data_collection_results — last resort, fragile
         //    (speech-to-text errors, user may give a different address).
+        const dynVars = callData.data?.conversation_initiation_client_data?.dynamic_variables || {};
         try {
-          const dynVars = callData.data?.conversation_initiation_client_data?.dynamic_variables || {};
 
           // ── DEBUG: log everything we received so we can trace resolution ──
           console.log('[Webhook] 🔍 DEBUG conversation:', convId);
@@ -1373,14 +1375,14 @@ export default {
 
           if (authUserId) {
             // Always upsert any new contact fields collected this call
-            await upsertUserProfile(env.website_avatar_db, authUserId, {
+            await upsertUserProfile(env.website_avatar_db, authUserId, dynVars.client_id || '', {
               name:    name    !== 'Unknown'      ? name    : null,
               phone:   phone   !== 'Not provided' ? phone   : null,
               company: company !== 'Not provided' ? company : null,
             });
-            console.log('[Webhook] ✅ Profile upserted for user:', authUserId);
+            console.log('[Webhook] ✅ Profile upserted for user:', authUserId, '| client:', dynVars.client_id || '(none)');
             // Always refresh persona — we have their data, don't need them to re-speak it
-            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary));
+            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary, dynVars.client_id || ''));
           } else {
             console.log('[Webhook] ℹ️ No authenticated user resolved — guest call, skipping profile update');
           }
