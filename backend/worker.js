@@ -236,52 +236,60 @@ async function upsertUserProfile(db, userId, { name, phone, company, job_title }
  * Saves the result back to user_profiles.persona_summary.
  * Safe to call fire-and-forget via ctx.waitUntil().
  */
-async function refreshPersonaSummary(db, userId, env) {
+/**
+ * Refresh the persona_summary for an authenticated user.
+ *
+ * Uses the ElevenLabs-generated transcript_summary from the webhook as the
+ * new-conversation signal — it's already semantically compressed and far
+ * better input than raw message snippets. The existing persona_summary is
+ * passed back so OpenAI refines/accumulates rather than rewriting from scratch.
+ *
+ * No D1 transcript queries needed — all signal comes from the webhook payload
+ * and the current profile row.
+ *
+ * @param {D1Database} db
+ * @param {string} userId
+ * @param {object} env
+ * @param {string|null} transcriptSummary - analysis.transcript_summary from ElevenLabs webhook
+ */
+async function refreshPersonaSummary(db, userId, env, transcriptSummary = null) {
   if (!env.OPENAI_KEY) return;
 
   const profile = await db.prepare(
-    'SELECT name, phone, company, job_title FROM user_profiles WHERE user_id = ?'
+    'SELECT name, company, job_title, persona_summary FROM user_profiles WHERE user_id = ?'
   ).bind(userId).first();
 
   if (!profile) return;
 
-  const knownFields = [profile.name, profile.company, profile.phone, profile.job_title].filter(Boolean);
+  const knownFields = [profile.name, profile.company, profile.job_title].filter(Boolean);
   if (knownFields.length < 1) return;
 
-  // Pull a sample of recent messages for tone/style context
-  const recentRows = await db.prepare(`
-    SELECT transcript FROM conversations
-    WHERE user_id = ? ORDER BY created_at DESC LIMIT 3
-  `).bind(userId).all();
-
-  const snippets = [];
-  for (const row of (recentRows.results || [])) {
-    try {
-      const msgs = typeof row.transcript === 'string' ? JSON.parse(row.transcript) : row.transcript;
-      if (Array.isArray(msgs)) {
-        snippets.push(...msgs.slice(0, 6).map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
-      }
-    } catch (_) {}
-    if (snippets.length >= 10) break;
-  }
-
   const profileLines = [
-    profile.name      ? `Name: ${profile.name}`           : null,
-    profile.company   ? `Company: ${profile.company}`     : null,
-    profile.phone     ? `Phone provided: yes`             : null,
-    profile.job_title ? `Role: ${profile.job_title}`      : null,
-  ].filter(Boolean).join('\n');
+    profile.name      ? `Name: ${profile.name}`       : null,
+    profile.company   ? `Company: ${profile.company}` : null,
+    profile.job_title ? `Role: ${profile.job_title}`  : null,
+  ].filter(Boolean).join(' | ');
 
-  const prompt = `You are helping an AI voice assistant greet and engage a returning user warmly.
+  const isFirstTime = !profile.persona_summary;
 
-Based on this user's profile and a sample of their past conversation, write 2–3 sentences the AI can use as internal context. Cover: how to address them, their professional background, and any signals about communication style or interests. Be concise and factual — no fluff.
+  const prompt = isFirstTime
+    ? `Write a 2–3 sentence persona for an AI assistant to use when greeting this user.
+Cover: how to address them, their professional context, and any communication style signals.
+Be factual and concise — no fluff.
 
-Profile:
-${profileLines}
+Profile: ${profileLines}
+${transcriptSummary ? `\nConversation summary: ${transcriptSummary}` : ''}
 
-${snippets.length ? `Recent conversation sample:\n${snippets.join('\n')}` : ''}
+Output the persona only.`
 
-Write only the persona description. No preamble or labels.`;
+    : `Update this user persona for an AI assistant based on new information.
+Keep what's still accurate. Incorporate any new signals. Stay at 2–3 sentences.
+
+Current persona: ${profile.persona_summary}
+Profile: ${profileLines}
+${transcriptSummary ? `\nNew conversation summary: ${transcriptSummary}` : ''}
+
+Output the updated persona only.`;
 
   try {
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -289,8 +297,8 @@ Write only the persona description. No preamble or labels.`;
       headers: { 'Authorization': `Bearer ${env.OPENAI_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        max_tokens: 150,
-        temperature: 0.4,
+        max_tokens: 120,
+        temperature: 0.3,
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -306,7 +314,7 @@ Write only the persona description. No preamble or labels.`;
       WHERE user_id = ?
     `).bind(summary, userId).run();
 
-    console.log('[Profile] ✅ Persona refreshed for user:', userId);
+    console.log('[Profile] ✅ Persona', isFirstTime ? 'created' : 'updated', 'for user:', userId);
   } catch (err) {
     console.error('[Profile] ❌ Persona generation error:', err.message);
   }
@@ -1122,6 +1130,7 @@ export default {
         const email = collectedData['Email Address']?.value || 'Not provided';
         const company = collectedData['Company Name']?.value || 'Not provided';
         const callSummary = analysis.call_summary_title || 'No summary';
+        const transcriptSummary = analysis.transcript_summary || null;
         const callDuration = metadata?.call_duration_secs
           ? `${Math.floor(metadata.call_duration_secs / 60)}m ${metadata.call_duration_secs % 60}s`
           : 'Unknown';
@@ -1189,26 +1198,78 @@ Summary: ${callSummary}`;
         }
 
         // ── Persist profile & refresh persona ──────────────────────────────
-        // Look up the authenticated user by email and upsert their profile.
-        // persona_summary is regenerated in the background via OpenAI.
+        // Resolve the authenticated user via three paths (in priority order):
+        //
+        // 1. authenticated_user_id dynamic variable — set explicitly by the
+        //    client at session start (null for guests, UUID for signed-in users).
+        //    Most reliable: works even if the user never speaks their email.
+        //
+        // 2. user_id dynamic variable — legacy/fallback, may be a wc_visitor ID
+        //    or an authenticated UUID depending on auth state at connect time.
+        //    UUID format check distinguishes them.
+        //
+        // 3. Spoken email from data_collection_results — last resort, fragile
+        //    (speech-to-text errors, user may give a different address).
         try {
-          const authUser = await env.website_avatar_db
-            .prepare('SELECT id FROM authenticated_users WHERE email = ?')
-            .bind(email)
-            .first();
+          const dynVars = callData.data?.conversation_initiation_client_data?.dynamic_variables || {};
+          const convId  = callData.data?.conversation_id || 'unknown';
 
-          if (authUser) {
-            await upsertUserProfile(env.website_avatar_db, authUser.id, {
+          // ── DEBUG: log everything we received so we can trace resolution ──
+          console.log('[Webhook] 🔍 DEBUG conversation:', convId);
+          console.log('[Webhook] 🔍 authenticated_user_id (dynVar):', dynVars.authenticated_user_id ?? '(missing)');
+          console.log('[Webhook] 🔍 user_id (dynVar):', dynVars.user_id ?? '(missing)');
+          console.log('[Webhook] 🔍 spoken email:', email);
+          console.log('[Webhook] 🔍 spoken name:', name);
+          console.log('[Webhook] 🔍 transcript_summary:', transcriptSummary ? transcriptSummary.slice(0, 100) + '…' : '(none)');
+
+          let authUserId = null;
+          let resolvedVia = null;
+
+          // Path 1: dedicated authenticated_user_id variable (explicit, preferred)
+          const explicitId = dynVars.authenticated_user_id;
+          if (explicitId && typeof explicitId === 'string' && explicitId !== 'null') {
+            const row = await env.website_avatar_db
+              .prepare('SELECT id FROM authenticated_users WHERE id = ?')
+              .bind(explicitId)
+              .first();
+            if (row) { authUserId = row.id; resolvedVia = 'authenticated_user_id dynVar'; }
+          }
+
+          // Path 2: user_id variable — only if it looks like a UUID (not wc_visitor)
+          if (!authUserId) {
+            const sessionUserId = dynVars.user_id;
+            const isUuid = typeof sessionUserId === 'string' &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionUserId);
+            if (isUuid) {
+              const row = await env.website_avatar_db
+                .prepare('SELECT id FROM authenticated_users WHERE id = ?')
+                .bind(sessionUserId)
+                .first();
+              if (row) { authUserId = row.id; resolvedVia = 'user_id dynVar (UUID match)'; }
+            }
+          }
+
+          // Path 3: spoken email from data_collection_results
+          if (!authUserId && email !== 'Not provided' && email.includes('@')) {
+            const row = await env.website_avatar_db
+              .prepare('SELECT id FROM authenticated_users WHERE email = ?')
+              .bind(email)
+              .first();
+            if (row) { authUserId = row.id; resolvedVia = 'spoken email match'; }
+          }
+
+          console.log('[Webhook] 🔍 Resolved user:', authUserId ?? 'NONE', '| via:', resolvedVia ?? 'no path matched');
+
+          if (authUserId) {
+            await upsertUserProfile(env.website_avatar_db, authUserId, {
               name:    name    !== 'Unknown'      ? name    : null,
               phone:   phone   !== 'Not provided' ? phone   : null,
               company: company !== 'Not provided' ? company : null,
             });
-            console.log('[Webhook] ✅ Profile upserted for user:', authUser.id);
-
-            // Refresh persona summary without blocking the response
-            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUser.id, env));
+            console.log('[Webhook] ✅ Profile upserted for user:', authUserId);
+            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary));
           } else {
-            console.log('[Webhook] No authenticated user found for email:', email);
+            console.log('[Webhook] ℹ️ No authenticated user resolved — guest call, skipping profile update');
           }
         } catch (profileErr) {
           console.error('[Webhook] ❌ Profile upsert error:', profileErr.message);

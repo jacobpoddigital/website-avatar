@@ -387,9 +387,17 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         // ✅ PASS USER_ID AND CONTEXT VIA DYNAMIC VARIABLES (more reliable)
-        // Uses resolvedUserId — fresh read of wc_visitor — to avoid 'anonymous' fallback
+        // user_id       — visitor or authenticated UUID (used by ElevenLabs analytics)
+        // authenticated_user_id — explicitly the authenticated UUID, or null for guests.
+        //   This is what the webhook uses to link the call back to authenticated_users.
+        //   Keeping it separate avoids any ambiguity with wc_visitor IDs.
         dynamicVariables: {
           user_id: resolvedUserId,
+          authenticated_user_id: (() => {
+            if (!WA.auth) return null;
+            const u = WA.auth.getCurrentUser();
+            return u?.isAuthenticated ? u.id : null;
+          })(),
           context: contextToSend || ''
         },
 
