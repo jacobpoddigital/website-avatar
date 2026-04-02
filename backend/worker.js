@@ -1157,8 +1157,60 @@ export default {
 
     // ── POST /webhook/call-complete ─────────────────────────────
     if (url.pathname === '/webhook/call-complete' && request.method === 'POST') {
+      // Read raw body first — signature verification must happen before JSON parsing
+      // as request.json() consumes the stream.
+      let rawBody;
+      try { rawBody = await request.text(); } catch (e) {
+        return json({ error: 'Failed to read request body' }, 400, cors);
+      }
+
+      // ── ElevenLabs signature verification ──────────────────────────────────
+      // Header format: ElevenLabs-Signature: t=<unix_ts>,v0=<hmac_sha256_hex>
+      // Signed string: "<timestamp>.<raw_body>"
+      // Skipped only when secret is not configured (local dev / testing).
+      if (env.ELEVENLABS_WEBHOOK_SECRET) {
+        const sigHeader = request.headers.get('ElevenLabs-Signature') || '';
+        const parts = Object.fromEntries(sigHeader.split(',').map(p => p.split('=')));
+        const timestamp = parts['t'];
+        const signature = parts['v0'];
+
+        if (!timestamp || !signature) {
+          console.warn('[Webhook] ❌ Missing or malformed signature header');
+          return json({ error: 'Missing signature' }, 401, cors);
+        }
+
+        // Reject requests older than 5 minutes to block replay attacks
+        const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
+        if (age > 300) {
+          console.warn('[Webhook] ❌ Signature too old:', Math.round(age), 'seconds');
+          return json({ error: 'Request too old' }, 401, cors);
+        }
+
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode(env.ELEVENLABS_WEBHOOK_SECRET),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`${timestamp}.${rawBody}`));
+        const expected = Array.from(new Uint8Array(mac))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        if (expected !== signature) {
+          console.warn('[Webhook] ❌ Signature mismatch');
+          return json({ error: 'Invalid signature' }, 401, cors);
+        }
+
+        console.log('[Webhook] ✅ Signature verified');
+      } else {
+        console.warn('[Webhook] ⚠️ ELEVENLABS_WEBHOOK_SECRET not set — skipping signature check');
+      }
+
       try {
-        const callData = await request.json();
+        const callData = JSON.parse(rawBody);
         const convId = callData.data?.conversation_id || 'unknown';
         console.log('[Webhook] Received call data | conv:', convId);
 
