@@ -399,6 +399,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
 
     if (typeof WA.onBridgeConnecting === 'function') WA.onBridgeConnecting();
+    setConnectUI('connecting');
 
     // ✅ LOAD USER PROFILE (authenticated users only — no-op for anonymous)
     await loadUserProfile();
@@ -452,7 +453,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
         onConnect: async function() {
           log('onConnect fired');
-          setConnectUI(true);
+          setConnectUI('connected');
 
           // ✅ CAPTURE ELEVENLABS CONVERSATION_ID (with polling)
           // Wait a tick for outer 'session' variable to be assigned
@@ -538,7 +539,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           
           // Now clear session and update UI
           session = null;
-          setConnectUI(false);
+          setConnectUI('offline');
           if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
         },
 
@@ -625,7 +626,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           if (typeof WA.agentSay === 'function') {
             WA.agentSay('Something went wrong. Please try reconnecting.');
           }
-          setConnectUI(false);
+          setConnectUI('offline');
           if (typeof WA.onBridgeDisconnected === 'function') WA.onBridgeDisconnected();
         },
 
@@ -649,7 +650,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (!session) return;
     try { await session.endSession(); } catch(e) {}
     session = null;
-    setConnectUI(false);
+    setConnectUI('offline');
   }
 
   function sendText(text) {
@@ -682,9 +683,17 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   // ─── UI ───────────────────────────────────────────────────────────────────
 
-  function setConnectUI(connected) {
+  function setConnectUI(status) {
     const label = document.getElementById('wa-status-label');
-    if (label) label.textContent = connected ? 'Connected' : 'Offline';
+    if (!label) return;
+    const states = {
+      connected:  { text: 'Connected',   status: 'connected'  },
+      connecting: { text: 'Connecting…', status: 'connecting' },
+      offline:    { text: 'Offline',      status: 'offline'    }
+    };
+    const s = states[status] || states.offline;
+    label.textContent    = s.text;
+    label.dataset.status = s.status;
   }
 
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
