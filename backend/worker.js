@@ -1135,69 +1135,10 @@ export default {
           ? `${Math.floor(metadata.call_duration_secs / 60)}m ${metadata.call_duration_secs % 60}s`
           : 'Unknown';
 
-        // Validation: require name AND valid email
-        const hasValidData = (name !== 'Unknown') && (email !== 'Not provided' && email.includes('@'));
-        
-        if (!hasValidData) {
-          console.log('[Webhook] Skipping - missing required contact information (name or email)');
-          return json({ message: 'Required contact information missing, skipping notifications' }, 200, cors);
-        }
-
-        console.log('[Webhook] Processing call from:', name);
-
-        // Write to Google Sheet
-        try {
-          await appendToSheet({ name, phone, email, company, callSummary, callDuration }, env);
-          console.log('[Webhook] ✅ Lead written to Google Sheet');
-        } catch (sheetErr) {
-          console.error('[Webhook] ❌ Sheet error:', sheetErr.message);
-          // Continue with other notifications even if sheet fails
-        }
-
-        // Send admin email
-        try {
-          const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
-          await sendEmail({
-            from: 'mail@websiteavatar.co.uk',
-            to: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
-            subject: `New Website Avatar Lead: ${name}`,
-            html: adminEmailHtml
-          }, env);
-          console.log('[Webhook] ✅ Admin email sent');
-        } catch (emailErr) {
-          console.error('[Webhook] ❌ Admin email error:', emailErr.message);
-        }
-
-        // Send admin SMS
-        try {
-          const smsBody = `New Website Avatar Lead!
-Name: ${name}
-Company: ${company}
-Phone: ${phone}
-Email: ${email}
-Summary: ${callSummary}`;
-          await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
-          await sendSMS({ to: '+447468621246', body: smsBody }, env);
-          console.log('[Webhook] ✅ Admin SMS sent');
-        } catch (smsErr) {
-          console.error('[Webhook] ❌ Admin SMS error:', smsErr.message);
-        }
-
-        // Send thank you email to user
-        try {
-          const thankYouHtml = generateThankYouEmail({ name });
-          await sendEmail({
-            from: 'mail@websiteavatar.co.uk',
-            to: email,
-            subject: 'Thank you for contacting Pod Digital',
-            html: thankYouHtml
-          }, env);
-          console.log('[Webhook] ✅ Thank you email sent to:', email);
-        } catch (thankYouErr) {
-          console.error('[Webhook] ❌ Thank you email error:', thankYouErr.message);
-        }
-
-        // ── Persist profile & refresh persona ──────────────────────────────
+        // ── Resolve authenticated user ──────────────────────────────────────
+        // Done first — before any hasValidData gate — so that persona refresh
+        // runs for every successful call from a signed-in user, regardless of
+        // whether contact details were spoken. We already have their data.
         // Resolve the authenticated user via three paths (in priority order):
         //
         // 1. authenticated_user_id dynamic variable — set explicitly by the
@@ -1261,18 +1202,75 @@ Summary: ${callSummary}`;
           console.log('[Webhook] 🔍 Resolved user:', authUserId ?? 'NONE', '| via:', resolvedVia ?? 'no path matched');
 
           if (authUserId) {
+            // Always upsert any new contact fields collected this call
             await upsertUserProfile(env.website_avatar_db, authUserId, {
               name:    name    !== 'Unknown'      ? name    : null,
               phone:   phone   !== 'Not provided' ? phone   : null,
               company: company !== 'Not provided' ? company : null,
             });
             console.log('[Webhook] ✅ Profile upserted for user:', authUserId);
+            // Always refresh persona — we have their data, don't need them to re-speak it
             ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary));
           } else {
             console.log('[Webhook] ℹ️ No authenticated user resolved — guest call, skipping profile update');
           }
         } catch (profileErr) {
           console.error('[Webhook] ❌ Profile upsert error:', profileErr.message);
+        }
+
+        // ── Lead notifications ─────────────────────────────────────────────
+        // Only fire when the user spoke their name and email — these go to
+        // Google Sheet, admin email/SMS, and a thank-you to the user.
+        // Persona refresh above is intentionally separate and always runs.
+        const hasValidData = (name !== 'Unknown') && (email !== 'Not provided' && email.includes('@'));
+
+        if (!hasValidData) {
+          console.log('[Webhook] ℹ️ No contact data spoken — skipping lead notifications');
+          return json({ message: 'Webhook processed — persona updated, no lead notifications' }, 200, cors);
+        }
+
+        console.log('[Webhook] Processing lead notifications for:', name);
+
+        try {
+          await appendToSheet({ name, phone, email, company, callSummary, callDuration }, env);
+          console.log('[Webhook] ✅ Lead written to Google Sheet');
+        } catch (sheetErr) {
+          console.error('[Webhook] ❌ Sheet error:', sheetErr.message);
+        }
+
+        try {
+          const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
+          await sendEmail({
+            from: 'mail@websiteavatar.co.uk',
+            to: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
+            subject: `New Website Avatar Lead: ${name}`,
+            html: adminEmailHtml
+          }, env);
+          console.log('[Webhook] ✅ Admin email sent');
+        } catch (emailErr) {
+          console.error('[Webhook] ❌ Admin email error:', emailErr.message);
+        }
+
+        try {
+          const smsBody = `New Website Avatar Lead!\nName: ${name}\nCompany: ${company}\nPhone: ${phone}\nEmail: ${email}\nSummary: ${callSummary}`;
+          await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
+          await sendSMS({ to: '+447468621246', body: smsBody }, env);
+          console.log('[Webhook] ✅ Admin SMS sent');
+        } catch (smsErr) {
+          console.error('[Webhook] ❌ Admin SMS error:', smsErr.message);
+        }
+
+        try {
+          const thankYouHtml = generateThankYouEmail({ name });
+          await sendEmail({
+            from: 'mail@websiteavatar.co.uk',
+            to: email,
+            subject: 'Thank you for contacting Pod Digital',
+            html: thankYouHtml
+          }, env);
+          console.log('[Webhook] ✅ Thank you email sent to:', email);
+        } catch (thankYouErr) {
+          console.error('[Webhook] ❌ Thank you email error:', thankYouErr.message);
         }
 
         return json({
