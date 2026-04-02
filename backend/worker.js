@@ -379,9 +379,10 @@ export default {
     const requestOrigin = request.headers.get('Origin') || '';
 
     let allowedOrigin = null;
+    let corsOrigins = {}; // hoisted — reused by auth routes to validate redirect origins
     const rawCorsOrigins = await env.CONFIGS.get('wa_cors_origins');
     if (rawCorsOrigins) {
-      const corsOrigins = JSON.parse(rawCorsOrigins);
+      corsOrigins = JSON.parse(rawCorsOrigins);
       if (requestOrigin && corsOrigins[requestOrigin]) {
         allowedOrigin = requestOrigin;
       }
@@ -1486,11 +1487,20 @@ export default {
       if (!visitor_id) return json({ error: 'Missing visitor_id' }, 400, cors);
       if (!env.JWT_SECRET) return json({ error: 'Server misconfigured' }, 500, cors);
 
-      const appUrl = env.APP_URL || origin || 'https://jacobpoddigital.github.io/website-avatar';
+      // Validate origin against known client domains before embedding in JWT.
+      // Prevents an attacker crafting a magic link request with a malicious redirect URL.
+      const knownOrigins = Object.keys(corsOrigins);
+      const safeOrigin = (origin && knownOrigins.includes(origin)) ? origin : (env.APP_URL || null);
+      if (!safeOrigin) {
+        console.warn('[Auth] ❌ Magic link request with unrecognised origin:', origin);
+        return json({ error: 'Unrecognised origin' }, 400, cors);
+      }
+
+      const appUrl = env.APP_URL || safeOrigin;
       const fromEmail = env.FROM_EMAIL || 'mail@websiteavatar.co.uk';
 
       try {
-        const token = await generateMagicToken(email, conversation_id || '', visitor_id, origin || appUrl, env.JWT_SECRET);
+        const token = await generateMagicToken(email, conversation_id || '', visitor_id, safeOrigin, env.JWT_SECRET);
         const magicUrl = `${new URL('/auth/verify', request.url).href}?token=${token}`;
 
         const html = `
@@ -1587,8 +1597,23 @@ export default {
         // Generate 30-day auth token
         const authToken = await generateAuthToken(authUserId, email, env.JWT_SECRET);
 
+        // Validate the redirect origin from the JWT payload against known client domains.
+        // The origin was already validated when the magic link was issued, but we
+        // re-check here as a second line of defence in case of token reuse or tampering.
+        const knownOrigins = Object.keys(corsOrigins);
+        const verifiedOrigin = (origin && knownOrigins.includes(origin))
+          ? origin
+          : (env.APP_URL || null);
+        if (!verifiedOrigin) {
+          console.warn('[Auth] ❌ Unrecognised redirect origin in JWT payload:', origin);
+          return new Response(errorPage('Invalid sign-in link. Please request a new one.'), {
+            status: 400,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        }
+
         // Redirect back to origin with auth token in hash
-        const redirectBase = (origin || env.APP_URL || 'https://jacobpoddigital.github.io/website-avatar').split('#')[0];
+        const redirectBase = verifiedOrigin.split('#')[0];
         const redirectUrl = `${redirectBase}#wa_auth=${authToken}`;
 
         console.log('[Auth] User authenticated:', email, '| Redirecting to origin');
