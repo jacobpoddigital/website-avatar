@@ -84,22 +84,60 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     if (!p) return null;
 
     const lines = ['USER PROFILE:'];
+
+    // Base fields from the profile row
     if (p.name)      lines.push(`  Name: ${p.name}`);
     if (p.company)   lines.push(`  Company: ${p.company}`);
     if (p.job_title) lines.push(`  Role: ${p.job_title}`);
     if (p.phone)     lines.push(`  Phone: ${p.phone}`);
 
-    // Email lives in the auth token, not the profile row
     const authEmail = WA.auth?.getCurrentUser?.()?.email;
     if (authEmail)   lines.push(`  Email: ${authEmail}`);
 
     if (p.persona_summary) {
-      lines.push('');
-      lines.push('PERSONA NOTES (use to guide tone and rapport):');
-      lines.push(`  ${p.persona_summary}`);
+      try {
+        // Structured JSON persona — render key fields concisely
+        const persona = JSON.parse(p.persona_summary);
+
+        const industryParts = [
+          persona.business?.industry,
+          persona.business?.type,
+          persona.business?.size?.locations ? `${persona.business.size.locations} locations` : null
+        ].filter(Boolean);
+        if (industryParts.length) lines.push(`  Industry: ${industryParts.join(', ')}`);
+
+        if (persona.business?.products_services?.length) {
+          lines.push(`  Products/Services: ${persona.business.products_services.join(', ')}`);
+        }
+
+        lines.push('');
+
+        if (persona.interests?.length) {
+          lines.push(`INTERESTS: ${persona.interests.join(', ')}`);
+        }
+        if (persona.context?.current_projects?.length) {
+          lines.push(`CURRENT PROJECTS: ${persona.context.current_projects.join('; ')}`);
+        }
+        if (persona.context?.goals?.length) {
+          lines.push(`GOALS: ${persona.context.goals.join('; ')}`);
+        }
+        if (persona.context?.pain_points?.length) {
+          lines.push(`PAIN POINTS: ${persona.context.pain_points.join('; ')}`);
+        }
+        if (persona.engagement_notes?.length) {
+          lines.push(`ENGAGEMENT: ${persona.engagement_notes.join('. ')}`);
+        }
+        if (persona.communication?.style) {
+          lines.push(`COMMUNICATION STYLE: ${persona.communication.style}`);
+        }
+      } catch {
+        // Legacy paragraph — render as-is until next webhook call converts it
+        lines.push('');
+        lines.push('PERSONA NOTES (use to guide tone and rapport):');
+        lines.push(`  ${p.persona_summary}`);
+      }
     }
 
-    // Only emit the block if we have at least one real field
     return lines.length > 1 ? lines.join('\n') : null;
   }
 

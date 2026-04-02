@@ -252,6 +252,19 @@ async function upsertUserProfile(db, userId, { name, phone, company, job_title }
  * @param {object} env
  * @param {string|null} transcriptSummary - analysis.transcript_summary from ElevenLabs webhook
  */
+// JSON schema passed to OpenAI on first persona creation.
+// Kept minimal so the model doesn't hallucinate unknown fields.
+const PERSONA_SCHEMA = {
+  user: { name: '', role: '', age_range: '', location: '' },
+  business: { name: '', industry: '', type: '', size: { employees: null, locations: null }, products_services: [] },
+  communication: { style: '', preferences: [] },
+  interests: [],
+  context: { current_projects: [], goals: [], pain_points: [], past_interactions: [] },
+  engagement_notes: [],
+  contact: { email: '', phone: '', preferred_method: '' },
+  metadata: { persona_created_at: '', last_updated_at: '' }
+};
+
 async function refreshPersonaSummary(db, userId, env, transcriptSummary = null) {
   if (!env.OPENAI_KEY) return;
 
@@ -264,32 +277,49 @@ async function refreshPersonaSummary(db, userId, env, transcriptSummary = null) 
   const knownFields = [profile.name, profile.company, profile.job_title].filter(Boolean);
   if (knownFields.length < 1) return;
 
-  const profileLines = [
+  // Detect whether existing persona is JSON or a legacy paragraph string.
+  // Legacy paragraphs are treated as first-time so they convert cleanly to JSON.
+  let existingPersona = null;
+  let isFirstTime = false;
+
+  if (profile.persona_summary) {
+    try {
+      existingPersona = JSON.parse(profile.persona_summary);
+    } catch {
+      isFirstTime = true;
+      console.log('[Profile] 🔍 Legacy paragraph detected — converting to JSON');
+    }
+  } else {
+    isFirstTime = true;
+  }
+
+  const now = new Date().toISOString();
+  const knownData = [
     profile.name      ? `Name: ${profile.name}`       : null,
     profile.company   ? `Company: ${profile.company}` : null,
     profile.job_title ? `Role: ${profile.job_title}`  : null,
   ].filter(Boolean).join(' | ');
 
-  const isFirstTime = !profile.persona_summary;
+  const schema = { ...PERSONA_SCHEMA, metadata: { persona_created_at: now, last_updated_at: now } };
 
   const prompt = isFirstTime
-    ? `Write a 2–3 sentence persona for an AI assistant to use when greeting this user.
-Cover: how to address them, their professional context, and any communication style signals.
-Be factual and concise — no fluff.
+    ? `Generate a user persona JSON for an AI assistant. Only populate fields you can confidently infer from the data. Use null or empty arrays for unknown fields. Output valid JSON only — no markdown, no explanation.
 
-Profile: ${profileLines}
-${transcriptSummary ? `\nConversation summary: ${transcriptSummary}` : ''}
+Schema: ${JSON.stringify(schema)}
 
-Output the persona only.`
+Known data: ${knownData}
+${transcriptSummary ? `Conversation summary: ${transcriptSummary}` : ''}`
 
-    : `Update this user persona for an AI assistant based on new information.
-Keep what's still accurate. Incorporate any new signals. Stay at 2–3 sentences.
+    : `Update this user persona JSON for an AI assistant. Merge new information from the conversation summary into the existing persona. Keep all existing data unless directly contradicted. Do not remove fields. Update last_updated_at to "${now}". Output the complete updated JSON only — no markdown, no explanation.
 
-Current persona: ${profile.persona_summary}
-Profile: ${profileLines}
-${transcriptSummary ? `\nNew conversation summary: ${transcriptSummary}` : ''}
+Existing persona: ${JSON.stringify(existingPersona)}
 
-Output the updated persona only.`;
+Known data: ${knownData}
+${transcriptSummary ? `New conversation summary: ${transcriptSummary}` : ''}`;
+
+  console.log('[Profile] 🔍 Persona refresh triggered | isFirstTime:', isFirstTime);
+  console.log('[Profile] 🔍 transcriptSummary:', transcriptSummary || '(none)');
+  console.log('[Profile] 🔍 existing persona:', existingPersona ? JSON.stringify(existingPersona).slice(0, 150) + '…' : '(none)');
 
   try {
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -297,16 +327,33 @@ Output the updated persona only.`;
       headers: { 'Authorization': `Bearer ${env.OPENAI_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        max_tokens: 120,
-        temperature: 0.3,
+        max_tokens: 600,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }]
       })
     });
 
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      console.error('[Profile] ❌ OpenAI error:', resp.status, await resp.text());
+      return;
+    }
+
     const data = await resp.json();
-    const summary = data.choices?.[0]?.message?.content?.trim();
-    if (!summary) return;
+    const raw = data.choices?.[0]?.message?.content?.trim();
+    if (!raw) return;
+
+    // Validate before saving — don't persist malformed JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.error('[Profile] ❌ OpenAI returned invalid JSON:', raw.slice(0, 200));
+      return;
+    }
+
+    const summary = JSON.stringify(parsed);
+    console.log('[Profile] 🔍 new persona:', summary.slice(0, 300) + (summary.length > 300 ? '…' : ''));
 
     await db.prepare(`
       UPDATE user_profiles
@@ -1161,7 +1208,7 @@ export default {
           console.log('[Webhook] 🔍 user_id (dynVar):', dynVars.user_id ?? '(missing)');
           console.log('[Webhook] 🔍 spoken email:', email);
           console.log('[Webhook] 🔍 spoken name:', name);
-          console.log('[Webhook] 🔍 transcript_summary:', transcriptSummary ? transcriptSummary.slice(0, 100) + '…' : '(none)');
+          console.log('[Webhook] 🔍 transcript_summary:', transcriptSummary || '(none)');
 
           let authUserId = null;
           let resolvedVia = null;
