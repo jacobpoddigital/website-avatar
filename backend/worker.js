@@ -42,7 +42,7 @@ function generateAdminEmail({ name, phone, email, company, callSummary, callDura
 </html>`;
 }
 
-function generateThankYouEmail({ name }) {
+function generateThankYouEmail({ name, brandName = 'our team' }) {
   const firstName = name.split(' ')[0];
   return `
 <!DOCTYPE html>
@@ -67,7 +67,7 @@ function generateThankYouEmail({ name }) {
       <p class="message">Hi ${firstName},</p>
       <p class="message">Thank you for getting in touch with us through our Website Avatar. We've received your information and one of our team members will be in contact with you shortly.</p>
       <p class="message">If you have any urgent questions in the meantime, please don't hesitate to reach out to us directly.</p>
-      <p class="message">Best regards,<br><strong>The Pod Digital Team</strong></p>
+      <p class="message">Best regards,<br><strong>The ${brandName} Team</strong></p>
     </div>
   </div>
 </body>
@@ -1379,6 +1379,23 @@ export default {
           console.error('[Webhook] ❌ Profile upsert error:', profileErr.message);
         }
 
+        // ── Resolve client config for per-client notification routing ──────────
+        const clientId = dynVars.client_id || '';
+        let clientConfig = {};
+        if (clientId) {
+          try {
+            const raw = await env.CONFIGS.get(clientId);
+            if (raw) clientConfig = JSON.parse(raw);
+          } catch (e) {
+            console.warn('[Webhook] ⚠️ Could not load client config for:', clientId);
+          }
+        }
+        // Notification values — per-client config with Pod Digital as fallback
+        const notifyEmails  = clientConfig.notifyEmails  || ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'];
+        const notifyPhone   = clientConfig.notifyPhone   || '+447468621246';
+        const brandName     = clientConfig.brandName     || 'Pod Digital';
+        console.log('[Webhook] 📋 Routing notifications | client:', clientId || '(none)', '| brand:', brandName);
+
         // ── Lead notifications ─────────────────────────────────────────────
         // Only fire when the user spoke their name and email — these go to
         // Google Sheet, admin email/SMS, and a thank-you to the user.
@@ -1403,30 +1420,30 @@ export default {
           const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
           await sendEmail({
             from: 'mail@websiteavatar.co.uk',
-            to: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
+            to: notifyEmails,
             subject: `New Website Avatar Lead: ${name}`,
             html: adminEmailHtml
           }, env);
-          console.log('[Webhook] ✅ Admin email sent');
+          console.log('[Webhook] ✅ Admin email sent to:', notifyEmails);
         } catch (emailErr) {
           console.error('[Webhook] ❌ Admin email error:', emailErr.message);
         }
 
         try {
           const smsBody = `New Website Avatar Lead!\nName: ${name}\nCompany: ${company}\nPhone: ${phone}\nEmail: ${email}\nSummary: ${callSummary}`;
-          await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
-          await sendSMS({ to: '+447468621246', body: smsBody }, env);
+          if (env.ADMIN_PHONE_NUMBER) await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
+          await sendSMS({ to: notifyPhone, body: smsBody }, env);
           console.log('[Webhook] ✅ Admin SMS sent');
         } catch (smsErr) {
           console.error('[Webhook] ❌ Admin SMS error:', smsErr.message);
         }
 
         try {
-          const thankYouHtml = generateThankYouEmail({ name });
+          const thankYouHtml = generateThankYouEmail({ name, brandName });
           await sendEmail({
             from: 'mail@websiteavatar.co.uk',
             to: email,
-            subject: 'Thank you for contacting Pod Digital',
+            subject: `Thank you for contacting ${brandName}`,
             html: thankYouHtml
           }, env);
           console.log('[Webhook] ✅ Thank you email sent to:', email);
@@ -1436,8 +1453,9 @@ export default {
 
         return json({
           message: 'Webhook processed successfully',
-          adminEmail: ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'],
-          adminSMS: [env.ADMIN_PHONE_NUMBER, '+447468621246'],
+          client: clientId,
+          adminEmails: notifyEmails,
+          adminSMS: notifyPhone,
           userEmail: email
         }, 200, cors);
 

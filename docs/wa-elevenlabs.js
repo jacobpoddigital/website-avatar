@@ -450,6 +450,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             const u = WA.auth.getCurrentUser();
             return u?.isAuthenticated ? u.id : null;
           })(),
+          client_id: WA.getClientId ? WA.getClientId() : '',
           context: contextToSend || ''
         },
 
