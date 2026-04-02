@@ -1419,7 +1419,7 @@ export default {
         try {
           const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
           await sendEmail({
-            from: 'mail@websiteavatar.co.uk',
+            from: env.FROM_EMAIL || 'mail@websiteavatar.co.uk',
             to: notifyEmails,
             subject: `New Website Avatar Lead: ${name}`,
             html: adminEmailHtml
@@ -1441,7 +1441,7 @@ export default {
         try {
           const thankYouHtml = generateThankYouEmail({ name, brandName });
           await sendEmail({
-            from: 'mail@websiteavatar.co.uk',
+            from: env.FROM_EMAIL || 'mail@websiteavatar.co.uk',
             to: email,
             subject: `Thank you for contacting ${brandName}`,
             html: thankYouHtml
