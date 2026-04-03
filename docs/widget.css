@@ -764,7 +764,7 @@ span.wa-msg-text {
   display: flex; flex-direction: column; gap: 2px;
 }
 #wa-panel .wa-history-auth-label {
-  font-size: 10px; color: #fff); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10px; color: #fff; text-transform: uppercase; letter-spacing: 0.05em;
 }
 #wa-panel .wa-history-auth-email {
   font-size: 12px; font-weight: 500; color: #fff;
