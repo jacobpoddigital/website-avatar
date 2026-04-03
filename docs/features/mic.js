@@ -16,13 +16,27 @@
 
   // ── State ────────────────────────────────────────────────────────────────────
   // 'idle' | 'recording' | 'transcribing'
-  let micState       = 'idle';
-  let recognition    = null;
-  let audioCtx       = null;
-  let analyser       = null;
-  let mediaStream    = null;
-  let rafId          = null;
+  let micState        = 'idle';
+  let recognition     = null;
+  let audioCtx        = null;
+  let analyser        = null;
+  let mediaStream     = null;
+  let rafId           = null;
+  let sampleInterval  = null;
   let finalTranscript = '';
+  let onEndResolve    = null;   // resolves when recognition.onend fires
+
+  // ── Scrolling waveform history ────────────────────────────────────────────────
+  // Each entry is a normalised amplitude [0..1]. New values push in from the right;
+  // old values shift off the left, creating a left-scrolling audio timeline.
+  const BAR_W      = 2;    // px — bar width
+  const BAR_GAP    = 1;    // px — gap between bars
+  const BAR_SLOT   = BAR_W + BAR_GAP;
+  const SAMPLE_MS  = 50;   // ms between amplitude samples (20 fps of history)
+  const INIT_AMP   = 0.04; // height of "silent" bars before any speech
+
+  let history = [];
+  let maxBars = 0;
 
   // ── DOM helpers ──────────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
@@ -46,9 +60,9 @@
   }
 
   function onMicClick() {
-    if (micState === 'idle')      startRecording();
+    if (micState === 'idle')           startRecording();
     else if (micState === 'recording') stopRecording();
-    // 'transcribing' — ignore clicks until done
+    // 'transcribing' — button is disabled, clicks ignored
   }
 
   // ── Recording ────────────────────────────────────────────────────────────────
@@ -60,6 +74,7 @@
 
     micState        = 'recording';
     finalTranscript = '';
+    onEndResolve    = null;
 
     // Save and lock send button
     if (sendBtn) {
@@ -67,7 +82,7 @@
       sendBtn.disabled = true;
     }
 
-    // Swap icon to stop square and mark as recording
+    // Swap icon to stop square
     if (btn) {
       btn.innerHTML = STOP_SVG;
       btn.classList.add('wa-mic-recording');
@@ -75,11 +90,13 @@
       btn.title = 'Finish — tap to send';
     }
 
-    // Capture input dimensions before hiding it
+    // Capture input dimensions before hiding it, then swap to canvas
     const inputW = input ? input.offsetWidth  : 220;
     const inputH = input ? input.offsetHeight : 38;
 
-    // Swap: hide text input, show waveform canvas
+    maxBars = Math.floor(inputW / BAR_SLOT);
+    history = new Array(maxBars).fill(INIT_AMP);
+
     if (input)  input.style.display = 'none';
     if (canvas) {
       canvas.style.display = 'block';
@@ -87,76 +104,95 @@
       canvas.height = inputH;
     }
 
-    // Start speech recognition
+    // Configure speech recognition — continuous so only user stop ends it
     recognition = new SR();
-    recognition.continuous      = true;   // only stops when user clicks stop
-    recognition.interimResults  = true;
-    recognition.lang            = navigator.language || 'en-US';
+    recognition.continuous     = true;
+    recognition.interimResults = true;
+    recognition.lang           = navigator.language || 'en-US';
 
     recognition.onresult = e => {
       finalTranscript = '';
       for (let i = 0; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript;
-        }
+        if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript;
       }
     };
 
-    recognition.onend   = finishRecording;
+    // Both onend and onerror resolve the same promise so stopRecording never hangs
+    const resolveEnd = () => { if (onEndResolve) { onEndResolve(); onEndResolve = null; } };
+    recognition.onend   = resolveEnd;
     recognition.onerror = e => {
       if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        console.warn('[WA Mic] Speech recognition error:', e.error);
+        console.warn('[WA Mic] Speech error:', e.error);
       }
-      finishRecording();
+      resolveEnd();
     };
 
     recognition.start();
 
-    // Start Web Audio waveform (non-blocking — graceful fallback if denied)
+    // Start Web Audio pipeline (non-blocking — graceful fallback if denied)
     if (hasAudio && canvas) {
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        audioCtx  = new AC();
-        analyser  = audioCtx.createAnalyser();
+        audioCtx    = new AC();
+        analyser    = audioCtx.createAnalyser();
         analyser.fftSize = 64;
         audioCtx.createMediaStreamSource(mediaStream).connect(analyser);
-        drawWaveform(canvas);
+        startSampling();
       } catch (err) {
-        // Mic permission denied or unavailable — speech recognition continues
         console.warn('[WA Mic] Audio API unavailable:', err.message);
+        // history stays flat — canvas will show the idle baseline
       }
     }
+
+    // rAF draw loop (runs even without audio — shows the flat baseline)
+    if (canvas) drawWaveform(canvas);
   }
 
-  function stopRecording() {
+  async function stopRecording() {
     if (micState !== 'recording' || !recognition) return;
     micState = 'transcribing';
 
+    // Freeze the waveform and tear down audio immediately
+    stopSampling();
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    stopAudioPipeline();
+
+    // Swap canvas → transcribing UI
+    const canvas = $('wa-mic-wave');
+    if (canvas) canvas.style.display = 'none';
+    showTranscribingUI();
+
+    // Lock mic button during transcribing
     const btn = $('wa-mic');
     if (btn) {
-      btn.innerHTML = STOP_SVG;
       btn.classList.remove('wa-mic-recording');
       btn.classList.add('wa-mic-transcribing');
       btn.setAttribute('aria-label', 'Transcribing…');
-      btn.title = 'Transcribing…';
+      btn.title    = 'Transcribing…';
       btn.disabled = true;
     }
 
-    recognition.stop(); // triggers onend → finishRecording
+    // Wait for recognition to finish AND a minimum 1.5s display window
+    const onEndPromise = new Promise(resolve => { onEndResolve = resolve; });
+    const delayPromise = new Promise(resolve => setTimeout(resolve, 1500));
+
+    recognition.stop(); // triggers onend → resolves onEndPromise
+
+    await Promise.all([onEndPromise, delayPromise]);
+
+    finishRecording();
   }
 
   function finishRecording() {
     micState = 'idle';
-    stopAudioPipeline();
 
     const input   = $('wa-input');
-    const canvas  = $('wa-mic-wave');
     const btn     = $('wa-mic');
     const sendBtn = $('wa-send');
 
-    // Restore layout
-    if (canvas) canvas.style.display = 'none';
-    if (input)  input.style.display  = '';
+    // Hide transcribing UI, restore text input
+    hideTranscribingUI();
+    if (input) input.style.display = '';
 
     // Drop transcript into input field
     if (finalTranscript && input) {
@@ -182,53 +218,75 @@
     recognition = null;
   }
 
+  // ── Transcribing UI ───────────────────────────────────────────────────────────
+  function showTranscribingUI() {
+    let el = $('wa-mic-transcribing-ui');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'wa-mic-transcribing-ui';
+      el.innerHTML = `<span class="wa-mic-spinner" aria-hidden="true"></span><span>Transcribing…</span>`;
+      // Insert in the same flex slot as the canvas
+      const canvas = $('wa-mic-wave');
+      if (canvas && canvas.parentNode) canvas.parentNode.insertBefore(el, canvas);
+    }
+    el.style.display = 'flex';
+  }
+
+  function hideTranscribingUI() {
+    const el = $('wa-mic-transcribing-ui');
+    if (el) el.style.display = 'none';
+  }
+
+  // ── Audio sampling ────────────────────────────────────────────────────────────
+  // On each tick, push the current average amplitude into the history ring.
+  // history.shift() drops the oldest bar off the left — everything scrolls left.
+  function startSampling() {
+    sampleInterval = setInterval(() => {
+      if (!analyser) return;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((s, v) => s + v, 0) / (data.length * 255);
+      history.push(avg);
+      if (history.length > maxBars) history.shift();
+    }, SAMPLE_MS);
+  }
+
+  function stopSampling() {
+    if (sampleInterval) { clearInterval(sampleInterval); sampleInterval = null; }
+  }
+
   // ── Audio cleanup ─────────────────────────────────────────────────────────────
   function stopAudioPipeline() {
-    if (rafId)       { cancelAnimationFrame(rafId); rafId = null; }
     if (analyser)    { try { analyser.disconnect(); } catch (_) {} analyser = null; }
     if (audioCtx)    { audioCtx.close().catch(() => {}); audioCtx = null; }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
   }
 
   // ── Waveform renderer ─────────────────────────────────────────────────────────
+  // Draws the current history array as thin vertical bars, left-to-right.
+  // Because startSampling() pushes new bars onto the right and shifts old ones
+  // off the left, the result is a scrolling audio timeline.
   function drawWaveform(canvas) {
-    const ctx         = canvas.getContext('2d');
-    const binCount    = analyser.frequencyBinCount; // fftSize / 2 = 32
-    const data        = new Uint8Array(binCount);
-    const barCount    = Math.min(binCount, 20);
+    const ctx  = canvas.getContext('2d');
 
     function frame() {
       rafId = requestAnimationFrame(frame);
-      if (!analyser) return;
 
-      analyser.getByteFrequencyData(data);
-
-      const w      = canvas.width;
-      const h      = canvas.height;
-      const slot   = w / barCount;
-      const barW   = slot * 0.55;
-      const gap    = slot * 0.45;
-      const maxH   = h * 0.80;
-      const minH   = 3;
-      const radius = barW / 2;
+      const w    = canvas.width;
+      const h    = canvas.height;
+      const maxH = h * 0.82;
+      const minH = 2;
 
       ctx.clearRect(0, 0, w, h);
 
-      for (let i = 0; i < barCount; i++) {
-        const val  = data[i] / 255;
+      for (let i = 0; i < history.length; i++) {
+        const val  = history[i];
         const barH = Math.max(minH, val * maxH);
-        const x    = i * slot + gap / 2;
+        const x    = i * BAR_SLOT;
         const y    = (h - barH) / 2;
-
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(x, y, barW, barH, radius);
-        } else {
-          // Fallback for older browsers
-          ctx.rect(x, y, barW, barH);
-        }
-        ctx.fillStyle = `rgba(60,130,246,${0.35 + val * 0.65})`;
-        ctx.fill();
+        // Dimmer for quiet, brighter for loud — white on dark glass
+        ctx.fillStyle = `rgba(255,255,255,${0.18 + val * 0.82})`;
+        ctx.fillRect(x, y, BAR_W, barH);
       }
     }
 
@@ -236,8 +294,6 @@
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────────
-  // Runs after DOM is ready; the elements already exist because website-avatar.js
-  // calls injectHTML before loading this script.
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
