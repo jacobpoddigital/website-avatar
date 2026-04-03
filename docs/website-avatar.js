@@ -138,42 +138,36 @@
           </div>
           <div class="wa-advice-body">
             <div class="wa-advice-section">
-              <div class="wa-advice-icon">💬</div>
               <div>
                 <div class="wa-advice-label">Ask Anything</div>
                 <p class="wa-advice-text">Type a question or ask me to highlight a specific section of this page. I'll point you to exactly what you need.</p>
               </div>
             </div>
             <div class="wa-advice-section">
-              <div class="wa-advice-icon">🧭</div>
               <div>
                 <div class="wa-advice-label">Guided Navigation</div>
                 <p class="wa-advice-text">I can take you to the right page or scroll to the relevant section automatically — no searching required.</p>
               </div>
             </div>
             <div class="wa-advice-section">
-              <div class="wa-advice-icon">🎯</div>
               <div>
                 <div class="wa-advice-label">Product Guidance</div>
                 <p class="wa-advice-text">Tell me what you're looking for and I'll help you find the right product or option, even if you're not sure where to start.</p>
               </div>
             </div>
             <div class="wa-advice-section">
-              <div class="wa-advice-icon">✅</div>
               <div>
                 <div class="wa-advice-label">Forms &amp; Checkout</div>
                 <p class="wa-advice-text">I can walk you through forms, answer questions at checkout, and help you complete your purchase without friction.</p>
               </div>
             </div>
             <div class="wa-advice-section">
-              <div class="wa-advice-icon">🔄</div>
               <div>
                 <div class="wa-advice-label">Session Memory</div>
                 <p class="wa-advice-text">Your conversation is remembered across visits. Pick up where you left off without repeating yourself.</p>
               </div>
             </div>
             <div class="wa-advice-section">
-              <div class="wa-advice-icon">👤</div>
               <div>
                 <div class="wa-advice-label">Sign In for Personalised Help</div>
                 <p class="wa-advice-text">Enter your email to be remembered. You'll get personalised advice, your full conversation history, and smarter guidance tailored to your intent.</p>
