@@ -114,6 +114,15 @@
         </div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" disabled />
+          <canvas id="wa-mic-wave" aria-hidden="true"></canvas>
+          <button id="wa-mic" disabled aria-label="Voice input" title="Voice input">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </button>
           <button id="wa-send" disabled>Send</button>
         </div>
         <div class="wa-history-panel" id="wa-history-panel" aria-hidden="true">
@@ -224,9 +233,11 @@
         const banner = panel.querySelector('#wa-consent-banner');
         const input  = panel.querySelector('#wa-input');
         const send   = panel.querySelector('#wa-send');
+        const mic    = panel.querySelector('#wa-mic');
         if (banner) banner.style.display = 'none';
         if (input)  input.disabled = false;
         if (send)   send.disabled  = false;
+        if (mic)    mic.disabled   = false;
         if (input)  input.focus();
       }
     }
@@ -323,7 +334,8 @@
           loadScript(BASE_URL + '/features/actions.js'),
           loadScript(BASE_URL + '/features/bridge.js'),
           loadScript(BASE_URL + '/features/ui.js'),
-          loadScript(BASE_URL + '/features/greeting.js')
+          loadScript(BASE_URL + '/features/greeting.js'),
+          loadScript(BASE_URL + '/features/mic.js')
         ]);
 
         // ── Discover + agent scripts ──
