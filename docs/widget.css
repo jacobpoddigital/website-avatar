@@ -677,19 +677,22 @@ span.wa-msg-text {
 #wa-panel .wa-history-close:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
 
 #wa-panel .wa-history-list {
-  flex: 1; overflow-y: auto; padding: 8px;
+  flex: 1; overflow-y: auto; padding: 8px 12px;
 }
 #wa-panel .wa-history-list::-webkit-scrollbar { width: 4px; }
 #wa-panel .wa-history-list::-webkit-scrollbar-thumb { background: var(--wa-glass-border); border-radius: 2px; }
 
 #wa-panel .wa-history-item {
   display: block; width: 100%; text-align: left;
-  background: var(--wa-glass-subtle); border: 1px solid var(--wa-glass-border-dim);
-  border-radius: 10px; padding: 10px 12px; margin-bottom: 6px;
+  border-radius: 10px;
   cursor: pointer; font-family: inherit;
-  transition: background .15s, border-color .15s;
+  transition: background .15s, border-color .15s; 
+  padding: 8px 0;
+  border-top: 1px solid #e6e6e6;
 }
-#wa-panel .wa-history-item:hover { background: var(--wa-glass-strong); border-color: var(--wa-glass-border); }
+#wa-panel .wa-history-item:nth-child(1) {
+  border-top: none;
+}
 
 #wa-panel .wa-history-item-meta {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
@@ -761,10 +764,10 @@ span.wa-msg-text {
   display: flex; flex-direction: column; gap: 2px;
 }
 #wa-panel .wa-history-auth-label {
-  font-size: 10px; color: var(--wa-text-light); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10px; color: #fff; text-transform: uppercase; letter-spacing: 0.05em;
 }
 #wa-panel .wa-history-auth-email {
-  font-size: 12px; font-weight: 500; color: var(--wa-text);
+  font-size: 12px; font-weight: 500; color: #fff;
 }
 
 /* ── HEADER ACTIONS (advice + history buttons) ───────────────────────────────── */
@@ -805,11 +808,11 @@ span.wa-msg-text {
   background: #e6e6e6; flex-shrink: 0;
   border-radius: 20px 20px 0 0;
 }
-#wa-panel .wa-advice-title { font-size: 13px; font-weight: 600; color: #fff; }
+#wa-panel .wa-advice-title { font-size: 13px; font-weight: 600; color: var(--wa-text); }
 
 #wa-panel .wa-advice-close {
   background: none; border: none; cursor: pointer;
-  font-size: 14px; color: #fff; padding: 4px 6px;
+  font-size: 14px; color: var(--wa-text-mid); padding: 4px 6px;
   border-radius: 6px; transition: color .15s, background .15s;
 }
 #wa-panel .wa-advice-close:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
