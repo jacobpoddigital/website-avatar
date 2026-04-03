@@ -718,17 +718,17 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     style.textContent = `
       #wa-preview-bubble {
         position: fixed;
-        bottom: 90px;
-        right: 20px;
+        bottom: 80px;
+        left: 80px;
         background: #fff;
         color: #1f2937;
         font-size: 13px;
         line-height: 1.45;
         max-width: 220px;
         padding: 10px 13px;
-        border-radius: 14px 14px 2px 14px;
+        border-radius: 14px 14px 14px 2px;
         box-shadow: 0 3px 14px rgba(0,0,0,0.14);
-        z-index: 9997;
+        z-index: 999999999999;
         opacity: 0;
         transform: translateY(6px);
         transition: opacity 0.3s ease, transform 0.3s ease;
