@@ -294,18 +294,18 @@
 #wa-mic:disabled    { opacity: .35; cursor: not-allowed; pointer-events: none; }
 
 .wa-input-row {
-  display: flex; align-items: center; gap: 6px; padding: 10px 12px;
+  display: flex; align-items: center; padding: 10px 12px;
   border-top: 1px solid var(--wa-glass-border-dim); background: var(--wa-glass-subtle);
 }
 #wa-input {
   flex: 1; background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
-  border: 1px solid var(--wa-glass-border); border-radius: 10px;
+  border: 1px solid var(--wa-glass-border); border-radius: 10px 0 0 10px; border-right: 0;
   padding: 8px 13px; font-size: 13px; 
   color: var(--wa-text); outline: none; transition: border-color .2s, box-shadow .2s;
 }
 #wa-input::placeholder { color: var(--wa-text); }
-#wa-input:focus { border-color: #008ee866; box-shadow: 0 0 0 3px rgba(200,75,47,.08); transform: initial; }
+#wa-input:focus { border-color: var(--wa-glass-border); box-shadow: initial; transform: initial; }
 #wa-send {
   background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
@@ -313,6 +313,7 @@
    cursor: pointer;
   transition: opacity .2s, transform .15s; white-space: nowrap;
   height: 37.5px;
+  margin-left: 6px;
 }
 #wa-send:hover    { opacity: .85; }
 #wa-send:active   { transform: scale(.96); }
@@ -321,7 +322,8 @@
 /* ── MIC BUTTON ──────────────────────────────────────────────────────────────── */
 #wa-mic {
   background: var(--wa-glass-strong);
-  border: 1px solid var(--wa-glass-border); border-radius: 10px;
+  backdrop-filter: var(--wa-blur-light);
+  border: 1px solid var(--wa-glass-border); border-radius: 0 10px 10px 0; border-left: 0;
   width: 37.5px; height: 37.5px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   padding: 0; cursor: pointer;
@@ -330,12 +332,6 @@
 }
 #wa-mic:hover  { opacity: .85; }
 #wa-mic:active { transform: scale(.96); }
-
-#wa-mic.wa-mic-recording {
-  background: rgba(60,130,246,.10);
-  border-color: rgba(60,130,246,.40);
-}
-#wa-mic.wa-mic-recording svg { stroke: var(--wa-accent); }
 
 #wa-mic.wa-mic-transcribing {
   opacity: .45; cursor: not-allowed;
@@ -347,7 +343,7 @@
   height: 37.5px;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
-  border: 1px solid rgba(60,130,246,.25); border-radius: 10px;
+  border: 1px solid rgba(60,130,246,.25); border-radius: 10px 0 0 10px; border-right: 0;
 }
 
 /* ── MIC TRANSCRIBING UI ─────────────────────────────────────────────────────── */
