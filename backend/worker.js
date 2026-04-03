@@ -1491,8 +1491,11 @@ export default {
 
       // Validate origin against known client domains before embedding in JWT.
       // Prevents an attacker crafting a magic link request with a malicious redirect URL.
+      // The frontend sends window.location.href (full URL) so we extract its origin for
+      // comparison, but embed the full URL so the user lands back on the exact page.
       const knownOrigins = Object.keys(corsOrigins);
-      const safeOrigin = (origin && knownOrigins.includes(origin)) ? origin : (env.APP_URL || null);
+      const originHost = (() => { try { return new URL(origin).origin; } catch { return null; } })();
+      const safeOrigin = (originHost && knownOrigins.includes(originHost)) ? origin : (env.APP_URL || null);
       if (!safeOrigin) {
         console.warn('[Auth] ❌ Magic link request with unrecognised origin:', origin);
         return json({ error: 'Unrecognised origin' }, 400, cors);
@@ -1602,8 +1605,10 @@ export default {
         // Validate the redirect origin from the JWT payload against known client domains.
         // The origin was already validated when the magic link was issued, but we
         // re-check here as a second line of defence in case of token reuse or tampering.
+        // Extract the host from the full URL for comparison, but redirect to the full URL.
         const knownOrigins = Object.keys(corsOrigins);
-        const verifiedOrigin = (origin && knownOrigins.includes(origin))
+        const originHost = (() => { try { return new URL(origin).origin; } catch { return null; } })();
+        const verifiedOrigin = (originHost && knownOrigins.includes(originHost))
           ? origin
           : (env.APP_URL || null);
         if (!verifiedOrigin) {
