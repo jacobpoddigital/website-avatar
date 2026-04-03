@@ -460,7 +460,11 @@
   function closeHistoryPanel() {
     const panel = document.getElementById('wa-history-panel');
     const view  = document.getElementById('wa-history-view');
-    if (panel) { panel.classList.remove('wa-history-visible'); panel.setAttribute('aria-hidden', 'true'); }
+    if (panel) {
+      if (panel.contains(document.activeElement)) document.activeElement.blur();
+      panel.classList.remove('wa-history-visible');
+      panel.setAttribute('aria-hidden', 'true');
+    }
     if (view)  { view.classList.remove('wa-history-visible');  view.setAttribute('aria-hidden', 'true'); }
   }
 
@@ -478,7 +482,11 @@
 
   function closeAdvicePanel() {
     const panel = document.getElementById('wa-advice-panel');
-    if (panel) { panel.classList.remove('wa-advice-visible'); panel.setAttribute('aria-hidden', 'true'); }
+    if (panel) {
+      if (panel.contains(document.activeElement)) document.activeElement.blur();
+      panel.classList.remove('wa-advice-visible');
+      panel.setAttribute('aria-hidden', 'true');
+    }
   }
 
   // Groups sessions into conversations using actual message timestamps.
