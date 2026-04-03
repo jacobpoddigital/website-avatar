@@ -240,7 +240,7 @@ async function upsertUserProfile(db, userId, clientId = '', { name, phone, compa
 /**
  * Refresh the persona_summary for an authenticated user.
  *
- * Uses the ElevenLabs-generated transcript_summary from the webhook as the
+ * Uses the transcript_summary from the webhook as the
  * new-conversation signal — it's already semantically compressed and far
  * better input than raw message snippets. The existing persona_summary is
  * passed back so OpenAI refines/accumulates rather than rewriting from scratch.
@@ -251,7 +251,7 @@ async function upsertUserProfile(db, userId, clientId = '', { name, phone, compa
  * @param {D1Database} db
  * @param {string} userId
  * @param {object} env
- * @param {string|null} transcriptSummary - analysis.transcript_summary from ElevenLabs webhook
+ * @param {string|null} transcriptSummary - analysis.transcript_summary from the Dialogue webhook
  */
 // JSON schema passed to OpenAI on first persona creation.
 // Kept minimal so the model doesn't hallucinate unknown fields.
@@ -1237,7 +1237,7 @@ export default {
         return json({ error: 'Failed to read request body' }, 400, cors);
       }
 
-      // ── ElevenLabs signature verification ──────────────────────────────────
+      // ── Webhook signature verification ─────────────────────────────────────
       // Header format: ElevenLabs-Signature: t=<unix_ts>,v0=<hmac_sha256_hex>
       // Signed string: "<timestamp>.<raw_body>"
       // Skipped only when secret is not configured (local dev / testing).
