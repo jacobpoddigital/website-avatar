@@ -280,12 +280,15 @@
       ctx.clearRect(0, 0, w, h);
 
       for (let i = 0; i < history.length; i++) {
-        const val  = history[i];
-        const barH = Math.max(minH, val * maxH);
-        const x    = i * BAR_SLOT;
-        const y    = (h - barH) / 2;
-        // Dimmer for quiet, brighter for loud — white on dark glass
-        ctx.fillStyle = `rgba(255,255,255,${0.18 + val * 0.82})`;
+        const val = history[i];
+        // Boost and square the amplitude so quiet barely shows and loud speech
+        // towers — creates the dramatic height contrast the eye expects.
+        const shaped = Math.pow(Math.min(1, val * 2.8), 2);
+        const barH   = Math.max(minH, shaped * maxH);
+        const x      = i * BAR_SLOT;
+        const y      = (h - barH) / 2;
+        // --wa-text is rgba(20,20,18,0.92) — use its RGB, vary alpha with amplitude
+        ctx.fillStyle = `rgba(20,20,18,${0.12 + shaped * 0.80})`;
         ctx.fillRect(x, y, BAR_W, barH);
       }
     }
