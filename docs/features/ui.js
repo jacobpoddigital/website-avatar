@@ -469,6 +469,18 @@
     if (view) { view.classList.remove('wa-history-visible'); view.setAttribute('aria-hidden', 'true'); }
   }
 
+  function openAdvicePanel() {
+    const panel = document.getElementById('wa-advice-panel');
+    if (!panel) return;
+    panel.classList.add('wa-advice-visible');
+    panel.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeAdvicePanel() {
+    const panel = document.getElementById('wa-advice-panel');
+    if (panel) { panel.classList.remove('wa-advice-visible'); panel.setAttribute('aria-hidden', 'true'); }
+  }
+
   // Groups sessions into conversations using actual message timestamps.
   // The gap is measured between the last message of one session and the first
   // message of the next — if under 20 mins they belong to the same conversation.
@@ -729,6 +741,8 @@
   WA.openHistoryPanel       = openHistoryPanel;
   WA.closeHistoryPanel      = closeHistoryPanel;
   WA.closeHistorySession    = closeHistorySession;
+  WA.openAdvicePanel        = openAdvicePanel;
+  WA.closeAdvicePanel       = closeAdvicePanel;
   WA.renderHistorySession   = renderHistorySession;
   WA.renderDebug            = renderDebug;
   WA.showMagicLinkPrompt    = showMagicLinkPrompt;

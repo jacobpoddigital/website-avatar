@@ -39,6 +39,7 @@
 
     const greeting = document.createElement('div');
     greeting.id = 'wa-greeting';
+    greeting.style.visibility = 'hidden';
     greeting.innerHTML = `
       <div class="wa-greeting-overlay"></div>
       <div class="wa-greeting-container">
@@ -67,6 +68,7 @@
     if (!document.getElementById('wa-transition')) {
       const overlay = document.createElement('div');
       overlay.id = 'wa-transition';
+      overlay.style.visibility = 'hidden';
       overlay.innerHTML = '<div class="wa-nav-label"></div>';
       document.body.appendChild(overlay);
     }
@@ -74,6 +76,7 @@
     if (!document.getElementById('wa-bubble')) {
       const bubble = document.createElement('button');
       bubble.id = 'wa-bubble';
+      bubble.style.visibility = 'hidden';
       bubble.innerHTML = avatarUrl
         ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`
         : '💬<div class="wa-badge" id="wa-badge"></div>';
@@ -84,6 +87,7 @@
     if (!document.getElementById('wa-panel')) {
       const panel = document.createElement('div');
       panel.id = 'wa-panel';
+      panel.style.visibility = 'hidden';
       const avatarHtml = avatarUrl ? `<img src="${avatarUrl}" alt="${name}" class="wa-header-avatar" />` : '';
       panel.innerHTML = `
         <div class="wa-header">
@@ -94,7 +98,10 @@
               <span id="wa-status-label">Offline</span>
             </div>
           </div>
-          <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">•••</button>
+          <div class="wa-header-actions">
+            <button class="wa-advice-btn" id="wa-advice-btn" aria-label="How I can help" title="How I can help">?</button>
+            <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">•••</button>
+          </div>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
         <div class="wa-consent-banner" id="wa-consent-banner">
@@ -124,6 +131,56 @@
           </div>
           <div class="wa-history-view-msgs" id="wa-history-view-msgs"></div>
         </div>
+        <div class="wa-advice-panel" id="wa-advice-panel" aria-hidden="true">
+          <div class="wa-advice-header">
+            <span class="wa-advice-title">How I Can Help</span>
+            <button class="wa-advice-close" id="wa-advice-close" aria-label="Close">✕</button>
+          </div>
+          <div class="wa-advice-body">
+            <div class="wa-advice-section">
+              <div class="wa-advice-icon">💬</div>
+              <div>
+                <div class="wa-advice-label">Ask Anything</div>
+                <p class="wa-advice-text">Type a question or ask me to highlight a specific section of this page. I'll point you to exactly what you need.</p>
+              </div>
+            </div>
+            <div class="wa-advice-section">
+              <div class="wa-advice-icon">🧭</div>
+              <div>
+                <div class="wa-advice-label">Guided Navigation</div>
+                <p class="wa-advice-text">I can take you to the right page or scroll to the relevant section automatically — no searching required.</p>
+              </div>
+            </div>
+            <div class="wa-advice-section">
+              <div class="wa-advice-icon">🎯</div>
+              <div>
+                <div class="wa-advice-label">Product Guidance</div>
+                <p class="wa-advice-text">Tell me what you're looking for and I'll help you find the right product or option, even if you're not sure where to start.</p>
+              </div>
+            </div>
+            <div class="wa-advice-section">
+              <div class="wa-advice-icon">✅</div>
+              <div>
+                <div class="wa-advice-label">Forms &amp; Checkout</div>
+                <p class="wa-advice-text">I can walk you through forms, answer questions at checkout, and help you complete your purchase without friction.</p>
+              </div>
+            </div>
+            <div class="wa-advice-section">
+              <div class="wa-advice-icon">🔄</div>
+              <div>
+                <div class="wa-advice-label">Session Memory</div>
+                <p class="wa-advice-text">Your conversation is remembered across visits. Pick up where you left off without repeating yourself.</p>
+              </div>
+            </div>
+            <div class="wa-advice-section">
+              <div class="wa-advice-icon">👤</div>
+              <div>
+                <div class="wa-advice-label">Sign In for Personalised Help</div>
+                <p class="wa-advice-text">Enter your email to be remembered. You'll get personalised advice, your full conversation history, and smarter guidance tailored to your intent.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       `;
       document.body.appendChild(panel);
 
@@ -132,6 +189,8 @@
       panel.querySelector('#wa-history-btn').onclick   = () => WebsiteAvatar.openHistoryPanel?.();
       panel.querySelector('#wa-history-close').onclick = () => WebsiteAvatar.closeHistoryPanel?.();
       panel.querySelector('#wa-history-back').onclick  = () => WebsiteAvatar.closeHistorySession?.();
+      panel.querySelector('#wa-advice-btn').onclick    = () => WebsiteAvatar.openAdvicePanel?.();
+      panel.querySelector('#wa-advice-close').onclick  = () => WebsiteAvatar.closeAdvicePanel?.();
 
       // ── GDPR CONSENT ──────────────────────────────────────────────────────
       // Check if the user has already consented in a previous session.
@@ -247,6 +306,12 @@
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = BASE_URL + '/widget.css';
+        link.addEventListener('load', () => {
+          ['wa-bubble', 'wa-panel', 'wa-transition', 'wa-greeting'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.visibility = '';
+          });
+        });
         document.head.appendChild(link);
 
         injectHTML(window.WA_CONFIG.agentName, config);
