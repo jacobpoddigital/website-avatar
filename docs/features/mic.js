@@ -29,8 +29,8 @@
   // ── Scrolling waveform history ────────────────────────────────────────────────
   // Each entry is a normalised amplitude [0..1]. New values push in from the right;
   // old values shift off the left, creating a left-scrolling audio timeline.
-  const BAR_W      = 2;    // px — bar width
-  const BAR_GAP    = 1;    // px — gap between bars
+  const BAR_W      = 4;    // px — bar width
+  const BAR_GAP    = 3;    // px — gap between bars
   const BAR_SLOT   = BAR_W + BAR_GAP;
   const SAMPLE_MS  = 50;   // ms between amplitude samples (20 fps of history)
   const INIT_AMP   = 0.04; // height of "silent" bars before any speech
@@ -275,7 +275,7 @@
       const w    = canvas.width;
       const h    = canvas.height;
       const maxH = h * 0.82;
-      const minH = 2;
+      const minH = BAR_W; // square dot at silence
 
       ctx.clearRect(0, 0, w, h);
 
