@@ -343,7 +343,7 @@
   height: 37.5px;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
-  border: 1px solid rgba(60,130,246,.25); border-radius: 10px 0 0 10px; border-right: 0;
+  border: 1px solid var(--wa-glass-border); border-radius: 10px 0 0 10px; border-right: 0;
 }
 
 /* ── MIC TRANSCRIBING UI ─────────────────────────────────────────────────────── */
@@ -353,7 +353,7 @@
   padding: 0 13px; height: 37.5px;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
-  border: 1px solid var(--wa-glass-border); border-radius: 10px;
+  border: 1px solid var(--wa-glass-border); border-radius: 10px 0 0 10px; border-right: 0;
   font-size: 13px; color: var(--wa-text-mid);
 }
 
