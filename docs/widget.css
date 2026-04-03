@@ -356,6 +356,29 @@
   border: 1px solid rgba(200,75,47,.35); border-radius: 10px;
 }
 
+/* ── MIC TRANSCRIBING UI ─────────────────────────────────────────────────────── */
+#wa-mic-transcribing-ui {
+  flex: 1; display: none;
+  align-items: center; gap: 9px;
+  padding: 0 13px; height: 37.5px;
+  background: var(--wa-glass-strong);
+  backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
+  border: 1px solid var(--wa-glass-border); border-radius: 10px;
+  font-size: 13px; color: var(--wa-text-mid);
+}
+
+.wa-mic-spinner {
+  width: 13px; height: 13px; flex-shrink: 0;
+  border: 1.5px solid rgba(60,130,246,0.22);
+  border-top-color: var(--wa-accent);
+  border-radius: 50%;
+  animation: wa-mic-spin 0.7s linear infinite;
+}
+
+@keyframes wa-mic-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ── END SESSION & ABORT ─────────────────────────────────────────────────────── */
 .wa-btn-end-session {
   display: block; width: calc(100% - 32px); margin: 0 16px 6px;
