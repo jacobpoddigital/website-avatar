@@ -173,7 +173,7 @@
     try {
       const existing = JSON.parse(localStorage.getItem('wa_past_sessions') || '[]');
       existing.unshift({
-        id:           s.elevenlabsConversationId || ('sess_' + Date.now()),
+        id:           s.dialogueConversationId || ('sess_' + Date.now()),
         startedAt:    s.messages[0]?.ts || Date.now(),
         endedAt:      Date.now(),
         messages:     s.messages,
@@ -194,7 +194,7 @@
 
     // SAVE SESSION BEFORE DISCONNECTING
     const userId = WA.getUserId ? WA.getUserId() : null;
-    if (userId && session.elevenlabsConversationId && session.messages?.length) {
+    if (userId && session.dialogueConversationId && session.messages?.length) {
       if (WA.DEBUG) console.log('[WA] 💾 Saving session before end...');
       
       try {
@@ -203,7 +203,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId,
-            conversation_id: session.elevenlabsConversationId,
+            conversation_id: session.dialogueConversationId,
             client_id: WA.getClientId ? WA.getClientId() : '', // account that owns this conversation
             transcript: session.messages,
             analysis: {

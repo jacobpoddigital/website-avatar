@@ -1,7 +1,7 @@
 /**
  * features/bridge.js — Bridge Interface
  * Connection management, reconnect logic, inactivity tracking
- * Interfaces with wa-elevenlabs.js bridge
+ * Interfaces with wa-dialogue.js bridge
  */
 
 (function () {

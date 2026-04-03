@@ -66,7 +66,7 @@
     const payload = {
       email,
       visitor_id:      user.isAuthenticated ? null : user.id,
-      conversation_id: session.elevenlabsConversationId || null,
+      conversation_id: session.dialogueConversationId || null,
       origin:          window.location.href
     };
 

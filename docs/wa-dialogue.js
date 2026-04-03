@@ -1,10 +1,10 @@
 /**
- * wa-elevenlabs.js — ElevenLabs bridge (text-only / chat mode)
- * Uses @elevenlabs/client SDK via esm.sh CDN
- * Connects to ElevenLabs conversational agent in text-only mode.
+ * wa-dialogue.js — Dialogue bridge (text-only / chat mode)
+ * Uses the Dialogue client SDK via esm.sh CDN
+ * Connects to the Dialogue conversational agent in text-only mode.
  * No audio, no microphone.
  *
- * IMPORTANT: In ElevenLabs dashboard → agent Security tab,
+ * IMPORTANT: In the Dialogue agent dashboard → agent Security tab,
  * ensure "Allow conversation config overrides" is enabled.
  */
 
@@ -19,12 +19,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   function warn (...a) {           console.warn('[WA:Bridge]', ...a); }
 
   if (!Conversation) {
-    warn('Failed to import Conversation from @elevenlabs/client');
+    warn('Failed to import Conversation from Dialogue client SDK');
     return;
   }
 
   const CONFIG   = window.WA_CONFIG || {};
-  const AGENT_ID = CONFIG.elevenlabsAgentId || '';
+  const AGENT_ID = CONFIG.dialogueAgentId || '';
 
   log('Module ready | agentId:', AGENT_ID || '(MISSING)');
 
@@ -36,7 +36,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   /**
    * Fetch the authenticated user's profile from the backend.
-   * Result is cached in _userProfile and used when building ElevenLabs context.
+   * Result is cached in _userProfile and used when building Dialogue context.
    */
   async function loadUserProfile() {
     if (!WA.auth) return null;
@@ -81,7 +81,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   }
 
   /**
-   * Format the loaded profile into a context block for ElevenLabs.
+   * Format the loaded profile into a context block for Dialogue.
    * Returns null if no meaningful data is available.
    */
   function buildProfileContext() {
@@ -428,21 +428,21 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
 
     log('Starting session | context:', contextToSend?.length || 0, 'chars');
-    console.log('[WA:Bridge] 📋 CONTEXT SENT TO ELEVENLABS:\n', contextToSend);
+    console.log('[WA:Bridge] 📋 CONTEXT SENT TO DIALOGUE:\n', contextToSend);
 
     try {
       session = await Conversation.startSession({
         agentId: AGENT_ID,
 
-        // ✅ PASS METADATA TO ELEVENLABS (for their analytics)
+        // ✅ PASS SESSION METADATA
         metadata: {
           session_id: metadata.session_id,
           message_count: metadata.message_count,
           timestamp: new Date().toISOString()
         },
 
-        // ✅ PASS USER_ID AND CONTEXT VIA DYNAMIC VARIABLES (more reliable)
-        // user_id       — visitor or authenticated UUID (used by ElevenLabs analytics)
+        // ✅ PASS USER_ID AND CONTEXT VIA DYNAMIC VARIABLES
+        // user_id       — visitor or authenticated UUID
         // authenticated_user_id — explicitly the authenticated UUID, or null for guests.
         //   This is what the webhook uses to link the call back to authenticated_users.
         //   Keeping it separate avoids any ambiguity with wc_visitor IDs.
@@ -461,7 +461,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           log('onConnect fired');
           setConnectUI('connected');
 
-          // ✅ CAPTURE ELEVENLABS CONVERSATION_ID (with polling)
+          // ✅ CAPTURE DIALOGUE CONVERSATION_ID (with polling)
           // Wait a tick for outer 'session' variable to be assigned
           await new Promise(res => setTimeout(res, 50));
           
@@ -469,7 +469,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           
           if (conversationId) {
             const waSession = WA.getSession ? WA.getSession() : {};
-            waSession.elevenlabsConversationId = conversationId;
+            waSession.dialogueConversationId = conversationId;
             if (WA.saveSession) WA.saveSession(waSession);
             console.log('[WA:Bridge] ✅ Connected —', conversationId);
           } else {
@@ -509,12 +509,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           const waSession = WA.getSession ? WA.getSession() : {};
           const userId = WA.getUserId ? WA.getUserId() : null;
 
-          if (userId && waSession.elevenlabsConversationId && waSession.messages?.length) {
+          if (userId && waSession.dialogueConversationId && waSession.messages?.length) {
             log('💾 Saving final session...');
 
             const payload = {
               user_id: userId,
-              conversation_id: waSession.elevenlabsConversationId,
+              conversation_id: waSession.dialogueConversationId,
               client_id: WA.getClientId ? WA.getClientId() : '',
               transcript: waSession.messages,
               analysis: {
@@ -709,7 +709,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── PERSONALISED GREETING BUBBLE ────────────────────────────────────────
   // Shows a small speech bubble above wa-bubble on page load for authenticated
   // users. Hides when the panel opens, then injects the greeting as the first
-  // message in the panel and passes it to ElevenLabs context.
+  // message in the panel and passes it to Dialogue context.
 
   (function injectPreviewBubbleCSS() {
     if (document.getElementById('wa-preview-bubble-style')) return;
@@ -772,7 +772,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
    * Authenticated users with a profile get an OpenAI-personalised greeting.
    * Guest users fall back to WA_CONFIG.greetingMessage (no OpenAI call).
    * In both cases the bubble shows, the greeting appears as the first panel
-   * message, and ElevenLabs is told not to re-greet.
+   * message, and the Dialogue agent is told not to re-greet.
    */
   async function initPersonalisedGreeting() {
     await loadUserProfile();
@@ -820,7 +820,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── FORM-FILL PROFILE CAPTURE ────────────────────────────────────────────
   // When an authenticated user submits the contact form, save any name/email/company
   // fields from the completed fill_form action to their profile immediately.
-  // This runs before the ElevenLabs call-complete webhook fires, so the data is
+  // This runs before the call-complete webhook fires, so the data is
   // available on the very next session start.
   if (WA.bus) {
     WA.bus.on('form:submitted', () => {

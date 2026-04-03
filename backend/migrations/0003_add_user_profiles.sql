@@ -1,7 +1,7 @@
 -- Migration 0003: Add user_profiles for persona-driven personalisation
 --
 -- Stores known data points for authenticated users (name, phone, company, etc.)
--- and an OpenAI-generated persona_summary that is injected into ElevenLabs context
+-- and an OpenAI-generated persona_summary that is injected into Dialogue context
 -- at the start of each session so the agent can build rapport immediately.
 --
 -- Upsert logic (enforced at application level):

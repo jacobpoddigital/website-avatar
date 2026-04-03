@@ -36,7 +36,7 @@
     const userId = getUserId();
     const session = WA.getSession ? WA.getSession() : {};
     // Use the stable wa_session_id (localStorage) rather than a fresh timestamp so
-    // the session_id in ElevenLabs metadata is consistent with our KV state key.
+    // the session_id is consistent with our KV state key.
     const sessionId = WA.getSessionId ? WA.getSessionId() : Date.now().toString();
 
     return {
@@ -56,9 +56,8 @@
     if (!userId) return;
     if (!session.messages || session.messages.length === 0) return;
 
-    // Get conversation_id from ElevenLabs (stored in session) or generate fallback
-    // ElevenLabs bridge should set session.elevenlabsConversationId when it connects
-    const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
+    // Get conversation_id from Dialogue (stored in session) or generate fallback
+    const conversationId = session.dialogueConversationId || `conv_${Date.now()}`;
 
     const payload = {
       user_id:         userId,
@@ -176,7 +175,7 @@
         return; // No active session, allow close without prompt
       }
 
-      const conversationId = session.elevenlabsConversationId || `conv_${Date.now()}`;
+      const conversationId = session.dialogueConversationId || `conv_${Date.now()}`;
 
       const payload = {
         user_id:         userId,

@@ -282,7 +282,7 @@
         }
 
         window.WA_CONFIG = {
-          elevenlabsAgentId: config.elevenlabsAgentId || '',
+          dialogueAgentId: config.dialogueAgentId || '',
           openaiProxyUrl:    PROXY_URL,
           sessionUrl:        SESSION_URL,
           agentName:         config.agentName || 'Website Avatar',
@@ -332,7 +332,7 @@
           loadScript(BASE_URL + '/wa-agent.js')
         ]);
 
-        await loadScript(BASE_URL + '/wa-elevenlabs.js', true);
+        await loadScript(BASE_URL + '/wa-dialogue.js', true);
 
         // ── Session sync script ──
         await loadScript(BASE_URL + '/session-sync.js');
