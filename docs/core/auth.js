@@ -73,6 +73,7 @@
     try {
       const res = await fetch(MAGIC_LINK_URL, {
         method:  'POST',
+        signal:  AbortSignal.timeout(10000),
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload)
       });

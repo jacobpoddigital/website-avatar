@@ -388,9 +388,12 @@ export default {
         allowedOrigin = requestOrigin;
       }
     } else {
-      // wa_cors_origins not yet configured — allow all with a warning
-      console.warn('[CORS] ⚠️ wa_cors_origins not set — running in permissive mode');
-      allowedOrigin = requestOrigin || '*';
+      // wa_cors_origins missing — fail closed rather than open
+      console.error('[CORS] ❌ wa_cors_origins not set in KV — all requests blocked');
+      return new Response(JSON.stringify({ error: 'Service unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     const cors = {
@@ -408,40 +411,49 @@ export default {
     // Block credentialed requests from unrecognised origins
     if (requestOrigin && !allowedOrigin) {
       console.warn('[CORS] ❌ Blocked request from unrecognised origin:', requestOrigin);
-      return json({ error: 'Origin not allowed' }, 403, cors);
+      return json({ error: 'Origin not allowed', code: 'ORIGIN_NOT_ALLOWED' }, 403, cors);
+    }
+
+    // ── GET /health ───────────────────────────────────────��───
+    if (url.pathname === '/health' && request.method === 'GET') {
+      return json({ ok: true, ts: Date.now() }, 200, cors);
     }
 
     // ── GET /config?id=acct_xxx ─────────────────────────────
     if (url.pathname === '/config' && request.method === 'GET') {
       const id = url.searchParams.get('id');
-      if (!id) return json({ error: 'Missing id' }, 400, cors);
+      if (!id) return json({ error: 'Missing id', code: 'MISSING_PARAMS' }, 400, cors);
 
       const raw = await env.CONFIGS.get(id);
-      if (!raw) return json({ error: 'Account not found' }, 404, cors);
+      if (!raw) return json({ error: 'Account not found', code: 'NOT_FOUND' }, 404, cors);
 
-      return new Response(raw, { headers: cors });
+      // Strip admin-only fields before returning to the frontend
+      const config = JSON.parse(raw);
+      delete config.notifyEmails;
+      delete config.notifyPhone;
+      return json(config, 200, cors);
     }
 
     // ── POST /config ───────────────────────────────────────
     if (url.pathname === '/config' && request.method === 'POST') {
       // Admin-only route — requires Authorization: Bearer <ADMIN_SECRET>
-      if (env.ADMIN_SECRET) {
-        const authHeader = request.headers.get('Authorization') || '';
-        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-        if (token !== env.ADMIN_SECRET) {
-          console.warn('[Config] ❌ Unauthorised write attempt');
-          return json({ error: 'Unauthorised' }, 401, cors);
-        }
-      } else {
-        console.warn('[Config] ⚠️ ADMIN_SECRET not set — POST /config is unprotected');
+      if (!env.ADMIN_SECRET) {
+        console.error('[Config] ❌ ADMIN_SECRET is not set — POST /config is disabled');
+        return json({ error: 'Server misconfiguration', code: 'SERVER_MISCONFIGURATION' }, 500, cors);
+      }
+      const authHeader = request.headers.get('Authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (token !== env.ADMIN_SECRET) {
+        console.warn('[Config] ❌ Unauthorised write attempt');
+        return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
       }
 
       const id = url.searchParams.get('id');
-      if (!id) return json({ error: 'Missing id' }, 400, cors);
+      if (!id) return json({ error: 'Missing id', code: 'MISSING_PARAMS' }, 400, cors);
 
       let body;
       try { body = await request.json(); } catch(e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
       const raw = await env.CONFIGS.get(id);
@@ -468,24 +480,34 @@ export default {
     if (url.pathname === '/greeting' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch(e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
       const { user_id, page_title } = body || {};
       if (!user_id) return json({ greeting: null }, 200, cors);
       if (!env.OPENAI_KEY) return json({ greeting: null }, 200, cors);
 
+      // Require a valid auth JWT — greeting queries profile PII and triggers OpenAI spend
+      const greetingAuthHeader = request.headers.get('Authorization') || '';
+      const greetingToken = greetingAuthHeader.startsWith('Bearer ') ? greetingAuthHeader.slice(7) : '';
+      const greetingPayload = greetingToken ? await verifyJWT(greetingToken, env.JWT_SECRET) : null;
+      if (!greetingPayload || greetingPayload.type !== 'auth') {
+        return json({ greeting: null }, 200, cors);
+      }
+
       try {
+        const clientId = corsOrigins[requestOrigin] || '';
+
         const profile = await env.website_avatar_db.prepare(
-          'SELECT name, company, persona_summary FROM user_profiles WHERE user_id = ?'
-        ).bind(user_id).first();
+          'SELECT name, company, persona_summary FROM user_profiles WHERE user_id = ? AND client_id = ?'
+        ).bind(user_id, clientId).first();
 
         const firstName = profile?.name?.split(' ')[0];
         if (!firstName) return json({ greeting: null }, 200, cors);
 
         const countRow = await env.website_avatar_db.prepare(
-          'SELECT COUNT(*) as n FROM conversations WHERE user_id = ?'
-        ).bind(user_id).first();
+          'SELECT COUNT(*) as n FROM conversations WHERE user_id = ? AND client_id = ?'
+        ).bind(user_id, clientId).first();
         const visits = countRow?.n || 1;
 
         // Keep this prompt tight — every token counts
@@ -526,14 +548,28 @@ export default {
     if (url.pathname === '/classify' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch(e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
       const { prompt, maxTokens } = body;
-      if (!prompt) return json({ error: 'Missing prompt' }, 400, cors);
+      if (!prompt) return json({ error: 'Missing prompt', code: 'MISSING_PARAMS' }, 400, cors);
+
+      // Require a recognised browser origin — rejects server-side callers who omit Origin
+      if (!corsOrigins[requestOrigin]) {
+        console.warn('[Classify] ❌ Request from unrecognised or missing origin:', requestOrigin || '(none)');
+        return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
+      }
+
+      // Hard cap — reject prompts that are unreasonably large
+      const MAX_PROMPT_CHARS = 5000;
+      const MAX_TOKENS_CAP   = 200;
+      if (prompt.length > MAX_PROMPT_CHARS) {
+        console.warn('[Classify] ❌ Prompt too long:', prompt.length, 'chars');
+        return json({ error: 'Prompt too long', code: 'PROMPT_TOO_LONG' }, 400, cors);
+      }
 
       const apiKey = env.OPENAI_KEY;
-      if (!apiKey) return json({ error: 'No API key configured' }, 500, cors);
+      if (!apiKey) return json({ error: 'No API key configured', code: 'SERVER_MISCONFIGURATION' }, 500, cors);
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -543,14 +579,14 @@ export default {
         },
         body: JSON.stringify({
           model:       'gpt-4o-mini',
-          max_tokens:  maxTokens || 60,
+          max_tokens:  Math.min(maxTokens || 60, MAX_TOKENS_CAP),
           temperature: 0,
           messages:    [{ role: 'user', content: prompt }]
         })
       });
 
       if (!response.ok) {
-        return json({ error: `OpenAI error: ${response.status}` }, 502, cors);
+        return json({ error: 'Upstream API error', code: 'UPSTREAM_ERROR' }, 502, cors);
       }
 
       const data    = await response.json();
@@ -576,8 +612,20 @@ export default {
       if (userId) {
         // Conversation transcript history (D1) — used by session-sync.js loadSessionFromBackend
         // user_id is always set: visitor ID for anonymous, authenticated_users.id after sign-in
-        // client_id filters to the requesting client's conversations only.
-        const clientIdFilter = url.searchParams.get('client_id') || '';
+        // If an auth token is present, verify it matches the requested user_id before returning data.
+        // Anonymous requests (no token) are allowed through — scoped by client_id only.
+        const sessionGetAuth = request.headers.get('Authorization') || '';
+        const sessionGetToken = sessionGetAuth.startsWith('Bearer ') ? sessionGetAuth.slice(7) : '';
+        if (sessionGetToken) {
+          const sessionGetPayload = await verifyJWT(sessionGetToken, env.JWT_SECRET);
+          if (!sessionGetPayload || sessionGetPayload.type !== 'auth' || sessionGetPayload.sub !== userId) {
+            console.warn('[Session] ❌ JWT mismatch on GET for user:', userId);
+            return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
+          }
+        }
+
+        // client_id resolved from CORS origin map — never trusted from caller
+        const clientIdFilter = corsOrigins[requestOrigin] || '';
         console.log('[Session] GET request for user:', userId, '| client:', clientIdFilter || '(none)');
         try {
           const result = clientIdFilter
@@ -614,11 +662,11 @@ export default {
           return json(sessions, 200, cors);
         } catch (err) {
           console.error('[Session] ❌ GET error:', err);
-          return json({ error: 'Database error' }, 500, cors);
+          return json({ error: 'Database error', code: 'DB_ERROR' }, 500, cors);
         }
       }
 
-      return json({ error: 'Missing session_id or user_id' }, 400, cors);
+      return json({ error: 'Missing session_id or user_id', code: 'MISSING_PARAMS' }, 400, cors);
     }
 
     // ── POST /session (frontend save) ─────────────────────────────
@@ -627,7 +675,7 @@ export default {
     if (url.pathname === '/session' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch(e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
       // Route A: client session state → KV (session_id present, no user_id required)
@@ -643,7 +691,7 @@ export default {
           return json({ message: 'Session state saved', session_id: sessionId }, 200, cors);
         } catch(err) {
           console.error('[Session] ❌ KV error:', err);
-          return json({ error: 'KV error' }, 500, cors);
+          return json({ error: 'KV error', code: 'KV_ERROR' }, 500, cors);
         }
       }
 
@@ -651,15 +699,34 @@ export default {
       // user_id is always set: visitor ID for anonymous, authenticated_users.id after sign-in
       const userId         = body?.user_id;
       const conversationId = body?.conversation_id;
-      // client_id identifies which account (data-account-id) owns this conversation.
-      // Empty string is stored when not provided so existing rows are not broken.
-      const clientId       = body?.client_id || '';
+      // client_id resolved from CORS origin map — never trusted from caller
+      const clientId       = corsOrigins[requestOrigin] || '';
+
+      // If an auth token is present, verify it matches the user_id before writing.
+      // Anonymous requests (no token) are allowed through — scoped by client_id only.
+      const sessionPostAuth = request.headers.get('Authorization') || '';
+      const sessionPostToken = sessionPostAuth.startsWith('Bearer ') ? sessionPostAuth.slice(7) : '';
+      if (sessionPostToken) {
+        const sessionPostPayload = await verifyJWT(sessionPostToken, env.JWT_SECRET);
+        if (!sessionPostPayload || sessionPostPayload.type !== 'auth' || sessionPostPayload.sub !== userId) {
+          console.warn('[Session] ❌ JWT mismatch on POST for user:', userId);
+          return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
+        }
+      }
 
       console.log('[Session] Frontend save:', { userId, clientId, conversationId, messageCount: body?.transcript?.length });
 
-      if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id' }, 400, cors);
+      if (!userId || !conversationId) return json({ error: 'Missing user_id or conversation_id', code: 'MISSING_PARAMS' }, 400, cors);
 
-      const transcript = JSON.stringify(body.transcript || []);
+      // Guard against oversized payloads — D1 rows have a ~1MB limit
+      const MAX_TRANSCRIPT_BYTES = 900_000; // 900KB ceiling, leaves headroom for analysis
+      let transcriptMessages = body.transcript || [];
+      if (JSON.stringify(transcriptMessages).length > MAX_TRANSCRIPT_BYTES) {
+        // Trim to the most recent 100 messages and log a warning
+        transcriptMessages = transcriptMessages.slice(-100);
+        console.warn('[Session] ⚠️ Transcript oversized — trimmed to last 100 messages:', conversationId);
+      }
+      const transcript = JSON.stringify(transcriptMessages);
       const analysis   = JSON.stringify(body.analysis || {});
 
       try {
@@ -681,15 +748,15 @@ export default {
         return json({ message: 'Session saved', conversation_id: conversationId, client_id: clientId }, 200, cors);
       } catch (err) {
         console.error('[Session] ❌ DB error:', err);
-        return json({ error: 'Database error' }, 500, cors);
+        return json({ error: 'Database error', code: 'DB_ERROR' }, 500, cors);
       }
     }
 
     // ── GET /profile?user_id=xxx ──────────────────────────────────────────────
     if (url.pathname === '/profile' && request.method === 'GET') {
       const userId   = url.searchParams.get('user_id');
-      const clientId = url.searchParams.get('client_id') || '';
-      if (!userId) return json({ error: 'Missing user_id' }, 400, cors);
+      const clientId = corsOrigins[requestOrigin] || ''; // resolved server-side, not from caller
+      if (!userId) return json({ error: 'Missing user_id', code: 'MISSING_PARAMS' }, 400, cors);
 
       // Require a valid auth token — profile contains PII
       const authHeader = request.headers.get('Authorization') || '';
@@ -697,7 +764,7 @@ export default {
       const payload = token ? await verifyJWT(token, env.JWT_SECRET) : null;
       if (!payload || payload.type !== 'auth' || payload.sub !== userId) {
         console.warn('[Profile] ❌ Unauthorised GET for user:', userId);
-        return json({ error: 'Unauthorised' }, 401, cors);
+        return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
       }
 
       try {
@@ -708,7 +775,7 @@ export default {
         return json(profile || {}, 200, cors);
       } catch (err) {
         console.error('[Profile] ❌ GET error:', err);
-        return json({ error: 'Database error' }, 500, cors);
+        return json({ error: 'Database error', code: 'DB_ERROR' }, 500, cors);
       }
     }
 
@@ -719,11 +786,12 @@ export default {
     if (url.pathname === '/profile' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch(e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
-      const { user_id, client_id = '', name, phone, company, job_title } = body || {};
-      if (!user_id) return json({ error: 'Missing user_id' }, 400, cors);
+      const { user_id, name, phone, company, job_title } = body || {};
+      const clientId = corsOrigins[requestOrigin] || ''; // resolved server-side, not from caller
+      if (!user_id) return json({ error: 'Missing user_id', code: 'MISSING_PARAMS' }, 400, cors);
 
       // Require a valid auth token — only a user can write their own profile
       const authHeader = request.headers.get('Authorization') || '';
@@ -731,27 +799,27 @@ export default {
       const payload = token ? await verifyJWT(token, env.JWT_SECRET) : null;
       if (!payload || payload.type !== 'auth' || payload.sub !== user_id) {
         console.warn('[Profile] ❌ Unauthorised POST for user:', user_id);
-        return json({ error: 'Unauthorised' }, 401, cors);
+        return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
       }
 
       try {
-        await upsertUserProfile(env.website_avatar_db, user_id, client_id, { name, phone, company, job_title });
-        console.log('[Profile] ✅ Upserted for user:', user_id, '| client:', client_id || '(none)');
+        await upsertUserProfile(env.website_avatar_db, user_id, clientId, { name, phone, company, job_title });
+        console.log('[Profile] ✅ Upserted for user:', user_id, '| client:', clientId || '(none)');
 
         // Refresh persona summary in the background — doesn't block response
-        ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, user_id, env, null, client_id));
+        ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, user_id, env, null, clientId));
 
         return json({ success: true, user_id }, 200, cors);
       } catch (err) {
         console.error('[Profile] ❌ POST error:', err);
-        return json({ error: 'Database error' }, 500, cors);
+        return json({ error: 'Database error', code: 'DB_ERROR' }, 500, cors);
       }
     }
 
     // ── GET /semantic?url=xxx ─────────────────────────────
     if (url.pathname === '/semantic' && request.method === 'GET') {
       const pageUrl = url.searchParams.get('url');
-      if (!pageUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
+      if (!pageUrl) return json({ error: 'Missing "url" parameter', code: 'MISSING_PARAMS' }, 400, cors);
     
       try {
         console.log('[Semantic] Start analyzing', pageUrl);
@@ -911,14 +979,14 @@ export default {
     
       } catch (err) {
         console.error('[Semantic] ❌ Error:', err);
-        return json({ error: err.message }, 500, cors);
+        return json({ error: 'Internal error', code: 'INTERNAL_ERROR' }, 500, cors);
       }
     }
 
     // ── GET /all-pages?url=xxx ─────────────────────────────
     if (url.pathname === '/all-pages' && request.method === 'GET') {
       const sitemapUrl = url.searchParams.get('url');
-      if (!sitemapUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
+      if (!sitemapUrl) return json({ error: 'Missing "url" parameter', code: 'MISSING_PARAMS' }, 400, cors);
 
       try {
         console.log('[All-Pages] Fetching sitemap:', sitemapUrl);
@@ -932,7 +1000,7 @@ export default {
 
       } catch (err) {
         console.error('[All-Pages] ❌ Error:', err);
-        return json({ error: err.message }, 500, cors);
+        return json({ error: 'Internal error', code: 'INTERNAL_ERROR' }, 500, cors);
       }
     }
 
@@ -983,7 +1051,7 @@ export default {
       const sitemapUrl = url.searchParams.get('url');
       const limit = parseInt(url.searchParams.get('limit')) || 5;
 
-      if (!sitemapUrl) return json({ error: 'Missing "url" parameter' }, 400, cors);
+      if (!sitemapUrl) return json({ error: 'Missing "url" parameter', code: 'MISSING_PARAMS' }, 400, cors);
 
       try {
         console.log('[Semantic-Sitemap] Fetching sitemap:', sitemapUrl);
@@ -1195,7 +1263,7 @@ export default {
 
       } catch (err) {
         console.error('[Semantic-Sitemap] ❌ Error:', err);
-        return json({ error: err.message }, 500, cors);
+        return json({ error: 'Internal error', code: 'INTERNAL_ERROR' }, 500, cors);
       }
     }
     
@@ -1203,16 +1271,17 @@ export default {
     if (url.pathname === '/consent' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch (e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
-      const { visitor_id, consent_given, client_id: consentClientId = '' } = body;
+      const { visitor_id, consent_given } = body;
+      const consentClientId = corsOrigins[requestOrigin] || ''; // resolved server-side, not from caller
 
       if (typeof visitor_id !== 'string' || visitor_id.trim() === '') {
-        return json({ error: 'Missing or invalid visitor_id' }, 400, cors);
+        return json({ error: 'Missing or invalid visitor_id', code: 'MISSING_PARAMS' }, 400, cors);
       }
       if (typeof consent_given !== 'boolean') {
-        return json({ error: 'consent_given must be a boolean' }, 400, cors);
+        return json({ error: 'consent_given must be a boolean', code: 'INVALID_PARAMS' }, 400, cors);
       }
 
       try {
@@ -1224,7 +1293,7 @@ export default {
         return json({ success: true, id: result.meta.last_row_id }, 200, cors);
       } catch (e) {
         console.error('[Consent] DB error:', e.message);
-        return json({ error: 'Database error' }, 500, cors);
+        return json({ error: 'Database error', code: 'DB_ERROR' }, 500, cors);
       }
     }
 
@@ -1234,58 +1303,70 @@ export default {
       // as request.json() consumes the stream.
       let rawBody;
       try { rawBody = await request.text(); } catch (e) {
-        return json({ error: 'Failed to read request body' }, 400, cors);
+        return json({ error: 'Failed to read request body', code: 'INVALID_REQUEST' }, 400, cors);
       }
 
       // ── Webhook signature verification ─────────────────────────────────────
       // Header format: ElevenLabs-Signature: t=<unix_ts>,v0=<hmac_sha256_hex>
       // Signed string: "<timestamp>.<raw_body>"
-      // Skipped only when secret is not configured (local dev / testing).
-      if (env.ELEVENLABS_WEBHOOK_SECRET) {
-        const sigHeader = request.headers.get('ElevenLabs-Signature') || '';
-        const parts = Object.fromEntries(sigHeader.split(',').map(p => p.split('=')));
-        const timestamp = parts['t'];
-        const signature = parts['v0'];
-
-        if (!timestamp || !signature) {
-          console.warn('[Webhook] ❌ Missing or malformed signature header');
-          return json({ error: 'Missing signature' }, 401, cors);
-        }
-
-        // Reject requests older than 5 minutes to block replay attacks
-        const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
-        if (age > 300) {
-          console.warn('[Webhook] ❌ Signature too old:', Math.round(age), 'seconds');
-          return json({ error: 'Request too old' }, 401, cors);
-        }
-
-        const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey(
-          'raw',
-          encoder.encode(env.ELEVENLABS_WEBHOOK_SECRET),
-          { name: 'HMAC', hash: 'SHA-256' },
-          false,
-          ['sign']
-        );
-        const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`${timestamp}.${rawBody}`));
-        const expected = Array.from(new Uint8Array(mac))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-
-        if (expected !== signature) {
-          console.warn('[Webhook] ❌ Signature mismatch');
-          return json({ error: 'Invalid signature' }, 401, cors);
-        }
-
-        console.log('[Webhook] ✅ Signature verified');
-      } else {
-        console.warn('[Webhook] ⚠️ ELEVENLABS_WEBHOOK_SECRET not set — skipping signature check');
+      if (!env.ELEVENLABS_WEBHOOK_SECRET) {
+        console.error('[Webhook] ❌ ELEVENLABS_WEBHOOK_SECRET is not set — webhook disabled');
+        return json({ error: 'Server misconfiguration', code: 'SERVER_MISCONFIGURATION' }, 500, cors);
       }
+
+      const sigHeader = request.headers.get('ElevenLabs-Signature') || '';
+      const parts = Object.fromEntries(sigHeader.split(',').map(p => p.split('=')));
+      const timestamp = parts['t'];
+      const signature = parts['v0'];
+
+      if (!timestamp || !signature) {
+        console.warn('[Webhook] ❌ Missing or malformed signature header');
+        return json({ error: 'Missing signature', code: 'UNAUTHORISED' }, 401, cors);
+      }
+
+      // Reject requests older than 5 minutes to block replay attacks
+      const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
+      if (age > 300) {
+        console.warn('[Webhook] ❌ Signature too old:', Math.round(age), 'seconds');
+        return json({ error: 'Request too old', code: 'UNAUTHORISED' }, 401, cors);
+      }
+
+      const encoder = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(env.ELEVENLABS_WEBHOOK_SECRET),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`${timestamp}.${rawBody}`));
+      const expected = Array.from(new Uint8Array(mac))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      if (expected !== signature) {
+        console.warn('[Webhook] ❌ Signature mismatch');
+        return json({ error: 'Invalid signature', code: 'UNAUTHORISED' }, 401, cors);
+      }
+
+      console.log('[Webhook] ✅ Signature verified');
 
       try {
         const callData = JSON.parse(rawBody);
         const convId = callData.data?.conversation_id || 'unknown';
         console.log('[Webhook] Received call data | conv:', convId);
+
+        // Idempotency guard — ElevenLabs may retry if the first request times out.
+        // Write the processed key before doing any work so retries are blocked even
+        // if the Worker crashes partway through (a skipped notification is better
+        // than a duplicate lead firing to the client).
+        const idempotencyKey = `webhook_processed_${convId}`;
+        const alreadyProcessed = await env.CONFIGS.get(idempotencyKey);
+        if (alreadyProcessed) {
+          console.log('[Webhook] ⚠️ Duplicate webhook detected — already processed:', convId);
+          return json({ message: 'Already processed' }, 200, cors);
+        }
+        await env.CONFIGS.put(idempotencyKey, '1', { expirationTtl: 86400 }); // 24h TTL
 
         // Only process successful calls
         if (callData?.data?.analysis?.call_successful !== 'success') {
@@ -1472,7 +1553,7 @@ export default {
 
       } catch (err) {
         console.error('[Webhook] ❌ Critical error:', err);
-        return json({ error: err.message }, 500, cors);
+        return json({ error: 'Internal error', code: 'INTERNAL_ERROR' }, 500, cors);
       }
     }
     
@@ -1480,14 +1561,14 @@ export default {
     if (url.pathname === '/auth/magic-link' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch (e) {
-        return json({ error: 'Invalid JSON' }, 400, cors);
+        return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
       const { email, visitor_id, conversation_id, origin } = body;
 
-      if (!email || !email.includes('@')) return json({ error: 'Invalid email' }, 400, cors);
-      if (!visitor_id) return json({ error: 'Missing visitor_id' }, 400, cors);
-      if (!env.JWT_SECRET) return json({ error: 'Server misconfigured' }, 500, cors);
+      if (!email || !email.includes('@')) return json({ error: 'Invalid email', code: 'INVALID_PARAMS' }, 400, cors);
+      if (!visitor_id) return json({ error: 'Missing visitor_id', code: 'MISSING_PARAMS' }, 400, cors);
+      if (!env.JWT_SECRET) return json({ error: 'Server misconfiguration', code: 'SERVER_MISCONFIGURATION' }, 500, cors);
 
       // Validate origin against known client domains before embedding in JWT.
       // Prevents an attacker crafting a magic link request with a malicious redirect URL.
@@ -1498,7 +1579,7 @@ export default {
       const safeOrigin = (originHost && knownOrigins.includes(originHost)) ? origin : (env.APP_URL || null);
       if (!safeOrigin) {
         console.warn('[Auth] ❌ Magic link request with unrecognised origin:', origin);
-        return json({ error: 'Unrecognised origin' }, 400, cors);
+        return json({ error: 'Unrecognised origin', code: 'ORIGIN_NOT_ALLOWED' }, 400, cors);
       }
 
       const appUrl = env.APP_URL || safeOrigin;
@@ -1548,7 +1629,7 @@ export default {
         return json({ success: true }, 200, cors);
       } catch (err) {
         console.error('[Auth] Magic link error:', err);
-        return json({ error: 'Failed to send email' }, 500, cors);
+        return json({ error: 'Failed to send email', code: 'UPSTREAM_ERROR' }, 500, cors);
       }
     }
 
@@ -1635,16 +1716,20 @@ export default {
       }
     }
 
-    return json({ error: 'Not found' }, 404, cors);
+    return json({ error: 'Not found', code: 'NOT_FOUND' }, 404, cors);
   }
 };
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function errorPage(message) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sign-in Error</title>
   <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f4f3f7;}
   .box{background:#fff;padding:40px;border-radius:12px;text-align:center;max-width:400px;box-shadow:0 4px 6px rgba(0,0,0,0.1);}
   h2{color:#c84b2f;margin-top:0;}p{color:#374151;line-height:1.6;}</style>
-  </head><body><div class="box"><h2>Sign-in Failed</h2><p>${message}</p></div></body></html>`;
+  </head><body><div class="box"><h2>Sign-in Failed</h2><p>${escapeHtml(message)}</p></div></body></html>`;
 }
 
 function json(data, status = 200, headers = {}) {

@@ -19,7 +19,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   function warn (...a) {           console.warn('[WA:Bridge]', ...a); }
 
   if (!Conversation) {
-    warn('Failed to import Conversation from Dialogue client SDK');
+    warn('Failed to import Conversation from Dialogue client SDK — removing widget');
+    _removeWidget();
     return;
   }
 
@@ -27,6 +28,15 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   const AGENT_ID = CONFIG.dialogueAgentId || '';
 
   log('Module ready | agentId:', AGENT_ID || '(MISSING)');
+
+  // Removes all widget elements from the DOM. Called when a fatal error means the
+  // chat cannot function at all — better to show nothing than a permanently broken widget.
+  function _removeWidget() {
+    ['wa-bubble', 'wa-panel', 'wa-transition', 'wa-greeting', 'wa-preview-bubble'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+  }
 
   let session = null;
   let _userProfile = null;    // cached for the lifetime of this page load
@@ -159,9 +169,13 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
     const base = 'https://backend.jacob-e87.workers.dev';
     try {
+      const authToken = localStorage.getItem('wa_auth_token');
       const resp = await fetch(`${base}/greeting`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: JSON.stringify({ user_id: user.id, page_title: document.title })
       });
       if (!resp.ok) return null;
@@ -396,7 +410,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
 
     if (!AGENT_ID) {
-      warn('No agent ID — check backend KV config');
+      warn('No agent ID — check backend KV config — removing widget');
+      _removeWidget();
       return;
     }
 
@@ -466,15 +481,21 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           await new Promise(res => setTimeout(res, 50));
           
           const conversationId = await captureConversationId(session);
-          
+
           if (conversationId) {
             const waSession = WA.getSession ? WA.getSession() : {};
             waSession.dialogueConversationId = conversationId;
             if (WA.saveSession) WA.saveSession(waSession);
             console.log('[WA:Bridge] ✅ Connected —', conversationId);
           } else {
-            console.warn('[WA:Bridge] ⚠️ Could not capture conversation_id after polling');
-            log('Will use fallback ID on save');
+            // No conversation ID means we cannot reliably track or save this session.
+            // Kill it immediately rather than proceeding with orphaned data.
+            console.error('[WA:Bridge] ❌ No conversation ID — ending session');
+            if (typeof WA.appendMessage === 'function') {
+              WA.appendMessage('agent', 'Sorry, something went wrong starting the chat. Please try again in a moment.');
+            }
+            await disconnect();
+            return;
           }
 
           // Open panel directly — do NOT call toggleChat (causes reconnect loop)
@@ -849,6 +870,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   } else {
     console.error('[WA:Bridge] WA.bus missing — wa-agent.js namespace problem');
     warn('WA.bus not available — wa-agent.js may not have loaded');
+    // Still emit bridge:ready on the global so any reconnectBridge() waiters don't hang
+    if (window.WebsiteAvatar?.bus) window.WebsiteAvatar.bus.emit('bridge:ready');
   }
 
 })();

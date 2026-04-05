@@ -7,7 +7,7 @@
   const WA = window.WebsiteAvatar || (window.WebsiteAvatar = {});
   const CONFIG = window.WA_CONFIG || {};
   const SESSION_URL = CONFIG.sessionUrl || 'https://backend.jacob-e87.workers.dev/session';
-  
+
   let saveTimeout = null;
 
   // ─── GET USER ID ──────────────────────────────────────────────────────────
@@ -73,9 +73,13 @@
     if (WA.DEBUG) console.log('[SessionSync] 💾 Saving session...', { userId, clientId: payload.client_id, messageCount: session.messages.length, conversationId });
 
     try {
+      const authToken = localStorage.getItem('wa_auth_token');
       const response = await fetch(SESSION_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: JSON.stringify(payload)
       });
 
@@ -102,11 +106,11 @@
     if (!userId) return null;
 
     try {
-      const clientId = getClientId();
-      const sessionQuery = clientId
-        ? `${SESSION_URL}?user_id=${userId}&client_id=${encodeURIComponent(clientId)}`
-        : `${SESSION_URL}?user_id=${userId}`;
-      const response = await fetch(sessionQuery);
+      const sessionQuery = `${SESSION_URL}?user_id=${encodeURIComponent(userId)}`;
+      const authToken = localStorage.getItem('wa_auth_token');
+      const response = await fetch(sessionQuery, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+      });
 
       if (!response.ok) return null;
 

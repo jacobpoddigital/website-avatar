@@ -46,7 +46,7 @@
         <button class="wa-greeting-close" data-action="close" aria-label="Close">
           ✕
         </button>
-        ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-greeting-avatar" />` : ''}
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-greeting-avatar" onerror="this.style.display='none'" />` : ''}
         <div class="wa-greeting-bubble">
           <p>${greetingMessage}</p>
         </div>
@@ -78,7 +78,7 @@
       bubble.id = 'wa-bubble';
       bubble.style.visibility = 'hidden';
       bubble.innerHTML = avatarUrl
-        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`
+        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" onerror="this.style.display='none'" /><div class="wa-badge" id="wa-badge"></div>`
         : '💬<div class="wa-badge" id="wa-badge"></div>';
       bubble.onclick = () => window.WebsiteAvatar && WebsiteAvatar.toggleChat();
       document.body.appendChild(bubble);
@@ -88,7 +88,7 @@
       const panel = document.createElement('div');
       panel.id = 'wa-panel';
       panel.style.visibility = 'hidden';
-      const avatarHtml = avatarUrl ? `<img src="${avatarUrl}" alt="${name}" class="wa-header-avatar" />` : '';
+      const avatarHtml = avatarUrl ? `<img src="${avatarUrl}" alt="${name}" class="wa-header-avatar" onerror="this.style.display='none'" />` : '';
       panel.innerHTML = `
         <div class="wa-header">
           <div class="wa-header-info">
@@ -278,11 +278,22 @@
     }
 
     async function loadWidgetScripts() {
+      // Gate: localStorage must be accessible. If it's blocked (Safari strict privacy,
+      // locked-down corporate environments) the widget cannot maintain sessions and
+      // should not load at all — better nothing than a broken, stateless experience.
+      try {
+        localStorage.setItem('wa_storage_check', '1');
+        localStorage.removeItem('wa_storage_check');
+      } catch (e) {
+        console.warn('[WA] localStorage unavailable — widget not loaded');
+        return;
+      }
+
       try {
         let config = {};
         if (accountId) {
           try {
-            const res = await fetch(`${CONFIG_URL}?id=${accountId}`);
+            const res = await fetch(`${CONFIG_URL}?id=${accountId}`, { signal: AbortSignal.timeout(5000) });
             if (res.ok) config = await res.json();
             else console.warn('[WA] Config not found for account:', accountId);
           } catch(e) {
@@ -356,6 +367,11 @@
 
       } catch(e) {
         console.error('[WA] Failed to load:', e.message);
+        // Remove injected elements — a partially loaded widget is worse than no widget
+        ['wa-bubble', 'wa-panel', 'wa-transition', 'wa-greeting'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.remove();
+        });
       }
     }
 

@@ -437,7 +437,7 @@
     if (highConfidence.length > 1) {
       // Force all actions to require confirmation when showing choice card
       const manualActions = highConfidence.map(a => ({ ...a, auto: false }));
-      renderMultiActionCard(manualActions);
+      WA.renderMultiActionCard(manualActions);
       return;
     }
   
@@ -580,7 +580,7 @@
 
     // Restore pending action cards
     session.actions.forEach(a => {
-      if (a.status === 'pending') renderActionCard(a);
+      if (a.status === 'pending') WA.renderActionCard(a);
     });
 
     // Resume interrupted form fill
@@ -655,6 +655,8 @@
       setTimeout(() => waitForPanel(cb, attempts + 1), 100);
     } else {
       console.warn('[WA] wa-messages element never appeared — init aborted');
+      const label = document.getElementById('wa-status-label');
+      if (label) { label.textContent = 'Unavailable'; label.dataset.status = 'offline'; }
     }
   }
 

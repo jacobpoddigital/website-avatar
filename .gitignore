@@ -21,3 +21,6 @@ Thumbs.db
 
 # Internal dev context (contains vendor white-label mapping)
 CLAUDE.md
+
+# Local audit and output reports
+output/
