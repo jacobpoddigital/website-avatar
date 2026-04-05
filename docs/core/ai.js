@@ -14,6 +14,22 @@
   let formAIController = null;
   let decideController = null;
 
+  // ─── CIRCUIT BREAKER ──────────────────────────────────────────────────────
+  // After 3 consecutive OpenAI failures, disable AI actions for the rest of
+  // the session. The chat itself keeps working — only smart actions stop.
+  let _aiFailures  = 0;
+  let _aiDisabled  = false;
+  const AI_FAILURE_THRESHOLD = 3;
+
+  function _recordAISuccess() { _aiFailures = 0; }
+  function _recordAIFailure() {
+    _aiFailures++;
+    if (_aiFailures >= AI_FAILURE_THRESHOLD && !_aiDisabled) {
+      _aiDisabled = true;
+      console.warn('[WA] OpenAI unavailable — AI actions disabled for this session');
+    }
+  }
+
   // ─── FORM AI ──────────────────────────────────────────────────────────────
 
   const SKIP_PHRASES = [
@@ -22,6 +38,8 @@
   ];
 
   async function handleFormInputAI(userText, fields, recentMessages) {
+    if (_aiDisabled) return { error: 'network', message: "I'm not able to process that right now — could you try again later?" };
+
     // Cancel any in-flight request
     if (formAIController) formAIController.abort();
     formAIController = new AbortController();
@@ -89,7 +107,7 @@ Rules:
     try {
       const res = await fetch(OPENAI_PROXY, {
         method:  'POST',
-        signal:  formAIController.signal,
+        signal:  AbortSignal.any([formAIController.signal, AbortSignal.timeout(10000)]),
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ prompt, maxTokens: 250 })
       });
@@ -108,6 +126,7 @@ Rules:
         return { error: 'parse_failed', message: "Sorry, I didn't catch that — could you say it again?" };
       }
 
+      _recordAISuccess();
       return parsed;
 
     } catch(e) {
@@ -116,6 +135,7 @@ Rules:
         return { error: 'cancelled' };
       }
       console.warn('[WA] Form AI error:', e.message);
+      _recordAIFailure();
       return { error: 'network', message: "I'm having trouble processing that — could you try again?" };
     }
   }
@@ -200,6 +220,11 @@ Rules:
   // ─── ACTION DECISION ENGINE ───────────────────────────────────────────────
 
   async function decideActions(userMessage, agentMessage, knowledgeContext, pageContext, recentMessages, actions) {
+
+    // ──────────────────────────────────────────────────────────────────────
+    // GUARD: Circuit breaker — AI disabled for this session
+    // ──────────────────────────────────────────────────────────────────────
+    if (_aiDisabled) return null;
 
     // ──────────────────────────────────────────────────────────────────────
     // GUARD: Action already pending/active
@@ -351,7 +376,7 @@ RULES:
     try {
       const res = await fetch(OPENAI_PROXY, {
         method:  'POST',
-        signal:  decideController.signal,
+        signal:  AbortSignal.any([decideController.signal, AbortSignal.timeout(10000)]),
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ prompt, maxTokens: 300 })
       });
@@ -373,6 +398,7 @@ RULES:
         return null;
       }
 
+      _recordAISuccess();
       return parsed;
 
     } catch(e) {
@@ -380,6 +406,7 @@ RULES:
         if (WA.DEBUG) console.log('[WA] Action decision cancelled — superseded');
       } else {
         console.warn('[WA] Action decision failed:', e.message);
+        _recordAIFailure();
       }
       return null;
     }

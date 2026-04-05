@@ -7,7 +7,7 @@
 (function () {
 
     const WA = window.WebsiteAvatar || (window.WebsiteAvatar = {});
-  
+
     // ─── STATE MACHINE ────────────────────────────────────────────────────────
   
     const State = {
@@ -54,7 +54,7 @@
     function getSessionId() {
       let id = localStorage.getItem('wa_session_id');
       if (!id) {
-        id = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+        id = crypto.randomUUID();
         localStorage.setItem('wa_session_id', id);
       }
       return id;
@@ -118,6 +118,14 @@
         }
       } catch(e) {
         console.warn('[WA] Failed to load session from backend', e);
+        // Fall back to the local backup written by saveSession()
+        try {
+          const backup = sessionStorage.getItem('wa_session_backup');
+          if (backup) {
+            console.log('[WA] Loaded session from local backup');
+            return JSON.parse(backup);
+          }
+        } catch {}
       }
       return freshSession();
     }
@@ -127,17 +135,35 @@
      * Fire-and-forget: returns a Promise but callers do not need to await it.
      * Replaces all direct sessionStorage.setItem(SESSION_KEY, ...) calls.
      */
+    let _saveFailures = 0;
+
     async function saveSession(session) {
       const sessionId = getSessionId();
-      try {
-        await fetch(BACKEND_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, session_data: session })
-        });
-        if (typeof WA.renderDebug === 'function') WA.renderDebug();
-      } catch(e) {
-        console.warn('[WA] Failed to save session to backend', e);
+      // Always write a local backup so the session survives a temporary backend outage.
+      try { sessionStorage.setItem('wa_session_backup', JSON.stringify(session)); } catch {}
+
+      // Retry up to 3 times with a 1-second gap before giving up.
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await fetch(BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, session_data: session })
+          });
+          _saveFailures = 0;
+          if (typeof WA.renderDebug === 'function') WA.renderDebug();
+          return; // success — exit early
+        } catch(e) {
+          console.warn(`[WA] Session save attempt ${attempt}/3 failed:`, e.message);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      // All 3 attempts failed
+      _saveFailures++;
+      // After 3 consecutive multi-attempt failures, tell the user.
+      if (_saveFailures === 3 && typeof WA.appendMessage === 'function') {
+        WA.appendMessage('agent', "Just a heads up — I'm having trouble saving your conversation right now. If you refresh the page, it should restore.");
       }
     }
 
@@ -171,6 +197,7 @@
       }
       // Remove session ID so the next getSessionId() call generates a fresh one
       localStorage.removeItem('wa_session_id');
+      try { sessionStorage.removeItem('wa_session_backup'); } catch {}
     }
   
     // ─── FORM STATE ───────────────────────────────────────────────────────────

@@ -12,6 +12,8 @@
 
   let _queuedMessage = null;
   let _intentionalDisconnect = false;
+  let _reconnectAttempts = 0;
+  const MAX_RECONNECT_ATTEMPTS = 4;
 
   // ─── INACTIVITY ───────────────────────────────────────────────────────────
 
@@ -35,6 +37,23 @@
     }
   };
 
+  // ─── ONLINE/OFFLINE DETECTION ─────────────────────────────────────────────
+
+  window.addEventListener('online', () => {
+    if (WA.DEBUG) console.log('[WA] Network restored — reconnecting');
+    if (WA.State?.session === 'active' && WA.bridge && !WA.bridge.isConnected()) {
+      _reconnectAttempts = 0; // reset cap so a genuine reconnect is allowed
+      reconnectBridge();
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    if (WA.DEBUG) console.log('[WA] Network lost');
+    if (typeof WA.appendMessage === 'function') {
+      WA.appendMessage('agent', 'It looks like you\'ve gone offline. The chat will reconnect automatically when your connection is restored.');
+    }
+  });
+
   // ─── CONNECTION ───────────────────────────────────────────────────────────
 
   function disconnectBridge() {
@@ -43,6 +62,10 @@
   }
 
   function reconnectBridge(delay = 0) {
+    if (!navigator.onLine) {
+      if (WA.DEBUG) console.log('[WA] reconnectBridge — offline, skipping');
+      return;
+    }
     if (WA.bridge && typeof WA.bridge.connect === 'function') {
       if (WA.bridge.isConnected && WA.bridge.isConnected()) {
         if (WA.DEBUG) console.log('[WA] reconnectBridge — already connected, skipping');
@@ -84,6 +107,7 @@
 
     WA.onBridgeConnected = () => {
       if (WA.setState) WA.setState('connection', 'connected');
+      _reconnectAttempts = 0;
       inactivity.onConnect();
       
       // Show waiting hint only if no messages yet
@@ -122,10 +146,18 @@
       const wasIntentional = _intentionalDisconnect;
       _intentionalDisconnect = false;
 
-      // Unexpected drop during active session — reconnect
+      // Unexpected drop during active session — reconnect up to MAX_RECONNECT_ATTEMPTS
       if (!wasIntentional && WA.State?.session === 'active' && !WA.formState?.active) {
-        if (WA.DEBUG) console.log('[WA] Unexpected disconnect — reconnecting in 1500ms');
-        setTimeout(reconnectBridge, 1500);
+        if (_reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          _reconnectAttempts++;
+          if (WA.DEBUG) console.log(`[WA] Unexpected disconnect — reconnecting (attempt ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          setTimeout(reconnectBridge, 1500);
+        } else {
+          if (WA.DEBUG) console.log('[WA] Max reconnect attempts reached — giving up');
+          if (typeof WA.appendMessage === 'function') {
+            WA.appendMessage('agent', 'The connection was lost. Click the chat button to reconnect when you\'re ready.');
+          }
+        }
       } else if (!wasIntentional && WA.formState?.active) {
         if (WA.DEBUG) console.log('[WA] Disconnect during form fill — suppressed');
       }
