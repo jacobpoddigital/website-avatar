@@ -303,9 +303,6 @@ Matched text: "${knowledgeContext.matched_text?.slice(0, 100) || ''}..."
 CURRENT PAGE: ${document.title}
 URL: ${currentUrl}
 
-/* AVAILABLE PAGES (label|url): */
-/* ${pages} */
-
 PAGE SECTIONS (JSON array):
 ${pageEls}
 
