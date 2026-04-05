@@ -565,7 +565,7 @@ export default {
       console.log('[Classify] 📄 full prompt:', prompt);
 
       // Hard cap — reject prompts that are unreasonably large
-      const MAX_PROMPT_CHARS = 6000;
+      const MAX_PROMPT_CHARS = 10000;
       const MAX_TOKENS_CAP   = 200;
       if (prompt.length > MAX_PROMPT_CHARS) {
         console.warn('[Classify] ❌ Prompt too long:', prompt.length, 'chars');
