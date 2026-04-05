@@ -289,17 +289,13 @@ Rules:
 
     // Add knowledge context to OpenAI prompt
     const knowledgeSection = knowledgeContext ? `
-KNOWLEDGE CONTEXT (from agent's response):
+KNOWLEDGE CONTEXT:
 Intent: ${knowledgeContext.intent || 'unknown'}
 Target page: ${knowledgeContext.target_page || 'none'}
 Section: ${knowledgeContext.section || 'none'}
 Confidence: ${knowledgeContext.confidence}
-Keywords (from user speech): ${knowledgeContext.keywords?.join(', ') || 'none'}
+Keywords (from speech): ${knowledgeContext.keywords?.join(', ') || 'none'}
 Matched text: "${knowledgeContext.matched_text?.slice(0, 100) || ''}..."
-
-This context shows what the agent knows about the user's intent based on their actual spoken words.
-The keywords are particularly important as they come directly from speech recognition.
-Use this information to decide the most appropriate action.
 ` : '';
 
     const prompt = `You are deciding what actions a website chat widget should take after the agent spoke.
@@ -312,19 +308,6 @@ ${pages}
 
 PAGE SECTIONS (JSON array):
 ${pageEls}
-
-Section structure:
-- id: section identifier (e.g., "hero-section", "section-1")
-- type: "section"
-- sectionType: semantic type (hero, features, pricing, testimonials, faq, contact, etc.)
-- title: section heading
-- summary: compressed content overview
-- keywords: key terms from section content
-- subsections: nested content blocks (optional)
-  → Each subsection has: id, title, summary, keywords
-  → Example: "Our Services" section contains subsections for "Web Design", "SEO", "Content Marketing"
-  → When targeting a subsection, set section_id to the parent and subsection_id to the subsection's id
-- actions: ["scroll_to"]
 
 RECENT CONVERSATION:
 ${recentMsgs}
