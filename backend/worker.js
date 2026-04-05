@@ -560,6 +560,11 @@ export default {
         return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
       }
 
+      // Debug — log prompt structure to help tune the cap based on real usage
+      console.log('[Classify] 📏 chars:', prompt.length, '| maxTokens requested:', maxTokens || 60, '| origin:', requestOrigin);
+      console.log('[Classify] 📄 head:', prompt.slice(0, 300));
+      console.log('[Classify] 📄 tail:', prompt.slice(-200));
+
       // Hard cap — reject prompts that are unreasonably large
       const MAX_PROMPT_CHARS = 5000;
       const MAX_TOKENS_CAP   = 200;
