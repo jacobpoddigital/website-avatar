@@ -185,35 +185,34 @@ Rules:
   // ─── TRANSFORM PAGE CONTEXT FOR OPENAI ────────────────────────────────────
   
   function transformPageContextForAI(pageContext) {
-    // Transform WA.PAGE_CONTEXT.page.sections into elements format for OpenAI
+    // Transform WA.PAGE_CONTEXT.page.sections into a compact format for OpenAI.
+    // Keep only what the model needs: id, title, sectionType, a short summary, and
+    // subsection ids/titles for targeting. Strip keywords and long subsection summaries
+    // to keep prompt size manageable.
     const elements = [];
-    
+
     if (pageContext?.page?.sections) {
       pageContext.page.sections.forEach((section, idx) => {
         const el = {
           id: section.id || `wa_section_${idx}`,
-          type: 'section',
+          sectionType: section.type,
           title: section.title,
-          summary: section.summary,
-          keywords: section.keywords,
-          sectionType: section.type, // hero, features, pricing, etc.
+          summary: (section.summary || '').slice(0, 120),
           actions: ['scroll_to']
         };
-        
-        // Add subsections if they exist
+
+        // Include subsections for targeting — id and title only
         if (section.subsections && section.subsections.length > 0) {
           el.subsections = section.subsections.map(sub => ({
             id: sub.id,
-            title: sub.title,
-            summary: sub.summary,
-            keywords: sub.keywords
+            title: sub.title
           }));
         }
-        
+
         elements.push(el);
       });
     }
-    
+
     return elements;
   }
 
@@ -361,7 +360,7 @@ RULES:
 - section_id should match the "id" field from the sections array
 - When the user is asking about a specific subsection (e.g. a specific article, service, or feature), set subsection_id to that subsection's id and section_id to its parent section's id; target_label should be the subsection title
 - When the user is asking about a parent section generally, leave subsection_id null
-- When keywords from speech are provided, prioritize sections that match those keywords
+- When keywords from speech are provided, prioritize sections and pages that match those keywords
 - summary field helps verify relevance before suggesting scroll
 - sectionType helps identify the purpose (hero=intro, pricing=costs, contact=forms, etc.)
 - If target page matches current URL (both are paths), use scroll_to. If different, use navigate.
