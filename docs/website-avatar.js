@@ -268,13 +268,7 @@
       } else if (attempts < 50) { // 5 seconds max (50 × 100ms)
         setTimeout(() => waitForVisitorId(callback, attempts + 1), 100);
       } else {
-        // No third-party visitor ID after 5s — generate one so consent and session
-        // tracking always have a stable identifier. Stored as wc_visitor to match
-        // the expected key used across the widget and backend.
-        const generated = crypto.randomUUID();
-        localStorage.setItem('wc_visitor', generated);
-        console.warn('[WA] ⚠️ Visitor ID not found after 5s — generated fallback:', generated);
-        callback();
+        console.warn('[WA] ⚠️ Visitor ID not found after 5s — widget not loaded');
       }
     }
 
