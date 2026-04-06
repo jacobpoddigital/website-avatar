@@ -11,6 +11,7 @@
   let typingEl      = null;
   let waitingHintEl = null;
   let typingInterval = null;
+  let tricklInterval = null;
 
   const LOADING_PHRASES = [
     'Thinking…',
@@ -74,25 +75,53 @@
   // ─── MESSAGES ─────────────────────────────────────────────────────────────
 
   function appendMessage(role, text, ts) {
-  
+
     const el = document.createElement('div');
     el.className = `wa-msg wa-${role}`;
-  
+
     const textEl = document.createElement('span');
     textEl.className = 'wa-msg-text';
-    textEl.textContent = text;
     el.appendChild(textEl);
-  
+
     const timeEl = document.createElement('span');
     timeEl.className = 'wa-msg-ts';
     const date = ts ? new Date(ts) : new Date();
     timeEl.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     el.appendChild(timeEl);
-  
+
     const msgs = document.getElementById('wa-messages');
-    if (msgs) { 
-      msgs.appendChild(el); 
-      scrollToBottom(); 
+    if (msgs) {
+      msgs.appendChild(el);
+      scrollToBottom();
+    }
+
+    // Trickle-in animation for agent messages only; user messages appear instantly
+    if (role === 'agent') {
+      const words = text.split(' ');
+      let i = 0;
+
+      // Complete immediately if user interacts during animation
+      const finish = () => {
+        clearInterval(tricklInterval);
+        tricklInterval = null;
+        textEl.textContent = text;
+        el.removeEventListener('click', finish);
+        const panel = document.getElementById('wa-panel');
+        if (panel) panel.removeEventListener('click', finish);
+      };
+
+      el.addEventListener('click', finish);
+      const panel = document.getElementById('wa-panel');
+      if (panel) panel.addEventListener('click', finish);
+
+      tricklInterval = setInterval(() => {
+        i++;
+        textEl.textContent = words.slice(0, i).join(' ');
+        scrollToBottom();
+        if (i >= words.length) finish();
+      }, 40);
+    } else {
+      textEl.textContent = text;
     }
   }
 
