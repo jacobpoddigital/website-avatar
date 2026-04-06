@@ -74,21 +74,31 @@
   z-index: -1;
 }
 
-/* Animated ring — pulse then rest */
-#wa-bubble::after {
+/* Spinning gradient ring — bubble + header avatar share the same keyframe */
+#wa-bubble::after,
+.wa-avatar-ring::before {
   content: '';
   position: absolute;
-  inset: -5px;
+  inset: -3px;
   border-radius: 50%;
-  border: 2px solid var(--wa-primary-colour, rgba(255,255,255,0.5));
-  opacity: 0;
-  animation: waRingPulse 5s ease-out infinite;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--wa-primary-colour, #3C82F6) 35%,
+    transparent 65%
+  );
+  animation: waRingSpin 3s linear infinite;
   pointer-events: none;
 }
-@keyframes waRingPulse {
-  0%   { transform: scale(1);    opacity: 0.7; }
-  60%  { transform: scale(1.22); opacity: 0;   }
-  100% { transform: scale(1.22); opacity: 0;   }
+@keyframes waRingSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Wrapper for header avatar — needed since img can't have pseudo-elements */
+.wa-avatar-ring {
+  position: relative;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }

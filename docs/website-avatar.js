@@ -88,7 +88,7 @@
       const panel = document.createElement('div');
       panel.id = 'wa-panel';
       panel.style.visibility = 'hidden';
-      const avatarHtml = avatarUrl ? `<img src="${avatarUrl}" alt="${name}" class="wa-header-avatar" onerror="this.style.display='none'" />` : '';
+      const avatarHtml = avatarUrl ? `<div class="wa-avatar-ring"><img src="${avatarUrl}" alt="${name}" class="wa-header-avatar" onerror="this.style.display='none'" /></div>` : '';
       panel.innerHTML = `
         <div class="wa-header">
           <div class="wa-header-info">
