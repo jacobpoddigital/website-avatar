@@ -12,6 +12,7 @@
   let waitingHintEl     = null;
   let actionCheckingEl  = null;
   let typingInterval    = null;
+  let waitingHintActive = false;
 
   const LOADING_PHRASES = [
     'Thinking…',
@@ -59,16 +60,18 @@
 
   function showWaitingHint() {
     hideWaitingHint();
-    const msgs = document.getElementById('wa-messages');
-    if (!msgs) return;
-    waitingHintEl = document.createElement('div');
-    waitingHintEl.className = 'wa-waiting-hint';
-    waitingHintEl.textContent = 'Connected — type a message to start…';
-    msgs.appendChild(waitingHintEl);
-    scrollToBottom();
+    const label = document.getElementById('wa-status-label');
+    if (!label) return;
+    label.textContent = 'Type a message to start…';
+    waitingHintActive = true;
   }
 
   function hideWaitingHint() {
+    if (waitingHintActive) {
+      const label = document.getElementById('wa-status-label');
+      if (label) label.textContent = 'Connected';
+      waitingHintActive = false;
+    }
     if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }
   }
 
