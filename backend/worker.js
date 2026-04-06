@@ -427,10 +427,18 @@ export default {
       const raw = await env.CONFIGS.get(id);
       if (!raw) return json({ error: 'Account not found', code: 'NOT_FOUND' }, 404, cors);
 
-      // Strip admin-only fields before returning to the frontend
-      const config = JSON.parse(raw);
-      delete config.notifyEmails;
-      delete config.notifyPhone;
+      // Allowlist fields safe to expose to the frontend.
+      // Anything not listed here (notifyEmails, notifyPhone, allowedOrigin, etc.) is never returned.
+      const FRONTEND_FIELDS = [
+        'agentName', 'businessName', 'brandName',
+        'dialogueAgentId',
+        'avatar_url', 'greetingMessage', 'primaryColor',
+        'debug', 'loadingStyle', 'suggestedPrompts',
+      ];
+      const raw_config = JSON.parse(raw);
+      const config = Object.fromEntries(
+        FRONTEND_FIELDS.filter(k => k in raw_config).map(k => [k, raw_config[k]])
+      );
       return json(config, 200, cors);
     }
 

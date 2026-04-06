@@ -112,6 +112,7 @@
           </p>
           <button id="wa-consent-btn" class="wa-consent-start-btn">Start Chat</button>
         </div>
+        <div id="wa-suggested-prompts" class="wa-suggested-prompts"></div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" disabled />
           <canvas id="wa-mic-wave" aria-hidden="true"></canvas>
@@ -303,13 +304,16 @@
         }
 
         window.WA_CONFIG = {
-          dialogueAgentId: config.dialogueAgentId || '',
+          // Spread full KV config so any new fields (loadingStyle, suggestedPrompts, etc.)
+          // flow through automatically without needing to be listed here explicitly
+          ...config,
+          // Override or inject fields that need defaults or aren't in KV
           openaiProxyUrl:    PROXY_URL,
           sessionUrl:        SESSION_URL,
-          agentName:         config.agentName || 'Website Avatar',
+          agentName:         config.agentName    || 'Website Avatar',
           primaryColor:      config.primaryColor || '#c84b2f',
-          debug:             config.debug || false,
-          avatar_url:        config.avatar_url || '',
+          debug:             config.debug        || false,
+          avatar_url:        config.avatar_url   || '',
           greetingMessage:   config.greetingMessage || '',
           businessName:      config.businessName || '',
           // accountId from data-account-id attribute — propagated to all session saves
@@ -334,6 +338,25 @@
 
         injectHTML(window.WA_CONFIG.agentName, config);
         injectGreeting(config);
+
+        // Render suggested prompt chips if configured — falls back to nothing if absent
+        const prompts = window.WA_CONFIG.suggestedPrompts;
+        if (Array.isArray(prompts) && prompts.length) {
+          const container = document.getElementById('wa-suggested-prompts');
+          if (container) {
+            prompts.forEach(text => {
+              const chip = document.createElement('button');
+              chip.className = 'wa-prompt-chip';
+              chip.textContent = text;
+              chip.onclick = () => {
+                const input = document.getElementById('wa-input');
+                if (input) { input.value = text; input.focus(); }
+                container.style.display = 'none';
+              };
+              container.appendChild(chip);
+            });
+          }
+        }
 
         // ── Core scripts ──
         await Promise.all([
