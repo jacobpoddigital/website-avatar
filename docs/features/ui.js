@@ -731,7 +731,7 @@
       const row = card.querySelector('.wa-magic-input-row');
       if (row) {
         let err = row.querySelector('.wa-magic-error');
-        if (!err) { err = document.createElement('p'); err.className = 'wa-magic-error'; err.style.cssText = 'color:#c84b2f;font-size:13px;margin:4px 0 0'; row.appendChild(err); }
+        if (!err) { err = document.createElement('p'); err.className = 'wa-magic-error'; row.appendChild(err); }
         err.textContent = result.error || 'Something went wrong. Please try again.';
       }
     }
@@ -783,6 +783,21 @@
     }, null, 2);
   }
 
+  // ─── FULL SCREEN ──────────────────────────────────────────────────────────
+
+  const EXPAND_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+  const COMPRESS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`;
+
+  function toggleFullscreen() {
+    const panel = document.getElementById('wa-panel');
+    const btn   = document.getElementById('wa-fullscreen-btn');
+    if (!panel) return;
+
+    const isFullscreen = panel.classList.toggle('wa-fullscreen');
+    WA.actionsDisabled = isFullscreen;
+    if (btn) btn.innerHTML = isFullscreen ? COMPRESS_ICON : EXPAND_ICON;
+  }
+
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
   WA.showTyping             = showTyping;
@@ -810,6 +825,7 @@
   WA.closeHistorySession    = closeHistorySession;
   WA.openAdvicePanel        = openAdvicePanel;
   WA.closeAdvicePanel       = closeAdvicePanel;
+  WA.toggleFullscreen       = toggleFullscreen;
   WA.renderHistorySession   = renderHistorySession;
   WA.renderDebug            = renderDebug;
   WA.showMagicLinkPrompt    = showMagicLinkPrompt;
