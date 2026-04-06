@@ -318,6 +318,9 @@
         };
         const debug = window.WA_CONFIG.debug;
 
+        // Inject brand colour as a CSS custom property so widget styles can reference it
+        document.documentElement.style.setProperty('--wa-primary-colour', window.WA_CONFIG.primaryColor);
+
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = BASE_URL + '/widget.css';

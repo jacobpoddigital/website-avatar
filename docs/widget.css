@@ -17,8 +17,8 @@
   --wa-text:            rgba(20,20,18,0.92);
   --wa-text-mid:        rgba(20,20,18,0.55);
   --wa-text-light:      rgba(20,20,18,0.38);
-  --wa-accent:          #3C82F6;
-  --wa-user-bubble:     #3C82F6;
+  --wa-accent:          var(--wa-primary-colour, #3C82F6);
+  --wa-user-bubble:     var(--wa-primary-colour, #3C82F6);
   --wa-agent-bubble:    rgba(255,255,255,0.45);
   --wa-action-bg:       rgba(235, 246, 255, 0.651);
   --wa-action-border:   rgba(200,150,80,0.30);
@@ -72,6 +72,23 @@
   -webkit-backdrop-filter: var(--wa-blur);
   mix-blend-mode: difference;
   z-index: -1;
+}
+
+/* Animated ring — pulse then rest */
+#wa-bubble::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px solid var(--wa-primary-colour, rgba(255,255,255,0.5));
+  opacity: 0;
+  animation: waRingPulse 5s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes waRingPulse {
+  0%   { transform: scale(1);    opacity: 0.7; }
+  60%  { transform: scale(1.22); opacity: 0;   }
+  100% { transform: scale(1.22); opacity: 0;   }
 }
 
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
