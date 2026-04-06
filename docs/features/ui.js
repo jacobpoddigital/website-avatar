@@ -72,6 +72,59 @@
     if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }
   }
 
+  // ─── MESSAGE FORMATTING ───────────────────────────────────────────────────
+
+  function formatMessage(text) {
+    // Step 1: escape HTML to prevent XSS — content comes from an external source
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Step 2: apply formatting patterns in order
+    const lines = escaped.split('\n');
+    const output = [];
+    let inList = false;
+    let listTag = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const bulletMatch = line.match(/^-\s+(.+)/);
+      const orderedMatch = line.match(/^(\d+)\.\s+(.+)/);
+
+      if (bulletMatch) {
+        if (!inList || listTag !== 'ul') {
+          if (inList) output.push(`</${listTag}>`);
+          output.push('<ul>');
+          inList = true; listTag = 'ul';
+        }
+        output.push(`<li>${applyInline(bulletMatch[1])}</li>`);
+      } else if (orderedMatch) {
+        if (!inList || listTag !== 'ol') {
+          if (inList) output.push(`</${listTag}>`);
+          output.push('<ol>');
+          inList = true; listTag = 'ol';
+        }
+        output.push(`<li>${applyInline(orderedMatch[2])}</li>`);
+      } else {
+        if (inList) { output.push(`</${listTag}>`); inList = false; listTag = ''; }
+        if (line.trim() === '') {
+          output.push('<br>');
+        } else {
+          output.push(applyInline(line));
+        }
+      }
+    }
+
+    if (inList) output.push(`</${listTag}>`);
+    return output.join('\n');
+  }
+
+  function applyInline(text) {
+    // **bold**
+    return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
+
   // ─── MESSAGES ─────────────────────────────────────────────────────────────
 
   function appendMessage(role, text, ts) {
@@ -95,19 +148,21 @@
       scrollToBottom();
     }
 
-    // Trickle-in animation for agent messages only; user messages appear instantly
+    // Trickle-in animation for agent messages only; user messages appear instantly.
+    // Trickle uses plain text, then formatting is applied on completion.
     if (role === 'agent') {
       const words = text.split(' ');
       let i = 0;
 
-      // Complete immediately if user interacts during animation
       const finish = () => {
         clearInterval(tricklInterval);
         tricklInterval = null;
-        textEl.textContent = text;
+        // Apply formatting now that the full text is present
+        textEl.innerHTML = formatMessage(text);
         el.removeEventListener('click', finish);
         const panel = document.getElementById('wa-panel');
         if (panel) panel.removeEventListener('click', finish);
+        scrollToBottom();
       };
 
       el.addEventListener('click', finish);

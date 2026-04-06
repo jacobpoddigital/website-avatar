@@ -786,6 +786,12 @@ input.wa-magic-email[type=email] {
 span.wa-msg-text {
   display: block;
 }
+span.wa-msg-text ul,
+span.wa-msg-text ol {
+  margin: 6px 0 2px; padding-left: 18px;
+}
+span.wa-msg-text li { margin-bottom: 3px; line-height: 1.5; }
+span.wa-msg-text strong { font-weight: 600; }
 
 /* ── THREE-DOT HISTORY BUTTON ────────────────────────────────────────────────── */
 #wa-panel .wa-history-btn {
