@@ -18,6 +18,13 @@
   }
 
   async function executeAction(action, session) {
+    // actionsDisabled is the single source of truth for suppressing all widget actions.
+    // Add new contexts that need to disable actions here (e.g. full screen mode), not per-action guards.
+    if (WA.actionsDisabled) {
+      if (WA.DEBUG) console.log('[WA] Action suppressed — actionsDisabled is true');
+      return;
+    }
+
     const handler = ActionRegistry[action.type];
     if (!handler) {
       console.warn(`[WA] No handler for action type: ${action.type}`);

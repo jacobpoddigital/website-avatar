@@ -80,7 +80,8 @@
   content: '';
   position: absolute;
   inset: -3px;
-  border-radius: 50%;
+  border-radius: 100%;
+  aspect-ratio: 1/1;
   background: conic-gradient(
     from 0deg,
     transparent 0%,
@@ -89,6 +90,7 @@
   );
   animation: waRingSpin 3s linear infinite;
   pointer-events: none;
+  z-index: -1;
 }
 @keyframes waRingSpin {
   to { transform: rotate(360deg); }
@@ -164,6 +166,17 @@
 }
 
 #wa-panel.wa-open { transform: translateY(0) scale(1); opacity: 1; pointer-events: all; }
+
+/* Full screen mode — overrides fixed width/height/position */
+#wa-panel.wa-fullscreen {
+  top: 32px;
+  bottom: auto;
+  right: 32px;
+  width: auto;
+  height: calc(100% - 135px);
+  max-height: none;
+  min-height: 0;
+}
 
 /* Ensure content is above the blend layer */
 #wa-panel > * {
@@ -330,15 +343,17 @@
 .wa-suggested-prompts:empty { display: none; }
 .wa-prompt-chip {
   font-size: 12px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--wa-primary-colour, #3C82F6);
+  border: 1px solid var(--wa-glass-border-dim);
   color: var(--wa-primary-colour, #3C82F6);
-  background: transparent;
   transition: background .15s ease, color .15s ease;
   white-space: nowrap;
+  background: var(--wa-glass-strong);
+  background: var(--wa-agent-bubble);
+  backdrop-filter: var(--wa-blur-light);
+  box-shadow: var(--wa-shadow-sm);
 }
 .wa-prompt-chip:hover {
   background: var(--wa-primary-colour, #3C82F6);
-  color: #fff;
 }
 
 .wa-input-row {
@@ -457,6 +472,44 @@
   background: rgba(200,75,47,.15); border-color: rgba(200,75,47,.4);
   color: var(--wa-accent); font-weight: 500;
 }
+
+/* ── AUTH FORM (inline magic-link card) ──────────────────────────────────────── */
+
+/* Input — mirrors #wa-input */
+.wa-magic-email {
+  flex: 1; background: var(--wa-glass-strong);
+  backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
+  border: 1px solid var(--wa-glass-border); border-radius: 10px 0 0 10px; border-right: 0;
+  padding: 8px 13px; font-size: 13px; color: var(--wa-text);
+  outline: none; transition: border-color .2s; min-width: 0;
+}
+.wa-magic-email::placeholder { color: var(--wa-text-mid); }
+.wa-magic-email:focus { border-color: var(--wa-primary-colour, #3C82F6); }
+
+/* Submit button — mirrors #wa-send */
+.wa-magic-submit {
+  background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 0 10px 10px 0;
+  padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: opacity .2s, transform .15s; white-space: nowrap; height: 37.5px; flex-shrink: 0;
+}
+.wa-magic-submit:hover   { opacity: .85; }
+.wa-magic-submit:active  { transform: scale(.96); }
+.wa-magic-submit:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+/* Input + button row */
+.wa-magic-input-row { display: flex; align-items: center; margin-top: 8px; }
+
+/* Dismiss link */
+.wa-magic-dismiss {
+  background: none; border: none; padding: 6px 0 0;
+  font-size: 12px; color: var(--wa-text-mid); cursor: pointer;
+  display: block; text-align: left;
+}
+.wa-magic-dismiss:hover { color: var(--wa-text); }
+
+/* Error message */
+.wa-magic-error { font-size: 12px; color: #c84b2f; margin: 6px 0 0; }
 
 /* ── WAITING HINT ────────────────────────────────────────────────────────────── */
 .wa-waiting-hint {
@@ -877,6 +930,17 @@ span.wa-msg-text {
 #wa-panel .wa-header-actions {
   display: flex; align-items: center; gap: 4px;
 }
+
+/* ── FULLSCREEN BUTTON ───────────────────────────────────────────────────────── */
+#wa-panel .wa-fullscreen-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--wa-text-mid);
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; line-height: 1;
+  transition: color .15s, background .15s; flex-shrink: 0; padding: 0;
+}
+#wa-panel .wa-fullscreen-btn:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
 
 /* ── ADVICE BUTTON ───────────────────────────────────────────────────────────── */
 #wa-panel .wa-advice-btn {

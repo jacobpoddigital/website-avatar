@@ -101,6 +101,12 @@
           <div class="wa-header-actions">
             <button class="wa-advice-btn" id="wa-advice-btn" aria-label="How I can help" title="How I can help">?</button>
             <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">•••</button>
+            <button class="wa-fullscreen-btn" id="wa-fullscreen-btn" aria-label="Toggle full screen" title="Toggle full screen">
+              <svg id="wa-fullscreen-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+                <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+              </svg>
+            </button>
           </div>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
@@ -195,6 +201,7 @@
       panel.querySelector('#wa-history-back').onclick  = () => WebsiteAvatar.closeHistorySession?.();
       panel.querySelector('#wa-advice-btn').onclick    = () => WebsiteAvatar.openAdvicePanel?.();
       panel.querySelector('#wa-advice-close').onclick  = () => WebsiteAvatar.closeAdvicePanel?.();
+      panel.querySelector('#wa-fullscreen-btn').onclick = () => WebsiteAvatar.toggleFullscreen?.();
 
       // ── GDPR CONSENT ──────────────────────────────────────────────────────
       // Check if the user has already consented in a previous session.
