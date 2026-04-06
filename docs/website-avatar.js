@@ -110,8 +110,8 @@
             </button>
             <button class="wa-fullscreen-btn" id="wa-fullscreen-btn" aria-label="Toggle full screen" title="Toggle full screen">
               <svg id="wa-fullscreen-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
-                <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+                <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
               </svg>
             </button>
           </div>
@@ -375,7 +375,7 @@
             header.className = 'wa-prompts-header';
             header.innerHTML = '<span class="wa-prompts-label">Suggestions</span>'
               + '<button class="wa-prompts-toggle" aria-label="Toggle suggestions" title="Toggle suggestions">'
-              + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
+              + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
               + '</button>';
             container.appendChild(header);
 
