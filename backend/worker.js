@@ -370,8 +370,23 @@ ${transcriptSummary ? `New conversation summary: ${transcriptSummary}` : ''}`;
     `).bind(summary, userId, clientId || '').run();
 
     console.log('[Profile] ✅ Persona', isFirstTime ? 'created' : 'updated', 'for user:', userId);
+    await logEvent(db, clientId, 'openai_persona');
   } catch (err) {
     console.error('[Profile] ❌ Persona generation error:', err.message);
+  }
+}
+
+// ── ANALYTICS HELPER ─────────────────────────────────────────────────────────
+// Fire-and-forget usage event logger. Errors are swallowed so failures never
+// propagate to the caller. Use ctx.waitUntil(logEvent(...)) in request handlers
+// or bare await inside already-detached functions (e.g. refreshPersonaSummary).
+async function logEvent(db, clientId, eventType) {
+  try {
+    await db.prepare(
+      'INSERT INTO usage_events (client_id, event_type) VALUES (?, ?)'
+    ).bind(clientId || '', eventType).run();
+  } catch (err) {
+    console.warn('[Analytics] logEvent failed silently:', eventType, err?.message);
   }
 }
 
@@ -581,6 +596,7 @@ export default {
         const greeting = data.choices?.[0]?.message?.content?.trim() || null;
 
         console.log('[Greeting] ✅ Generated for:', firstName, '|', greeting);
+        ctx.waitUntil(logEvent(env.website_avatar_db, clientId, 'openai_greeting'));
         return json({ greeting }, 200, cors);
 
       } catch (err) {
@@ -640,6 +656,7 @@ export default {
 
       const data    = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
+      ctx.waitUntil(logEvent(env.website_avatar_db, corsOrigins[requestOrigin] || '', 'openai_classify'));
       return json({ content }, 200, cors);
     }
 
@@ -794,6 +811,7 @@ export default {
         .run();
 
         console.log('[Session] ✅ Saved to DB:', conversationId, '| client:', clientId);
+        ctx.waitUntil(logEvent(env.website_avatar_db, clientId, 'session_started'));
         return json({ message: 'Session saved', conversation_id: conversationId, client_id: clientId }, 200, cors);
       } catch (err) {
         console.error('[Session] ❌ DB error:', err);
@@ -1546,6 +1564,7 @@ export default {
 
         if (!hasValidData) {
           console.log('[Webhook] ℹ️ No contact data spoken — skipping lead notifications');
+          ctx.waitUntil(logEvent(env.website_avatar_db, clientId, 'webhook_call_complete'));
           return json({ message: 'Webhook processed — persona updated, no lead notifications' }, 200, cors);
         }
 
@@ -1593,6 +1612,7 @@ export default {
           console.error('[Webhook] ❌ Thank you email error:', thankYouErr.message);
         }
 
+        ctx.waitUntil(logEvent(env.website_avatar_db, clientId, 'webhook_call_complete'));
         return json({
           message: 'Webhook processed successfully',
           client: clientId,
@@ -1763,6 +1783,86 @@ export default {
           status: 500,
           headers: { 'Content-Type': 'text/html' }
         });
+      }
+    }
+
+    // ── GET /dashboard ────────────────────────────────────────────────────────
+    // Admin-only usage analytics for a single client account.
+    // Query params:
+    //   client_id (required) — the acct_xxx identifier
+    //   days      (optional, default 30, max 365) — lookback window
+    if (url.pathname === '/dashboard' && request.method === 'GET') {
+      if (!env.ADMIN_SECRET) {
+        return json({ error: 'Server misconfiguration', code: 'SERVER_MISCONFIGURATION' }, 500, cors);
+      }
+      const dashAuthHeader = request.headers.get('Authorization') || '';
+      const dashToken = dashAuthHeader.startsWith('Bearer ') ? dashAuthHeader.slice(7) : '';
+      if (dashToken !== env.ADMIN_SECRET) {
+        return json({ error: 'Unauthorised', code: 'UNAUTHORISED' }, 401, cors);
+      }
+
+      const dashClientId = url.searchParams.get('client_id');
+      if (!dashClientId) {
+        return json({ error: 'Missing client_id', code: 'MISSING_PARAMS' }, 400, cors);
+      }
+
+      const days = Math.min(Math.max(parseInt(url.searchParams.get('days') || '30', 10), 1), 365);
+      const sinceEpoch = Math.floor(Date.now() / 1000) - (days * 86400);
+
+      try {
+        // Event totals from usage_events
+        const summaryResult = await env.website_avatar_db.prepare(`
+          SELECT event_type, COUNT(*) AS total
+          FROM usage_events
+          WHERE client_id = ? AND created_at >= ?
+          GROUP BY event_type
+        `).bind(dashClientId, sinceEpoch).all();
+
+        // Daily event breakdown from usage_events
+        const dailyResult = await env.website_avatar_db.prepare(`
+          SELECT date(created_at, 'unixepoch') AS day, event_type, COUNT(*) AS count
+          FROM usage_events
+          WHERE client_id = ? AND created_at >= ?
+          GROUP BY day, event_type
+          ORDER BY day ASC
+        `).bind(dashClientId, sinceEpoch).all();
+
+        // Session/visitor totals from conversations (authoritative source)
+        const sessionResult = await env.website_avatar_db.prepare(`
+          SELECT COUNT(*) AS total_sessions, COUNT(DISTINCT user_id) AS unique_visitors
+          FROM conversations
+          WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+        `).bind(dashClientId, sinceEpoch).first();
+
+        // Daily session breakdown from conversations
+        const dailySessionsResult = await env.website_avatar_db.prepare(`
+          SELECT date(created_at) AS day, COUNT(*) AS sessions, COUNT(DISTINCT user_id) AS visitors
+          FROM conversations
+          WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+          GROUP BY day
+          ORDER BY day ASC
+        `).bind(dashClientId, sinceEpoch).all();
+
+        const summary = {};
+        for (const row of (summaryResult.results || [])) {
+          summary[row.event_type] = row.total;
+        }
+
+        return json({
+          client_id:      dashClientId,
+          days,
+          summary,
+          daily_events:   dailyResult.results    || [],
+          sessions: {
+            total:  sessionResult?.total_sessions  || 0,
+            unique: sessionResult?.unique_visitors || 0,
+          },
+          daily_sessions: dailySessionsResult.results || [],
+        }, 200, cors);
+
+      } catch (err) {
+        console.error('[Dashboard] ❌ Error:', err);
+        return json({ error: 'Database error', code: 'DB_ERROR' }, 500, cors);
       }
     }
 

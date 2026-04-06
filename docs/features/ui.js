@@ -73,61 +73,6 @@
 
   // ─── MESSAGE FORMATTING ───────────────────────────────────────────────────
 
-  function formatMessage(text) {
-    // Step 1: escape HTML to prevent XSS — content comes from an external source
-    const escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    // Step 2: apply formatting patterns in order
-    const lines = escaped.split('\n');
-    const output = [];
-    let inList = false;
-    let listTag = '';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const bulletMatch = line.match(/^-\s+(.+)/);
-      const orderedMatch = line.match(/^(\d+)\.\s+(.+)/);
-
-      if (bulletMatch) {
-        if (!inList || listTag !== 'ul') {
-          if (inList) output.push(`</${listTag}>`);
-          output.push('<ul>');
-          inList = true; listTag = 'ul';
-        }
-        output.push(`<li>${applyInline(bulletMatch[1])}</li>`);
-      } else if (orderedMatch) {
-        if (!inList || listTag !== 'ol') {
-          if (inList) output.push(`</${listTag}>`);
-          output.push('<ol>');
-          inList = true; listTag = 'ol';
-        }
-        output.push(`<li>${applyInline(orderedMatch[2])}</li>`);
-      } else {
-        if (inList) { output.push(`</${listTag}>`); inList = false; listTag = ''; }
-        if (line.trim() === '') {
-          // Suppress <br> if the next non-empty line will open a list — avoids double gap
-          const next = lines.slice(i + 1).find(l => l.trim() !== '');
-          if (!next || (!next.match(/^-\s+/) && !next.match(/^\d+\.\s+/))) {
-            output.push('<br>');
-          }
-        } else {
-          output.push(applyInline(line));
-        }
-      }
-    }
-
-    if (inList) output.push(`</${listTag}>`);
-    return output.join('\n');
-  }
-
-  function applyInline(text) {
-    // **bold**
-    return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  }
-
   // ─── MESSAGES ─────────────────────────────────────────────────────────────
 
   function appendMessage(role, text, ts) {
@@ -161,10 +106,11 @@
 
       const finish = () => {
         clearInterval(interval);
-        textEl.innerHTML = formatMessage(text);
+        textEl.textContent = text;
         el.removeEventListener('click', finish);
         const panel = document.getElementById('wa-panel');
         if (panel) panel.removeEventListener('click', finish);
+        scrollToBottom();
       };
 
       el.addEventListener('click', finish);
@@ -174,6 +120,7 @@
       interval = setInterval(() => {
         i++;
         textEl.textContent = words.slice(0, i).join(' ');
+        scrollToBottom();
         if (i >= words.length) finish();
       }, 40);
     } else {
