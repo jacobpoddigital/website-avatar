@@ -318,7 +318,7 @@
           openaiProxyUrl:    PROXY_URL,
           sessionUrl:        SESSION_URL,
           agentName:         config.agentName    || 'Website Avatar',
-          primaryColor:      config.primaryColor || '#c84b2f',
+          primaryColor:      config.primaryColor || '#3C82F6',
           debug:             config.debug        || false,
           avatar_url:        config.avatar_url   || '',
           greetingMessage:   config.greetingMessage || '',
