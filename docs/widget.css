@@ -63,22 +63,6 @@
   animation: waBubbleMorph 9s ease-in-out infinite;
 }
 
-/* Blend layer follows the bubble's morphing shape */
-#wa-bubble::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--wa-glass-strong);
-  backdrop-filter: var(--wa-blur);
-  -webkit-backdrop-filter: var(--wa-blur);
-  mix-blend-mode: difference;
-  z-index: -1;
-}
-
-/* Ring removed — blob morph is the new liveliness signal */
-#wa-bubble::after { display: none; }
-
 /* Wrapper for header avatar — also morphs to match blob language */
 .wa-avatar-ring {
   position: relative;
@@ -90,6 +74,7 @@
   overflow: hidden;
   animation: waBubbleMorph 9s ease-in-out infinite;
   animation-delay: -3s; /* out-of-phase so bubble and avatar don't sync */
+  background-color: #ffffff4f;
 }
 
 /* Ring removed from avatar too */
@@ -237,7 +222,7 @@
 /* Header avatar image */
 .wa-header-avatar {
   width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
-  object-position: top; outline: 4px solid var(--wa-glass-border);
+  object-position: top;
   background-color: var(--wa-user-bubble);
   margin: 8px;
 }
@@ -475,11 +460,15 @@
 }
 #wa-voice-toggle:hover  { opacity: .85; }
 #wa-voice-toggle:active { transform: scale(.96); }
-/* Active — highlights with primary colour to signal voice mode is on */
+/* Active — red "end call" style, expands to fit icon + label */
 #wa-voice-toggle.wa-voice-active {
-  background: var(--wa-primary-colour, #3C82F6);
-  color: var(--wa-primary-text);
+  background: #ef4444;
+  color: #ffffff;
   border-color: transparent;
+  width: auto;
+  padding: 0 12px;
+  gap: 5px;
+  font-size: 12px; font-weight: 500;
 }
 
 /* ── MIC BUTTON ──────────────────────────────────────────────────────────────── */
@@ -542,6 +531,8 @@
 .wa-voice-mode #wa-mic               { display: none; }
 .wa-voice-mode #wa-mic-wave          { display: none; }
 .wa-voice-mode #wa-send              { display: none; }
+.wa-voice-mode .wa-avatar-ring       { display: none; }
+
 
 /* Voice toggle stays visible and expands to fill the row in voice mode */
 .wa-voice-mode .wa-input-row {
