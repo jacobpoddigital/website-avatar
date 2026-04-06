@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Website Avatar — Analytics Dashboard</title>
+  <style>
+    :root {
+      --wa-glass-bg:     rgba(255,255,255,0.10);
+      --wa-glass-strong: rgba(255,255,255,0.18);
+      --wa-glass-border: rgba(255,255,255,0.20);
+      --wa-blur:         blur(18px);
+      --wa-shadow:       0 8px 32px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.16);
+      --wa-text:         rgba(240,240,238,0.92);
+      --wa-text-mid:     rgba(240,240,238,0.55);
+      --wa-text-light:   rgba(240,240,238,0.30);
+      --wa-accent:       #3C82F6;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      background: linear-gradient(135deg, #0a0f1e 0%, #0f2040 50%, #0a0f1e 100%);
+      color: var(--wa-text);
+    }
+
+    .glass {
+      background: var(--wa-glass-bg);
+      backdrop-filter: var(--wa-blur);
+      -webkit-backdrop-filter: var(--wa-blur);
+      border: 1px solid var(--wa-glass-border);
+      border-radius: 14px;
+      box-shadow: var(--wa-shadow);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      padding: 2.5rem 0 2rem;
+    }
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -.02em;
+      margin-bottom: .3rem;
+    }
+    header p {
+      color: var(--wa-text-mid);
+      font-size: .9rem;
+    }
+
+    /* ── Form panel ── */
+    .form-panel {
+      padding: 1.5rem 2rem;
+      margin-bottom: 1.5rem;
+    }
+    .form-row {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .field { display: flex; flex-direction: column; gap: .35rem; }
+    label {
+      font-size: .72rem;
+      font-weight: 600;
+      color: var(--wa-text-mid);
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    input {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--wa-glass-border);
+      border-radius: 8px;
+      padding: .55rem .9rem;
+      color: var(--wa-text);
+      font-size: .9rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input::placeholder { color: var(--wa-text-light); }
+    input:focus { border-color: var(--wa-accent); }
+    input[type=number] { width: 80px; }
+    input[type=text]   { width: 200px; }
+    input[type=password] { width: 220px; }
+
+    button {
+      background: var(--wa-accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: .58rem 1.4rem;
+      font-size: .9rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    button:hover { opacity: .88; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Status banner ── */
+    .status {
+      border-radius: 8px;
+      padding: .75rem 1rem;
+      font-size: .875rem;
+      margin-bottom: 1.25rem;
+      display: none;
+    }
+    .status.error   { background: rgba(239,68,68,.16);  border: 1px solid rgba(239,68,68,.3);  color: #fca5a5; display: block; }
+    .status.loading { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.25); color: #93c5fd; display: block; }
+
+    /* ── Metric cards ── */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .metric-card { padding: 1.25rem 1.5rem; }
+    .metric-card .label {
+      font-size: .7rem;
+      font-weight: 600;
+      color: var(--wa-text-mid);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: .5rem;
+    }
+    .metric-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1;
+    }
+
+    /* ── Table ── */
+    .table-wrapper {
+      padding: 1.5rem 1.75rem;
+      overflow-x: auto;
+    }
+    .table-wrapper h2 {
+      font-size: .95rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .85rem;
+    }
+    th {
+      text-align: left;
+      padding: .45rem .75rem;
+      font-size: .7rem;
+      font-weight: 600;
+      color: var(--wa-text-mid);
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      white-space: nowrap;
+    }
+    td {
+      padding: .5rem .75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      color: var(--wa-text);
+    }
+    tr:last-child td { border-bottom: none; }
+    td.zero { color: var(--wa-text-light); }
+    td.date { color: var(--wa-text-mid); font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Website Avatar</h1>
+      <p>Usage analytics per client account</p>
+    </header>
+
+    <div class="glass form-panel">
+      <div class="form-row">
+        <div class="field">
+          <label for="clientId">Account ID</label>
+          <input id="clientId" type="text" placeholder="acct_xxx" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="adminSecret">Admin Secret</label>
+          <input id="adminSecret" type="password" placeholder="••••••••">
+        </div>
+        <div class="field">
+          <label for="days">Days</label>
+          <input id="days" type="number" value="30" min="1" max="365">
+        </div>
+        <div class="field" style="justify-content:flex-end">
+          <button id="fetchBtn" onclick="fetchDashboard()">Fetch</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div id="metricsSection" style="display:none">
+      <div class="metrics">
+        <div class="glass metric-card">
+          <div class="label">Total Sessions</div>
+          <div class="value" id="mSessions">—</div>
+        </div>
+        <div class="glass metric-card">
+          <div class="label">Unique Visitors</div>
+          <div class="value" id="mVisitors">—</div>
+        </div>
+        <div class="glass metric-card">
+          <div class="label">Webhook Calls</div>
+          <div class="value" id="mWebhook">—</div>
+        </div>
+        <div class="glass metric-card">
+          <div class="label">OpenAI Calls</div>
+          <div class="value" id="mOpenai">—</div>
+        </div>
+        <div class="glass metric-card">
+          <div class="label">Greetings</div>
+          <div class="value" id="mGreeting">—</div>
+        </div>
+        <div class="glass metric-card">
+          <div class="label">Classify</div>
+          <div class="value" id="mClassify">—</div>
+        </div>
+        <div class="glass metric-card">
+          <div class="label">Persona Updates</div>
+          <div class="value" id="mPersona">—</div>
+        </div>
+      </div>
+
+      <div class="glass table-wrapper">
+        <h2>Daily Breakdown</h2>
+        <table id="dailyTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Sessions</th>
+              <th>Visitors</th>
+              <th>Webhook</th>
+              <th>Greetings</th>
+              <th>Classify</th>
+              <th>Persona</th>
+            </tr>
+          </thead>
+          <tbody id="dailyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BACKEND = 'https://backend.jacob-e87.workers.dev';
+
+    async function fetchDashboard() {
+      const clientId = document.getElementById('clientId').value.trim();
+      const secret   = document.getElementById('adminSecret').value.trim();
+      const days     = parseInt(document.getElementById('days').value, 10) || 30;
+      const btn      = document.getElementById('fetchBtn');
+
+      if (!clientId || !secret) {
+        showStatus('error', 'Please enter both Account ID and Admin Secret.');
+        return;
+      }
+
+      showStatus('loading', 'Fetching data…');
+      btn.disabled = true;
+      document.getElementById('metricsSection').style.display = 'none';
+
+      try {
+        const res = await fetch(
+          `${BACKEND}/dashboard?client_id=${encodeURIComponent(clientId)}&days=${days}`,
+          { headers: { 'Authorization': `Bearer ${secret}` } }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        renderDashboard(data);
+        document.getElementById('status').style.display = 'none';
+        document.getElementById('metricsSection').style.display = 'block';
+
+      } catch (err) {
+        showStatus('error', `Error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function renderDashboard(data) {
+      const s = data.summary || {};
+
+      document.getElementById('mSessions').textContent = fmt(data.sessions?.total);
+      document.getElementById('mVisitors').textContent = fmt(data.sessions?.unique);
+      document.getElementById('mWebhook').textContent  = fmt(s.webhook_call_complete);
+      document.getElementById('mGreeting').textContent = fmt(s.openai_greeting);
+      document.getElementById('mClassify').textContent = fmt(s.openai_classify);
+      document.getElementById('mPersona').textContent  = fmt(s.openai_persona);
+
+      const totalOpenai = (s.openai_greeting || 0) + (s.openai_classify || 0) + (s.openai_persona || 0);
+      document.getElementById('mOpenai').textContent = fmt(totalOpenai);
+
+      // Index daily_sessions and daily_events by date
+      const sessionsByDay = {};
+      for (const row of (data.daily_sessions || [])) {
+        sessionsByDay[row.day] = row;
+      }
+
+      const eventsByDay = {};
+      for (const row of (data.daily_events || [])) {
+        if (!eventsByDay[row.day]) eventsByDay[row.day] = {};
+        eventsByDay[row.day][row.event_type] = row.count;
+      }
+
+      const allDates = [...new Set([
+        ...Object.keys(sessionsByDay),
+        ...Object.keys(eventsByDay)
+      ])].sort().reverse(); // most recent first
+
+      const tbody = document.getElementById('dailyBody');
+      tbody.innerHTML = '';
+
+      if (allDates.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--wa-text-light);padding:2rem 0">No data for this period.</td></tr>';
+        return;
+      }
+
+      for (const day of allDates) {
+        const sess = sessionsByDay[day] || {};
+        const evts = eventsByDay[day]   || {};
+        const cells = [
+          { v: day, cls: 'date' },
+          { v: sess.sessions  || 0 },
+          { v: sess.visitors  || 0 },
+          { v: evts.webhook_call_complete || 0 },
+          { v: evts.openai_greeting       || 0 },
+          { v: evts.openai_classify       || 0 },
+          { v: evts.openai_persona        || 0 },
+        ];
+        const tr = document.createElement('tr');
+        tr.innerHTML = cells.map(({ v, cls }) => {
+          const isZero = typeof v === 'number' && v === 0;
+          const classes = [cls, isZero ? 'zero' : ''].filter(Boolean).join(' ');
+          return `<td${classes ? ` class="${classes}"` : ''}>${v}</td>`;
+        }).join('');
+        tbody.appendChild(tr);
+      }
+    }
+
+    function fmt(n) {
+      if (n == null) return '0';
+      return Number(n).toLocaleString();
+    }
+
+    function showStatus(type, msg) {
+      const el = document.getElementById('status');
+      el.className = `status ${type}`;
+      el.textContent = msg;
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter') fetchDashboard();
+    });
+  </script>
+</body>
+</html>
