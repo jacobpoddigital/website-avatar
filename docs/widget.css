@@ -106,6 +106,7 @@
 
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
 #wa-bubble:active { transform: scale(0.95); }
+#wa-bubble.wa-close-mode::after { display: none; }
 
 /* Hide bubble when greeting is visible */
 #wa-bubble.wa-hidden {
@@ -187,21 +188,28 @@
 
 /* ── HEADER ──────────────────────────────────────────────────────────────────── */
 .wa-header {
-  padding: 16px 20px;
+  padding: 0 20px;
+  height: 50px; min-height: 50px;
+  overflow: visible;
   border-bottom: 1px solid var(--wa-glass-border-dim);
   display: flex; align-items: center; justify-content: space-between;
   background: var(--wa-glass-subtle);
+  z-index: 2 !important;
 }
 .wa-header-info { display: flex; align-items: center; gap: 12px; }
-.wa-header-info h4 { font-size: 14px; font-weight: 500; color: var(--wa-text); margin: 0; }
+.wa-header-info h4 { font-size: 14px; font-weight: 500; color: #ffffff; margin: 0; }
 .wa-header-info span { font-size: 12px; color: var(--wa-text-mid); }
 
 /* Header avatar image */
 .wa-header-avatar {
-  width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
-  border: 1px solid var(--wa-glass-border); object-position: top;
+  width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
+  border: 6px solid var(--wa-glass-border); object-position: top;
+  margin-top: 50px;
 }
 
+#wa-status-label {
+  font-size: 12px; color: #ffffff;
+}
 #wa-status-label::before {
   content: ''; display: inline-block; width: 6px; height: 6px;
   border-radius: 50%; margin-right: 6px; vertical-align: middle;
@@ -302,6 +310,12 @@
 .wa-status-denied  { background: rgba(254,226,226,.7); color: #991b1b; }
 .wa-status-complete{ background: rgba(209,250,229,.7); color: #065f46; }
 
+/* ── STATUS ROW (above input) ────────────────────────────────────────────────── */
+.wa-status-row {
+  padding: 4px 14px 2px;
+  font-size: 12px;
+}
+
 /* ── INPUT ROW ───────────────────────────────────────────────────────────────── */
 /* ── GDPR CONSENT BANNER ─────────────────────────────────────────────────────── */
 #wa-panel > .wa-consent-banner {
@@ -349,16 +363,16 @@
   margin-bottom: 6px;
 }
 .wa-prompts-label {
-  font-size: 11px; color: var(--wa-text-mid); font-weight: 500; letter-spacing: 0.02em;
+  font-size: 11px; color: #ffffff; font-weight: 500; letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 .wa-prompts-toggle {
   display: flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; border-radius: 4px; cursor: pointer;
-  color: var(--wa-text-mid); border: none; background: none; padding: 0;
+  color: #ffffff; border: none; background: none; padding: 0;
   transition: color .15s ease, transform .2s ease;
 }
-.wa-prompts-toggle:hover { color: var(--wa-text); }
+.wa-prompts-toggle:hover { color: rgba(255,255,255,0.7); }
 .wa-prompts-toggle svg { transition: transform .2s ease; }
 .wa-prompts-collapsed .wa-prompts-toggle svg { transform: rotate(-90deg); }
 
@@ -372,18 +386,16 @@
 }
 
 .wa-prompt-chip {
-  font-size: 12px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--wa-glass-border-dim);
-  color: var(--wa-primary-colour, #3C82F6);
-  transition: background .15s ease, color .15s ease;
+  font-size: 12px; padding: 5px 11px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--wa-glass-border);
+  color: #ffffff;
+  transition: background .15s ease, opacity .15s ease;
   white-space: nowrap;
-  background: var(--wa-agent-bubble);
-  backdrop-filter: var(--wa-blur-light);
-  box-shadow: var(--wa-shadow-sm);
+  background: transparent;
 }
 .wa-prompt-chip:hover {
-  background: var(--wa-primary-colour, #3C82F6);
-  color: var(--wa-primary-text);
+  background: var(--wa-glass-subtle);
+  opacity: .85;
 }
 
 .wa-input-row {
@@ -464,10 +476,11 @@
 
 /* ── END SESSION & ABORT ─────────────────────────────────────────────────────── */
 .wa-btn-end-session {
-  display: block; width: calc(100% - 32px); margin: 0 16px 6px;
-  background: none; border: none; font-size: 11px; color: var(--wa-text-light);
-  cursor: pointer; text-align: center; padding: 4px;
-  transition: color .15s; 
+  display: block; width: 100%;
+  background: none; border: none; border-top: 1px solid var(--wa-glass-border-dim);
+  font-size: 11px; color: var(--wa-text-light);
+  cursor: pointer; text-align: center; padding: 8px 16px;
+  transition: color .15s;
 }
 .wa-btn-end-session:hover { color: #991b1b; }
 .wa-btn-abort {
