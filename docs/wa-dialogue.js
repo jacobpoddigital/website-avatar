@@ -176,7 +176,23 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ user_id: user.id, page_title: document.title })
+        body: JSON.stringify({
+          user_id:              user.id,
+          page_title:           document.title,
+          time_of_day:          (() => {
+            const h = new Date().getHours();
+            if (h < 12) return 'morning';
+            if (h < 17) return 'afternoon';
+            if (h < 21) return 'evening';
+            return 'night';
+          })(),
+          last_session_snippet: (() => {
+            try {
+              const sessions = JSON.parse(localStorage.getItem('wa_past_sessions') || '[]');
+              return sessions[0]?.snippet || null;
+            } catch { return null; }
+          })()
+        })
       });
       if (!resp.ok) return null;
       const data = await resp.json();

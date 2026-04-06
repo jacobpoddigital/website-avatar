@@ -498,7 +498,7 @@ export default {
         return json({ error: 'Invalid JSON', code: 'INVALID_JSON' }, 400, cors);
       }
 
-      const { user_id, page_title } = body || {};
+      const { user_id, page_title, time_of_day, last_session_snippet } = body || {};
       if (!user_id) return json({ greeting: null }, 200, cors);
       if (!env.OPENAI_KEY) return json({ greeting: null }, 200, cors);
 
@@ -530,23 +530,48 @@ export default {
         ).bind(user_id, clientId).first();
         const visits = countRow?.n || 1;
 
-        // Keep this prompt tight — every token counts
-        const lines = [
-          `Write one warm greeting sentence for a returning visitor to ${businessName ? `the ${businessName} website` : 'our website'}.`,
-          `Name: ${firstName} | Company: ${profile.company || 'unknown'} | Visits: ${visits} | Page: ${page_title || 'Homepage'}`,
-        ];
+        // Build a persona snippet — prefer JSON interests/goals, fall back to raw summary
+        let personaHint = '';
         if (profile.persona_summary) {
-          lines.push(`Notes: ${profile.persona_summary.slice(0, 100)}`);
+          try {
+            const p = JSON.parse(profile.persona_summary);
+            const interests = [p.goals, p.pain_points, p.interests].flat().filter(Boolean).slice(0, 2).join(', ');
+            if (interests) personaHint = interests;
+          } catch {
+            personaHint = profile.persona_summary.slice(0, 80);
+          }
         }
-        lines.push(`Output: one sentence only. Use first name. Casual, friendly. No self-introduction.`);
+
+        const context = [
+          `Name: ${firstName}`,
+          `Time of day: ${time_of_day || 'day'}`,
+          `Page they landed on: ${page_title || 'Homepage'}`,
+          `Number of past visits: ${visits}`,
+          personaHint     ? `What we know about them: ${personaHint}` : null,
+          last_session_snippet ? `Last visit they asked about: "${last_session_snippet}"` : null,
+        ].filter(Boolean).join('\n');
+
+        const lines = [
+          `You are a warm, intelligent assistant for ${businessName || 'our website'}. Write a single short greeting for a returning visitor based on the context below.`,
+          ``,
+          context,
+          ``,
+          `Rules: one sentence only. Use their first name. Reference the time of day naturally. If you know something relevant about their interests or last visit, weave it in — but keep it light, never surveillance-like. No exclamation marks. No flattery. No dashes or colons. Sound like a knowledgeable person who's genuinely pleased to see them, not a chatbot. Be creative with phrasing but stay professional.`,
+          ``,
+          `Examples of the right tone (use [Name], [time], [interest/topic] as stand-ins for real data):`,
+          `"Good [time] [Name], hope we can point you in the right direction today."`,
+          `"[Name], glad you're back this [time] — let us know what you're thinking about."`,
+          `"Hope your [time] is going well [Name], we're here if you want to explore [interest]."`,
+          `"Good to see you again [Name], we've got plenty to help with if [interest] is still on your mind."`,
+        ];
 
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${env.OPENAI_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: 'gpt-4o-mini',
-            max_tokens: 40,
-            temperature: 0.7,
+            max_tokens: 60,
+            temperature: 0.8,
             messages: [{ role: 'user', content: lines.join('\n') }]
           })
         });
