@@ -59,15 +59,16 @@
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--wa-shadow);
   transition: transform .2s ease, background .2s ease, box-shadow .2s ease, opacity .3s ease;
-  padding: 0;
+  padding: 0; overflow: hidden;
+  animation: waBubbleMorph 9s ease-in-out infinite;
 }
 
-/* Apply blend mode via pseudo-element for background only */
+/* Blend layer follows the bubble's morphing shape */
 #wa-bubble::before {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 100%;
+  border-radius: inherit;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur);
   -webkit-backdrop-filter: var(--wa-blur);
@@ -75,43 +76,10 @@
   z-index: -1;
 }
 
-/* Comet ring — conic gradient masked to a thin ring, giving a sharp trailing arc
-   with a bright leading edge. Looks cleaner than a solid arc or conic disc. */
-#wa-bubble::after,
-.wa-avatar-ring::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    var(--wa-primary-colour, #3C82F6) 72%,
-    rgba(255, 255, 255, 0.95) 80%,
-    transparent 84%
-  );
-  /* Mask punches out the centre, leaving only a ~5px ring */
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 3px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 3px));
-  animation: waRingSpin 3s linear infinite;
-  pointer-events: none;
-  z-index: -1;
-  height: 96px;
-  width: 96px;
-  left: 0;
-  top: 0;
-}
+/* Ring removed — blob morph is the new liveliness signal */
+#wa-bubble::after { display: none; }
 
-#wa-bubble::after {
-  height: 58px;
-  width: 58px;
-}
-
-@keyframes waRingSpin {
-  to { transform: rotate(360deg); }
-}
-
-/* Wrapper for header avatar — needed since img can't have pseudo-elements */
+/* Wrapper for header avatar — also morphs to match blob language */
 .wa-avatar-ring {
   position: relative;
   border-radius: 50%;
@@ -119,11 +87,56 @@
   margin-top: 60px;
   height: 96px;
   width: 96px;
+  overflow: hidden;
+  animation: waBubbleMorph 9s ease-in-out infinite;
+  animation-delay: -3s; /* out-of-phase so bubble and avatar don't sync */
+}
+
+/* Ring removed from avatar too */
+.wa-avatar-ring::before { display: none; }
+
+/* Avatar image clips to wrapper's morphing shape */
+.wa-header-avatar {
+  border-radius: 0;
+}
+
+/* Freeze morph when showing close icon — simple circle looks cleaner */
+#wa-bubble.wa-close-mode {
+  border-radius: 50%;
+  animation: none;
+  overflow: hidden;
 }
 
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
 #wa-bubble:active { transform: scale(0.95); }
-#wa-bubble.wa-close-mode::after { display: none; }
+
+/* ── BLOB MORPH KEYFRAMES ─────────────────────────────────────────────────────── */
+/* Per-keyframe cubic-bezier easing means each segment moves differently —
+   prevents the eye from predicting the loop. Shapes stay within ~15% of 50%
+   so it reads as a soft organic circle, not a sharp polygon. */
+@keyframes waBubbleMorph {
+  0%   {
+    border-radius: 58% 42% 54% 46% / 52% 58% 42% 48%;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  }
+  18%  {
+    border-radius: 44% 56% 48% 52% / 58% 44% 56% 42%;
+    animation-timing-function: cubic-bezier(0.65, 0.05, 0.35, 0.95);
+  }
+  38%  {
+    border-radius: 52% 48% 62% 38% / 42% 54% 46% 58%;
+    animation-timing-function: cubic-bezier(0.40, 0.70, 0.60, 0.30);
+  }
+  62%  {
+    border-radius: 38% 62% 44% 56% / 56% 40% 60% 44%;
+    animation-timing-function: cubic-bezier(0.55, 0.10, 0.45, 0.90);
+  }
+  80%  {
+    border-radius: 62% 38% 52% 48% / 44% 62% 38% 56%;
+    animation-timing-function: cubic-bezier(0.30, 0.60, 0.70, 0.40);
+  }
+  100% { border-radius: 58% 42% 54% 46% / 52% 58% 42% 48%; }
+}
 
 /* Hide bubble when greeting is visible */
 #wa-bubble.wa-hidden {
@@ -439,15 +452,35 @@
 #wa-send {
   background: var(--wa-user-bubble); color: var(--wa-primary-text);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
-  padding: 8px 14px; font-size: 13px; font-weight: 500;
-   cursor: pointer;
-  transition: opacity .2s, transform .15s; white-space: nowrap;
-  height: 37.5px;
+  width: 37.5px; height: 37.5px; padding: 0; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: opacity .2s, transform .15s;
   margin-left: 6px;
 }
 #wa-send:hover    { opacity: .85; }
 #wa-send:active   { transform: scale(.96); }
 #wa-send:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+/* ── VOICE TOGGLE BUTTON ─────────────────────────────────────────────────────── */
+#wa-voice-toggle {
+  background: var(--wa-glass-strong);
+  backdrop-filter: var(--wa-blur-light);
+  border: 1px solid var(--wa-glass-border); border-radius: 10px;
+  width: 37.5px; height: 37.5px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; cursor: pointer; color: var(--wa-text);
+  margin-left: 6px;
+  transition: opacity .2s, transform .15s, background .2s, color .2s, border-color .2s;
+}
+#wa-voice-toggle:hover  { opacity: .85; }
+#wa-voice-toggle:active { transform: scale(.96); }
+/* Active — highlights with primary colour to signal voice mode is on */
+#wa-voice-toggle.wa-voice-active {
+  background: var(--wa-primary-colour, #3C82F6);
+  color: var(--wa-primary-text);
+  border-color: transparent;
+}
 
 /* ── MIC BUTTON ──────────────────────────────────────────────────────────────── */
 #wa-mic {
@@ -497,6 +530,92 @@
 
 @keyframes wa-mic-spin {
   to { transform: rotate(360deg); }
+}
+
+/* ── VOICE MODE ──────────────────────────────────────────────────────────────── */
+
+/* Hide text UI in voice mode */
+.wa-voice-mode #wa-messages          { display: none; }
+.wa-voice-mode .wa-suggested-prompts { display: none; }
+.wa-voice-mode .wa-status-row        { display: none; }
+.wa-voice-mode #wa-input             { display: none; }
+.wa-voice-mode #wa-mic               { display: none; }
+.wa-voice-mode #wa-mic-wave          { display: none; }
+.wa-voice-mode #wa-send              { display: none; }
+
+/* Voice toggle stays visible and expands to fill the row in voice mode */
+.wa-voice-mode .wa-input-row {
+  justify-content: center;
+}
+
+/* Orb panel — hidden by default, shown in voice mode */
+.wa-orb-panel {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 20px;
+}
+.wa-voice-mode .wa-orb-panel {
+  display: flex;
+}
+
+/* Orb container */
+.wa-orb {
+  position: relative;
+  width: 140px; height: 140px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Morphing blob background — primary colour, organic shape */
+.wa-orb-blob {
+  position: absolute;
+  inset: 0;
+  background: var(--wa-primary-colour, #3C82F6);
+  border-radius: 50%;
+  animation: waOrbMorph 6s ease-in-out infinite;
+  box-shadow: 0 0 30px 8px color-mix(in srgb, var(--wa-primary-colour, #3C82F6) 40%, transparent);
+  opacity: 0.92;
+}
+
+/* Avatar sits above the blob, clipped to a circle */
+.wa-orb-avatar {
+  position: relative; z-index: 1;
+  width: 72%; height: 72%;
+  border-radius: 50%; object-fit: cover; object-position: top;
+}
+
+/* Orb states — swap animation for listening/speaking (wired up when voice connects) */
+.wa-orb-listening .wa-orb-blob { animation-duration: 2.5s; }
+.wa-orb-speaking  .wa-orb-blob { animation-duration: 1.4s; }
+
+/* Voice status label */
+.wa-voice-status {
+  font-size: 13px; color: rgba(255,255,255,0.65);
+  text-align: center; letter-spacing: 0.02em;
+}
+
+/* Orb blob morph — more range than the bubble since it's the hero element */
+@keyframes waOrbMorph {
+  0%   {
+    border-radius: 60% 40% 55% 45% / 50% 62% 38% 50%;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  }
+  20%  {
+    border-radius: 44% 56% 42% 58% / 60% 44% 56% 40%;
+    animation-timing-function: cubic-bezier(0.65, 0.05, 0.35, 0.95);
+  }
+  45%  {
+    border-radius: 56% 44% 66% 34% / 40% 56% 44% 60%;
+    animation-timing-function: cubic-bezier(0.40, 0.70, 0.60, 0.30);
+  }
+  70%  {
+    border-radius: 38% 62% 42% 58% / 58% 38% 62% 42%;
+    animation-timing-function: cubic-bezier(0.55, 0.10, 0.45, 0.90);
+  }
+  100% { border-radius: 60% 40% 55% 45% / 50% 62% 38% 50%; }
 }
 
 /* ── END SESSION & ABORT ─────────────────────────────────────────────────────── */

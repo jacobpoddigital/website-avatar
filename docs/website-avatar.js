@@ -117,6 +117,13 @@
           </div>
         </div>
         <div class="wa-messages" id="wa-messages"></div>
+        <div id="wa-orb-panel" class="wa-orb-panel" aria-hidden="true">
+          <div id="wa-orb" class="wa-orb wa-orb-idle">
+            <div class="wa-orb-blob"></div>
+            ${avatarUrl ? `<img src="${avatarUrl}" alt="${name}" class="wa-orb-avatar" onerror="this.style.display='none'" />` : ''}
+          </div>
+          <div id="wa-voice-status" class="wa-voice-status">Tap to start speaking</div>
+        </div>
         <div class="wa-consent-banner" id="wa-consent-banner">
           <p class="wa-consent-text">
             This chat uses an AI to provide responses. Messages will be stored
@@ -138,7 +145,18 @@
               <line x1="8" y1="23" x2="16" y2="23"/>
             </svg>
           </button>
-          <button id="wa-send" disabled>Send</button>
+          <button id="wa-voice-toggle" aria-label="Switch to voice" title="Voice conversation">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <line x1="4" y1="14" x2="4" y2="10"/><line x1="8" y1="16" x2="8" y2="8"/>
+              <line x1="12" y1="18" x2="12" y2="6"/><line x1="16" y1="16" x2="16" y2="8"/>
+              <line x1="20" y1="14" x2="20" y2="10"/>
+            </svg>
+          </button>
+          <button id="wa-send" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+            </svg>
+          </button>
         </div>
         <div class="wa-history-panel" id="wa-history-panel" aria-hidden="true">
           <div class="wa-history-header">
@@ -209,7 +227,8 @@
       panel.querySelector('#wa-history-back').onclick  = () => WebsiteAvatar.closeHistorySession?.();
       panel.querySelector('#wa-advice-btn').onclick    = () => WebsiteAvatar.openAdvicePanel?.();
       panel.querySelector('#wa-advice-close').onclick  = () => WebsiteAvatar.closeAdvicePanel?.();
-      panel.querySelector('#wa-fullscreen-btn').onclick = () => WebsiteAvatar.toggleFullscreen?.();
+      panel.querySelector('#wa-fullscreen-btn').onclick  = () => WebsiteAvatar.toggleFullscreen?.();
+      panel.querySelector('#wa-voice-toggle').onclick   = () => WebsiteAvatar.toggleVoiceMode?.();
 
       // ── GDPR CONSENT ──────────────────────────────────────────────────────
       // Check if the user has already consented in a previous session.
