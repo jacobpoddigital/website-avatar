@@ -820,6 +820,40 @@
   const EXPAND_ICON   = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
   const COMPRESS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></svg>`;
 
+  // Sound wave (voice mode on) / Type cursor (return to text)
+  const VOICE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="14" x2="4" y2="10"/><line x1="8" y1="16" x2="8" y2="8"/><line x1="12" y1="18" x2="12" y2="6"/><line x1="16" y1="16" x2="16" y2="8"/><line x1="20" y1="14" x2="20" y2="10"/></svg>`;
+  const TEXT_ICON  = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`;
+
+  let voiceModeActive = false;
+
+  // ─── VOICE MODE ───────────────────────────────────────────────────────────────
+
+  function toggleVoiceMode() {
+    const panel = document.getElementById('wa-panel');
+    const btn   = document.getElementById('wa-voice-toggle');
+    const orb   = document.getElementById('wa-orb-panel');
+    if (!panel || !btn) return;
+
+    voiceModeActive = !voiceModeActive;
+    panel.classList.toggle('wa-voice-mode', voiceModeActive);
+    btn.classList.toggle('wa-voice-active', voiceModeActive);
+    btn.innerHTML = voiceModeActive ? TEXT_ICON : VOICE_ICON;
+    btn.setAttribute('aria-label', voiceModeActive ? 'Switch to text' : 'Switch to voice');
+    btn.setAttribute('title',      voiceModeActive ? 'Text conversation' : 'Voice conversation');
+    if (orb) orb.setAttribute('aria-hidden', String(!voiceModeActive));
+  }
+
+  function setOrbState(state) {
+    const orb = document.getElementById('wa-orb');
+    const statusEl = document.getElementById('wa-voice-status');
+    if (!orb) return;
+    orb.className = `wa-orb wa-orb-${state}`;
+    const labels = { idle: 'Tap to start speaking', listening: 'Listening…', speaking: 'Speaking…' };
+    if (statusEl) statusEl.textContent = labels[state] || '';
+  }
+
+  // ─── FULL SCREEN ──────────────────────────────────────────────────────────────
+
   function toggleFullscreen() {
     const panel = document.getElementById('wa-panel');
     const btn   = document.getElementById('wa-fullscreen-btn');
@@ -860,6 +894,8 @@
   WA.openAdvicePanel        = openAdvicePanel;
   WA.closeAdvicePanel       = closeAdvicePanel;
   WA.toggleFullscreen       = toggleFullscreen;
+  WA.toggleVoiceMode        = toggleVoiceMode;
+  WA.setOrbState            = setOrbState;
   WA.renderHistorySession   = renderHistorySession;
   WA.renderDebug            = renderDebug;
   WA.showMagicLinkPrompt    = showMagicLinkPrompt;
