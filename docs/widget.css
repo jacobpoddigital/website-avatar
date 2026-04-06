@@ -477,7 +477,7 @@
 /* ── AUTH FORM (inline magic-link card) ──────────────────────────────────────── */
 
 /* Input — mirrors #wa-input */
-.wa-magic-email {
+input.wa-magic-email[type=email] {
   flex: 1; background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light); -webkit-backdrop-filter: var(--wa-blur-light);
   border: 1px solid var(--wa-glass-border); border-radius: 10px 0 0 10px; border-right: 0;
@@ -488,11 +488,12 @@
 .wa-magic-email:focus { border-color: var(--wa-primary-colour, #3C82F6); }
 
 /* Submit button — mirrors #wa-send */
-.wa-magic-submit {
+.wa-btn.wa-magic-submit {
   background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 0 10px 10px 0;
   padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
   transition: opacity .2s, transform .15s; white-space: nowrap; height: 37.5px; flex-shrink: 0;
+  justify-content: center;
 }
 .wa-magic-submit:hover   { opacity: .85; }
 .wa-magic-submit:active  { transform: scale(.96); }
@@ -503,7 +504,7 @@
 
 /* Dismiss link */
 .wa-magic-dismiss {
-  background: none; border: none; padding: 6px 0 0;
+  background: none; border: none; padding: 6px; width: 100%; margin-top: 8px;
   font-size: 12px; color: var(--wa-text-mid); cursor: pointer;
   display: block; text-align: left;
 }
