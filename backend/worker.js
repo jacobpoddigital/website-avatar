@@ -211,15 +211,22 @@ async function appendToSheet(data, env) {
  * Only fills blank/null columns — never overwrites existing data.
  * Returns true if any row was changed.
  */
-async function upsertUserProfile(db, userId, clientId = '', { name, phone, company, job_title } = {}) {
+async function upsertUserProfile(db, userId, clientId = '', { name, phone, company, job_title } = {}, overwrite = false) {
+  // overwrite = false (profile edits): COALESCE — only fill null fields, never regress existing data
+  // overwrite = true  (webhook data):  CASE    — update if incoming value is present, keep existing if not
+  const nameExpr      = overwrite ? `CASE WHEN excluded.name      IS NOT NULL AND excluded.name      != '' THEN excluded.name      ELSE name      END` : `COALESCE(name,      CASE WHEN excluded.name      != '' THEN excluded.name      ELSE NULL END)`;
+  const phoneExpr     = overwrite ? `CASE WHEN excluded.phone     IS NOT NULL AND excluded.phone     != '' THEN excluded.phone     ELSE phone     END` : `COALESCE(phone,     CASE WHEN excluded.phone     != '' THEN excluded.phone     ELSE NULL END)`;
+  const companyExpr   = overwrite ? `CASE WHEN excluded.company   IS NOT NULL AND excluded.company   != '' THEN excluded.company   ELSE company   END` : `COALESCE(company,   CASE WHEN excluded.company   != '' THEN excluded.company   ELSE NULL END)`;
+  const jobTitleExpr  = overwrite ? `CASE WHEN excluded.job_title IS NOT NULL AND excluded.job_title != '' THEN excluded.job_title ELSE job_title END` : `COALESCE(job_title, CASE WHEN excluded.job_title != '' THEN excluded.job_title ELSE NULL END)`;
+
   await db.prepare(`
     INSERT INTO user_profiles (user_id, client_id, name, phone, company, job_title, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, unixepoch())
     ON CONFLICT(user_id, client_id) DO UPDATE SET
-      name      = COALESCE(name,      CASE WHEN excluded.name      != '' THEN excluded.name      ELSE NULL END),
-      phone     = COALESCE(phone,     CASE WHEN excluded.phone     != '' THEN excluded.phone     ELSE NULL END),
-      company   = COALESCE(company,   CASE WHEN excluded.company   != '' THEN excluded.company   ELSE NULL END),
-      job_title = COALESCE(job_title, CASE WHEN excluded.job_title != '' THEN excluded.job_title ELSE NULL END),
+      name      = ${nameExpr},
+      phone     = ${phoneExpr},
+      company   = ${companyExpr},
+      job_title = ${jobTitleExpr},
       updated_at = unixepoch()
   `).bind(
     userId,
@@ -506,6 +513,11 @@ export default {
       try {
         const clientId = corsOrigins[requestOrigin] || '';
 
+        // Fetch client config to get the website's business name
+        const rawClientConfig = clientId ? await env.CONFIGS.get(clientId) : null;
+        const clientConfig = rawClientConfig ? JSON.parse(rawClientConfig) : {};
+        const businessName = clientConfig.businessName || clientConfig.brandName || '';
+
         const profile = await env.website_avatar_db.prepare(
           'SELECT name, company, persona_summary FROM user_profiles WHERE user_id = ? AND client_id = ?'
         ).bind(user_id, clientId).first();
@@ -520,7 +532,7 @@ export default {
 
         // Keep this prompt tight — every token counts
         const lines = [
-          `Write one warm greeting sentence for a returning website visitor.`,
+          `Write one warm greeting sentence for a returning visitor to ${businessName ? `the ${businessName} website` : 'our website'}.`,
           `Name: ${firstName} | Company: ${profile.company || 'unknown'} | Visits: ${visits} | Page: ${page_title || 'Homepage'}`,
         ];
         if (profile.persona_summary) {
@@ -1467,12 +1479,13 @@ export default {
           console.log('[Webhook] 🔍 Resolved user:', authUserId ?? 'NONE', '| via:', resolvedVia ?? 'no path matched');
 
           if (authUserId) {
-            // Always upsert any new contact fields collected this call
+            // Always upsert any new contact fields collected this call.
+            // overwrite=true: webhook data from a verified call should update existing fields.
             await upsertUserProfile(env.website_avatar_db, authUserId, dynVars.client_id || '', {
               name:    name    !== 'Unknown'      ? name    : null,
               phone:   phone   !== 'Not provided' ? phone   : null,
               company: company !== 'Not provided' ? company : null,
-            });
+            }, true);
             console.log('[Webhook] ✅ Profile upserted for user:', authUserId, '| client:', dynVars.client_id || '(none)');
             // Always refresh persona — we have their data, don't need them to re-speak it
             ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary, dynVars.client_id || ''));
