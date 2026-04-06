@@ -381,6 +381,12 @@ RULES:
       }
 
       _recordAISuccess();
+
+      // Emit wa:action-confirmed when OpenAI returns at least one actionable result.
+      // ui.js (and any other listener) can use this to react after the decision is made.
+      const hasActions = parsed?.actions?.some(a => a.type && a.type !== 'none');
+      if (hasActions && WA.bus) WA.bus.emit('wa:action-confirmed', parsed);
+
       return parsed;
 
     } catch(e) {
