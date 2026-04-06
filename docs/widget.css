@@ -338,7 +338,7 @@
 
 /* ── SUGGESTED PROMPTS ───────────────────────────────────────────────────────── */
 .wa-suggested-prompts {
-  display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0;
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px;
 }
 .wa-suggested-prompts:empty { display: none; }
 .wa-prompt-chip {
@@ -354,6 +354,7 @@
 }
 .wa-prompt-chip:hover {
   background: var(--wa-primary-colour, #3C82F6);
+  color: #fff;
 }
 
 .wa-input-row {
