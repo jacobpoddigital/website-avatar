@@ -10,19 +10,49 @@
 
   let typingEl      = null;
   let waitingHintEl = null;
+  let typingInterval = null;
+
+  const LOADING_PHRASES = [
+    'Thinking…',
+    'Pulling that together…',
+    'Reviewing your question…',
+    'Checking the details…',
+    'Connecting the dots…',
+    'Gathering context…',
+    'Working on it…',
+    'Considering your options…',
+    'Looking into that…',
+    'One moment…',
+  ];
 
   // ─── TYPING INDICATORS ────────────────────────────────────────────────────
 
   function showTyping() {
     if (typingEl) return;
     typingEl = document.createElement('div');
-    typingEl.className = 'wa-typing';
-    typingEl.innerHTML = '<span></span><span></span><span></span>';
     const msgs = document.getElementById('wa-messages');
+
+    const style = (window.WA_CONFIG && window.WA_CONFIG.loadingStyle) || 'dots';
+
+    if (style === 'text') {
+      typingEl.className = 'wa-typing wa-typing--text';
+      const phrases = [...LOADING_PHRASES].sort(() => Math.random() - 0.5);
+      let i = 0;
+      typingEl.textContent = phrases[i];
+      typingInterval = setInterval(() => {
+        i = (i + 1) % phrases.length;
+        if (typingEl) typingEl.textContent = phrases[i];
+      }, 3000);
+    } else {
+      typingEl.className = 'wa-typing';
+      typingEl.innerHTML = '<span></span><span></span><span></span>';
+    }
+
     if (msgs) { msgs.appendChild(typingEl); scrollToBottom(); }
   }
 
   function hideTyping() {
+    if (typingInterval) { clearInterval(typingInterval); typingInterval = null; }
     if (typingEl) { typingEl.remove(); typingEl = null; }
   }
 
