@@ -414,6 +414,7 @@
       return;
     }
   
+    if (typeof WA.showActionChecking === 'function') WA.showActionChecking();
     const result = await WA.decideActions(
       userMessage,
       agentMessage,
@@ -422,7 +423,8 @@
       session.messages.slice(-4),
       session.actions
     );
-  
+    if (typeof WA.hideActionChecking === 'function') WA.hideActionChecking();
+
     if (!result || !result.actions?.length) return;
   
     // Double-check still clear

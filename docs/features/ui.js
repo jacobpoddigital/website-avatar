@@ -8,9 +8,10 @@
 
   const WA = window.WebsiteAvatar || (window.WebsiteAvatar = {});
 
-  let typingEl      = null;
-  let waitingHintEl = null;
-  let typingInterval = null;
+  let typingEl          = null;
+  let waitingHintEl     = null;
+  let actionCheckingEl  = null;
+  let typingInterval    = null;
 
   const LOADING_PHRASES = [
     'Thinking…',
@@ -69,6 +70,25 @@
 
   function hideWaitingHint() {
     if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }
+  }
+
+  // ─── ACTION CHECKING INDICATOR ────────────────────────────────────────────
+  // Shows a transient "Checking…" pill while OpenAI evaluates an action.
+  // Removed automatically once decideActions returns (positive or negative).
+
+  function showActionChecking() {
+    hideActionChecking();
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+    actionCheckingEl = document.createElement('div');
+    actionCheckingEl.className = 'wa-action-checking';
+    actionCheckingEl.textContent = 'Checking what I can do…';
+    msgs.appendChild(actionCheckingEl);
+    scrollToBottom();
+  }
+
+  function hideActionChecking() {
+    if (actionCheckingEl) { actionCheckingEl.remove(); actionCheckingEl = null; }
   }
 
   // ─── MESSAGE FORMATTING ───────────────────────────────────────────────────
@@ -804,6 +824,8 @@
 
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
+  WA.showActionChecking     = showActionChecking;
+  WA.hideActionChecking     = hideActionChecking;
   WA.showTyping             = showTyping;
   WA.hideTyping             = hideTyping;
   WA.showWaitingHint        = showWaitingHint;

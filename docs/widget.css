@@ -514,6 +514,16 @@ input.wa-magic-email[type=email] {
 /* Error message */
 .wa-magic-error { font-size: 12px; color: #c84b2f; margin: 6px 0 0; }
 
+/* ── ACTION CHECKING INDICATOR ───────────────────────────────────────────────── */
+.wa-action-checking {
+  font-size: 12px; color: var(--wa-text-mid); font-style: italic;
+  padding: 6px 12px; align-self: flex-start;
+  background: var(--wa-agent-bubble);
+  border: 1px solid var(--wa-glass-border-dim); border-radius: 10px;
+  box-shadow: var(--wa-shadow-sm); animation: waMsgIn .2s ease;
+  opacity: 0.75;
+}
+
 /* ── WAITING HINT ────────────────────────────────────────────────────────────── */
 .wa-waiting-hint {
   text-align: center; font-size: 12px; color: var(--wa-text);
