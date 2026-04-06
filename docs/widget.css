@@ -532,6 +532,7 @@
 .wa-voice-mode #wa-mic-wave          { display: none; }
 .wa-voice-mode #wa-send              { display: none; }
 .wa-voice-mode .wa-avatar-ring       { display: none; }
+.wa-voice-mode .wa-btn-end-session   { display: none; }
 
 
 /* Voice toggle stays visible and expands to fill the row in voice mode */
@@ -574,7 +575,7 @@
 /* Avatar sits above the blob, clipped to a circle */
 .wa-orb-avatar {
   position: relative; z-index: 1;
-  width: 72%; height: 72%;
+  width: 82%; height: 82%;
   border-radius: 50%; object-fit: cover; object-position: top;
 }
 
