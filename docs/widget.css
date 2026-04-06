@@ -75,24 +75,42 @@
   z-index: -1;
 }
 
-/* Spinning gradient ring — bubble + header avatar share the same keyframe */
+/* Rotating trailing arc ring — bubble + header avatar */
+/* Technique: selective border-color creates an arc; rotation does the rest */
 #wa-bubble::after,
 .wa-avatar-ring::before {
   content: '';
   position: absolute;
-  inset: -3px;
-  border-radius: 100%;
-  aspect-ratio: 1/1;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    var(--wa-primary-colour, #3C82F6) 35%,
-    transparent 65%
-  );
+  inset: -4px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--wa-primary-colour, #3C82F6);
+  border-right-color: var(--wa-primary-colour, #3C82F6);
   animation: waRingSpin 3s linear infinite;
   pointer-events: none;
   z-index: -1;
 }
+
+/* Glowing dot at the trailing tip of the arc — header avatar ring only */
+/* Sits at the 3 o'clock position (trailing end of the top-right arc) */
+.wa-avatar-ring::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--wa-primary-colour, #3C82F6);
+  box-shadow:
+    0 0 4px  2px var(--wa-primary-colour, #3C82F6),
+    0 0 10px 4px var(--wa-primary-colour, #3C82F6),
+    0 0 20px 6px rgba(60, 130, 246, 0.3);
+  top: calc(50% - 5px);
+  right: -9px;
+  animation: waRingSpin 3s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
 @keyframes waRingSpin {
   to { transform: rotate(360deg); }
 }
@@ -102,7 +120,7 @@
   position: relative;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 50px;
+  margin-top: 60px;
 }
 
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
@@ -181,6 +199,10 @@
   min-height: 0;
 }
 
+#wa-panel.wa-fullscreen .wa-msg {
+  max-width: 460px;
+}
+
 /* Ensure content is above the blend layer */
 #wa-panel > * {
   position: relative;
@@ -204,7 +226,8 @@
 /* Header avatar image */
 .wa-header-avatar {
   width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
-  border: 6px solid var(--wa-glass-border); object-position: top;
+  object-position: top; outline: 4px solid var(--wa-glass-border);
+  background-color: var(--wa-user-bubble);
 }
 
 #wa-status-label {
@@ -412,7 +435,7 @@
   padding: 8px 13px; font-size: 13px; 
   color: var(--wa-text); outline: none; transition: border-color .2s, box-shadow .2s;
 }
-#wa-input::placeholder { color: var(--wa-text); }
+#wa-input::placeholder { color: rgba(255,255,255,0.5); }
 #wa-input:focus { border-color: var(--wa-glass-border); box-shadow: initial; transform: initial; }
 #wa-send {
   background: var(--wa-user-bubble); color: var(--wa-primary-text);
@@ -960,7 +983,7 @@ span.wa-msg-text {
   transition: border-color .2s, box-shadow .2s;
 }
 #wa-history-auth-input::placeholder {
-  columns: #fff;
+  color: rgba(255,255,255,0.5);
 }
 #wa-panel .wa-history-auth-input:focus { border-color: var(--wa-user-bubble); }
 #wa-panel .wa-history-auth-btn {
