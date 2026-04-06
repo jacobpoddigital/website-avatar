@@ -11,7 +11,6 @@
   let typingEl      = null;
   let waitingHintEl = null;
   let typingInterval = null;
-  let tricklInterval = null;
 
   const LOADING_PHRASES = [
     'Thinking…',
@@ -109,7 +108,11 @@
       } else {
         if (inList) { output.push(`</${listTag}>`); inList = false; listTag = ''; }
         if (line.trim() === '') {
-          output.push('<br>');
+          // Suppress <br> if the next non-empty line will open a list — avoids double gap
+          const next = lines.slice(i + 1).find(l => l.trim() !== '');
+          if (!next || (!next.match(/^-\s+/) && !next.match(/^\d+\.\s+/))) {
+            output.push('<br>');
+          }
         } else {
           output.push(applyInline(line));
         }
@@ -149,30 +152,28 @@
     }
 
     // Trickle-in animation for agent messages only; user messages appear instantly.
-    // Trickle uses plain text, then formatting is applied on completion.
+    // Each message gets its own local interval — avoids shared-state collision when
+    // multiple messages arrive in quick succession.
     if (role === 'agent') {
       const words = text.split(' ');
       let i = 0;
+      let interval = null;
 
       const finish = () => {
-        clearInterval(tricklInterval);
-        tricklInterval = null;
-        // Apply formatting now that the full text is present
+        clearInterval(interval);
         textEl.innerHTML = formatMessage(text);
         el.removeEventListener('click', finish);
         const panel = document.getElementById('wa-panel');
         if (panel) panel.removeEventListener('click', finish);
-        scrollToBottom();
       };
 
       el.addEventListener('click', finish);
       const panel = document.getElementById('wa-panel');
       if (panel) panel.addEventListener('click', finish);
 
-      tricklInterval = setInterval(() => {
+      interval = setInterval(() => {
         i++;
         textEl.textContent = words.slice(0, i).join(' ');
-        scrollToBottom();
         if (i >= words.length) finish();
       }, 40);
     } else {
@@ -358,6 +359,7 @@
     const msgs = document.getElementById('wa-messages');
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   }
+
 
   // ─── BUTTONS ──────────────────────────────────────────────────────────────
 
