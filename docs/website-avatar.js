@@ -362,6 +362,18 @@
         if (Array.isArray(prompts) && prompts.length) {
           const container = document.getElementById('wa-suggested-prompts');
           if (container) {
+            // Header row with toggle
+            const header = document.createElement('div');
+            header.className = 'wa-prompts-header';
+            header.innerHTML = '<span class="wa-prompts-label">Suggestions</span>'
+              + '<button class="wa-prompts-toggle" aria-label="Toggle suggestions" title="Toggle suggestions">'
+              + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
+              + '</button>';
+            container.appendChild(header);
+
+            // Chips wrapper
+            const chipsEl = document.createElement('div');
+            chipsEl.className = 'wa-prompts-chips';
             prompts.forEach(text => {
               const chip = document.createElement('button');
               chip.className = 'wa-prompt-chip';
@@ -371,7 +383,13 @@
                 if (input) { input.value = text; input.focus(); }
                 container.style.display = 'none';
               };
-              container.appendChild(chip);
+              chipsEl.appendChild(chip);
+            });
+            container.appendChild(chipsEl);
+
+            // Toggle expand / collapse
+            header.querySelector('.wa-prompts-toggle').addEventListener('click', () => {
+              container.classList.toggle('wa-prompts-collapsed');
             });
           }
         }
