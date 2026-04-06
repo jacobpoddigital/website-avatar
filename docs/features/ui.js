@@ -104,11 +104,15 @@
     textEl.className = 'wa-msg-text';
     el.appendChild(textEl);
 
-    const timeEl = document.createElement('span');
-    timeEl.className = 'wa-msg-ts';
+    const metaEl = document.createElement('span');
+    metaEl.className = 'wa-msg-ts';
     const date = ts ? new Date(ts) : new Date();
-    timeEl.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    el.appendChild(timeEl);
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const senderLabel = role === 'agent'
+      ? (window.WA_CONFIG?.agentName || 'Agent')
+      : 'You';
+    metaEl.textContent = `${senderLabel} · ${timeStr}`;
+    el.appendChild(metaEl);
 
     const msgs = document.getElementById('wa-messages');
     if (msgs) {
@@ -368,7 +372,7 @@
         }
       };
       const inputRow = panel.querySelector('.wa-input-row');
-      if (inputRow) panel.insertBefore(btn, inputRow);
+      if (inputRow) inputRow.insertAdjacentElement('afterend', btn);
       else panel.appendChild(btn);
     } else if (!hasSession && existing) {
       existing.remove();
@@ -809,8 +813,9 @@
 
   // ─── FULL SCREEN ──────────────────────────────────────────────────────────
 
-  const EXPAND_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
-  const COMPRESS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`;
+  // Lucide Maximize2 / Minimize2
+  const EXPAND_ICON   = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+  const COMPRESS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></svg>`;
 
   function toggleFullscreen() {
     const panel = document.getElementById('wa-panel');

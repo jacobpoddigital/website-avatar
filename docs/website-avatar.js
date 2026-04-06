@@ -95,12 +95,19 @@
             ${avatarHtml}
             <div>
               <h4>${name}</h4>
-              <span id="wa-status-label">Offline</span>
             </div>
           </div>
           <div class="wa-header-actions">
-            <button class="wa-advice-btn" id="wa-advice-btn" aria-label="How I can help" title="How I can help">?</button>
-            <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">•••</button>
+            <button class="wa-advice-btn" id="wa-advice-btn" aria-label="How I can help" title="How I can help">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </button>
+            <button class="wa-history-btn" id="wa-history-btn" aria-label="View past conversations" title="Past conversations">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+              </svg>
+            </button>
             <button class="wa-fullscreen-btn" id="wa-fullscreen-btn" aria-label="Toggle full screen" title="Toggle full screen">
               <svg id="wa-fullscreen-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
@@ -119,6 +126,7 @@
           <button id="wa-consent-btn" class="wa-consent-start-btn">Start Chat</button>
         </div>
         <div id="wa-suggested-prompts" class="wa-suggested-prompts"></div>
+        <div class="wa-status-row"><span id="wa-status-label">Offline</span></div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" disabled />
           <canvas id="wa-mic-wave" aria-hidden="true"></canvas>
