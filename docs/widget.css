@@ -19,6 +19,7 @@
   --wa-text-light:      rgba(20,20,18,0.38);
   --wa-accent:          var(--wa-primary-colour, #3C82F6);
   --wa-user-bubble:     var(--wa-primary-colour, #3C82F6);
+  --wa-primary-text:    #ffffff; /* overridden at boot via WCAG luminance calc in website-avatar.js */
   --wa-agent-bubble:    rgba(255,255,255,0.45);
   --wa-action-bg:       rgba(235, 246, 255, 0.651);
   --wa-action-border:   rgba(200,150,80,0.30);
@@ -237,7 +238,7 @@
   border-bottom-left-radius: 4px; align-self: flex-start; box-shadow: var(--wa-shadow-sm);
 }
 .wa-user {
-  background: var(--wa-user-bubble); color: rgba(255,255,255,0.92);
+  background: var(--wa-user-bubble); color: var(--wa-primary-text);
   border: 1px solid rgba(255,255,255,0.12);
   border-bottom-right-radius: 4px; align-self: flex-end; box-shadow: var(--wa-shadow-sm);
 }
@@ -292,7 +293,7 @@
 }
 .wa-card-btns button:hover  { opacity: .85; transform: translateY(-1px); }
 .wa-card-btns button:active { transform: scale(.97); }
-.wa-btn-confirm { background: var(--wa-user-bubble); color: rgba(255,255,255,0.92); }
+.wa-btn-confirm { background: var(--wa-user-bubble); color: var(--wa-primary-text); }
 .wa-btn-deny    { background: var(--wa-glass-strong); color: var(--wa-text); border: 1px solid var(--wa-glass-border) !important; }
 
 /* Status pills */
@@ -323,7 +324,7 @@
 }
 .wa-consent-start-btn {
   align-self: flex-end;
-  background: var(--wa-user-bubble); color: rgba(255,255,255,0.95);
+  background: var(--wa-user-bubble); color: var(--wa-primary-text);
   border: none; border-radius: 9px;
   padding: 7px 16px; font-size: 13px; font-weight: 500;
   cursor: pointer; transition: opacity .2s, transform .15s;
@@ -354,7 +355,7 @@
 }
 .wa-prompt-chip:hover {
   background: var(--wa-primary-colour, #3C82F6);
-  color: #fff;
+  color: var(--wa-primary-text);
 }
 
 .wa-input-row {
@@ -371,7 +372,7 @@
 #wa-input::placeholder { color: var(--wa-text); }
 #wa-input:focus { border-color: var(--wa-glass-border); box-shadow: initial; transform: initial; }
 #wa-send {
-  background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
+  background: var(--wa-user-bubble); color: var(--wa-primary-text);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
   padding: 8px 14px; font-size: 13px; font-weight: 500;
    cursor: pointer;
@@ -489,7 +490,7 @@ input.wa-magic-email[type=email] {
 
 /* Submit button — mirrors #wa-send */
 .wa-btn.wa-magic-submit {
-  background: var(--wa-user-bubble); color: rgba(255,255,255,0.9);
+  background: var(--wa-user-bubble); color: var(--wa-primary-text);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 0 10px 10px 0;
   padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
   transition: opacity .2s, transform .15s; white-space: nowrap; height: 37.5px; flex-shrink: 0;
@@ -886,7 +887,7 @@ span.wa-msg-text {
   background: var(--wa-user-bubble);
 }
 #wa-panel .wa-history-auth-hint {
-  font-size: 11px; color: #fff; margin: 0 0 8px; line-height: 1.4;
+  font-size: 11px; color: var(--wa-primary-text); margin: 0 0 8px; line-height: 1.4;
 }
 #wa-panel .wa-history-auth-row {
   display: flex; gap: 6px;
@@ -921,10 +922,10 @@ span.wa-msg-text {
   display: flex; flex-direction: column; gap: 2px;
 }
 #wa-panel .wa-history-auth-label {
-  font-size: 10px; color: #fff; text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10px; color: var(--wa-primary-text); text-transform: uppercase; letter-spacing: 0.05em;
 }
 #wa-panel .wa-history-auth-email {
-  font-size: 12px; font-weight: 500; color: #fff;
+  font-size: 12px; font-weight: 500; color: var(--wa-primary-text);
 }
 
 /* ── HEADER ACTIONS (advice + history buttons) ───────────────────────────────── */
