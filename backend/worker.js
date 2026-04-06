@@ -418,20 +418,23 @@ export default {
       });
     }
 
+    // Admin routes bypass client-origin CORS — they're secured by ADMIN_SECRET instead.
+    const isAdminRoute = url.pathname === '/dashboard';
+
     const cors = {
-      'Access-Control-Allow-Origin':  allowedOrigin || 'null',
+      'Access-Control-Allow-Origin':  isAdminRoute ? (requestOrigin || '*') : (allowedOrigin || 'null'),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Credentials': allowedOrigin ? 'true' : 'false',
+      'Access-Control-Allow-Credentials': (allowedOrigin || isAdminRoute) ? 'true' : 'false',
       'Content-Type':                 'application/json'
     };
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: allowedOrigin ? 204 : 403, headers: cors });
+      return new Response(null, { status: (allowedOrigin || isAdminRoute) ? 204 : 403, headers: cors });
     }
 
-    // Block credentialed requests from unrecognised origins
-    if (requestOrigin && !allowedOrigin) {
+    // Block credentialed requests from unrecognised origins (admin routes exempt)
+    if (requestOrigin && !allowedOrigin && !isAdminRoute) {
       console.warn('[CORS] ❌ Blocked request from unrecognised origin:', requestOrigin);
       return json({ error: 'Origin not allowed', code: 'ORIGIN_NOT_ALLOWED' }, 403, cors);
     }

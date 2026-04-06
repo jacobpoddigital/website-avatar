@@ -189,23 +189,25 @@
     </header>
 
     <div class="glass form-panel">
-      <div class="form-row">
-        <div class="field">
-          <label for="clientId">Account ID</label>
-          <input id="clientId" type="text" placeholder="acct_xxx" autocomplete="off">
+      <form onsubmit="fetchDashboard(); return false;">
+        <div class="form-row">
+          <div class="field">
+            <label for="clientId">Account ID</label>
+            <input id="clientId" type="text" placeholder="acct_xxx" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="adminSecret">Admin Secret</label>
+            <input id="adminSecret" type="password" placeholder="••••••••">
+          </div>
+          <div class="field">
+            <label for="days">Days</label>
+            <input id="days" type="number" value="30" min="1" max="365">
+          </div>
+          <div class="field" style="justify-content:flex-end">
+            <button id="fetchBtn" type="submit">Fetch</button>
+          </div>
         </div>
-        <div class="field">
-          <label for="adminSecret">Admin Secret</label>
-          <input id="adminSecret" type="password" placeholder="••••••••">
-        </div>
-        <div class="field">
-          <label for="days">Days</label>
-          <input id="days" type="number" value="30" min="1" max="365">
-        </div>
-        <div class="field" style="justify-content:flex-end">
-          <button id="fetchBtn" onclick="fetchDashboard()">Fetch</button>
-        </div>
-      </div>
+      </form>
     </div>
 
     <div id="status" class="status"></div>
@@ -374,9 +376,6 @@
       el.textContent = msg;
     }
 
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Enter') fetchDashboard();
-    });
   </script>
 </body>
 </html>
