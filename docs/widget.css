@@ -102,6 +102,7 @@
   position: relative;
   border-radius: 50%;
   flex-shrink: 0;
+  margin-top: 50px;
 }
 
 #wa-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
@@ -159,7 +160,7 @@
   position: absolute;
   inset: 0;
   border-radius: 20px;
-  background: var(--wa-glass-bg);
+  background: #00000045;
   backdrop-filter: var(--wa-blur);
   -webkit-backdrop-filter: var(--wa-blur);
   mix-blend-mode: difference;
@@ -204,7 +205,6 @@
 .wa-header-avatar {
   width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
   border: 6px solid var(--wa-glass-border); object-position: top;
-  margin-top: 50px;
 }
 
 #wa-status-label {
@@ -312,8 +312,11 @@
 
 /* ── STATUS ROW (above input) ────────────────────────────────────────────────── */
 .wa-status-row {
-  padding: 4px 14px 2px;
+  padding: 8px 16px;
   font-size: 12px;
+  text-align: center;
+  border-top: 1px solid var(--wa-glass-border-dim);
+  background: var(--wa-glass-subtle);
 }
 
 /* ── INPUT ROW ───────────────────────────────────────────────────────────────── */
@@ -478,7 +481,7 @@
 .wa-btn-end-session {
   display: block; width: 100%;
   background: none; border: none; border-top: 1px solid var(--wa-glass-border-dim);
-  font-size: 11px; color: var(--wa-text-light);
+  font-size: 12px; color: #fff;
   cursor: pointer; text-align: center; padding: 8px 16px;
   transition: color .15s;
 }
@@ -842,7 +845,7 @@ span.wa-msg-text {
 #wa-panel .wa-history-btn {
   background: none; border: none; cursor: pointer;
   color: var(--wa-text-mid); font-size: 14px; padding: 4px 8px;
-  border-radius: 8px; line-height: 1;
+  border-radius: 100%; line-height: 1; width: 26px; height: 26px;
   transition: color .15s, background .15s; flex-shrink: 0;
 }
 #wa-panel .wa-history-btn:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
@@ -990,7 +993,7 @@ span.wa-msg-text {
   color: var(--wa-text-mid);
   width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; line-height: 1;
+  border-radius: 100%; line-height: 1;
   transition: color .15s, background .15s; flex-shrink: 0; padding: 0;
 }
 #wa-panel .wa-fullscreen-btn:hover { color: var(--wa-text); background: var(--wa-glass-subtle); }
