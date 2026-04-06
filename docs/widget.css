@@ -75,37 +75,24 @@
   z-index: -1;
 }
 
-/* Rotating trailing arc ring — bubble + header avatar */
-/* Technique: selective border-color creates an arc; rotation does the rest */
+/* Comet ring — conic gradient masked to a thin ring, giving a sharp trailing arc
+   with a bright leading edge. Looks cleaner than a solid arc or conic disc. */
 #wa-bubble::after,
 .wa-avatar-ring::before {
   content: '';
   position: absolute;
   inset: -4px;
-  border-radius: 100%;
-  border: 3px solid transparent;
-  border-top-color: var(--wa-primary-colour, #3C82F6);
-  border-right-color: var(--wa-primary-colour, #3C82F6);
-  animation: waRingSpin 3s linear infinite;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Glowing dot at the trailing tip of the arc — header avatar ring only */
-/* Sits at the 3 o'clock position (trailing end of the top-right arc) */
-.wa-avatar-ring::after {
-  content: '';
-  position: absolute;
-  width: 10px;
-  height: 10px;
   border-radius: 50%;
-  background-color: var(--wa-primary-colour, #3C82F6);
-  box-shadow:
-    0 0 4px  2px var(--wa-primary-colour, #3C82F6),
-    0 0 10px 4px var(--wa-primary-colour, #3C82F6),
-    0 0 20px 6px rgba(60, 130, 246, 0.3);
-  top: calc(50% - 5px);
-  right: -9px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--wa-primary-colour, #3C82F6) 72%,
+    rgba(255, 255, 255, 0.95) 80%,
+    transparent 84%
+  );
+  /* Mask punches out the centre, leaving only a ~5px ring */
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 3px));
   animation: waRingSpin 3s linear infinite;
   pointer-events: none;
   z-index: -1;
@@ -867,7 +854,7 @@ span.wa-msg-text {
 /* ── THREE-DOT HISTORY BUTTON ────────────────────────────────────────────────── */
 #wa-panel .wa-history-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--wa-text-mid); font-size: 14px; padding: 4px 8px;
+  color: var(--wa-text-mid); font-size: 14px; padding: 0;
   border-radius: 100%; line-height: 1; width: 26px; height: 26px;
   transition: color .15s, background .15s; flex-shrink: 0;
 }

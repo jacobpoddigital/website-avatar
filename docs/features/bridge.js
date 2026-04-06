@@ -109,6 +109,7 @@
       if (WA.setState) WA.setState('connection', 'connected');
       _reconnectAttempts = 0;
       inactivity.onConnect();
+      if (WA.updateSessionButton) WA.updateSessionButton(true);
       
       // Show waiting hint only if no messages yet
       const session = WA.getSession ? WA.getSession() : {};
@@ -142,6 +143,7 @@
       }
       if (WA.hideTyping) WA.hideTyping();
       if (WA.hideWaitingHint) WA.hideWaitingHint();
+      if (WA.updateSessionButton) WA.updateSessionButton(false);
 
       const wasIntentional = _intentionalDisconnect;
       _intentionalDisconnect = false;
