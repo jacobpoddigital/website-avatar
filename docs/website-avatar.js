@@ -329,8 +329,19 @@
         };
         const debug = window.WA_CONFIG.debug;
 
-        // Inject brand colour as a CSS custom property so widget styles can reference it
+        // Inject brand colour as a CSS custom property so widget styles can reference it.
+        // Also derive --wa-primary-text (black or white) via WCAG relative luminance so
+        // text on primary-coloured backgrounds stays readable for any brand colour.
         document.documentElement.style.setProperty('--wa-primary-colour', window.WA_CONFIG.primaryColor);
+        (function () {
+          const hex = (window.WA_CONFIG.primaryColor || '#3C82F6').replace('#', '');
+          if (!/^[0-9a-fA-F]{6}$/.test(hex)) return; // skip if not a valid 6-digit hex
+          const toLinear = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+          const L = 0.2126 * toLinear(parseInt(hex.slice(0,2),16))
+                  + 0.7152 * toLinear(parseInt(hex.slice(2,4),16))
+                  + 0.0722 * toLinear(parseInt(hex.slice(4,6),16));
+          document.documentElement.style.setProperty('--wa-primary-text', L > 0.179 ? '#1a1a1a' : '#ffffff');
+        })();
 
         const link = document.createElement('link');
         link.rel = 'stylesheet';

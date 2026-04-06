@@ -42,7 +42,7 @@ function generateAdminEmail({ name, phone, email, company, callSummary, callDura
 </html>`;
 }
 
-function generateThankYouEmail({ name, brandName = 'our team' }) {
+function generateThankYouEmail({ name, businessName = 'our team' }) {
   const firstName = name.split(' ')[0];
   return `
 <!DOCTYPE html>
@@ -67,7 +67,7 @@ function generateThankYouEmail({ name, brandName = 'our team' }) {
       <p class="message">Hi ${firstName},</p>
       <p class="message">Thank you for getting in touch with us through our Website Avatar. We've received your information and one of our team members will be in contact with you shortly.</p>
       <p class="message">If you have any urgent questions in the meantime, please don't hesitate to reach out to us directly.</p>
-      <p class="message">Best regards,<br><strong>The ${brandName} Team</strong></p>
+      <p class="message">Best regards,<br><strong>The ${businessName} Team</strong></p>
     </div>
   </div>
 </body>
@@ -455,7 +455,7 @@ export default {
       // Allowlist fields safe to expose to the frontend.
       // Anything not listed here (notifyEmails, notifyPhone, allowedOrigin, etc.) is never returned.
       const FRONTEND_FIELDS = [
-        'agentName', 'businessName', 'brandName',
+        'agentName', 'businessName',
         'dialogueAgentId',
         'avatar_url', 'greetingMessage', 'primaryColor',
         'debug', 'loadingStyle', 'suggestedPrompts',
@@ -534,7 +534,7 @@ export default {
         // Fetch client config to get the website's business name
         const rawClientConfig = clientId ? await env.CONFIGS.get(clientId) : null;
         const clientConfig = rawClientConfig ? JSON.parse(rawClientConfig) : {};
-        const businessName = clientConfig.businessName || clientConfig.brandName || '';
+        const businessName = clientConfig.businessName || '';
 
         const profile = await env.website_avatar_db.prepare(
           'SELECT name, company, persona_summary FROM user_profiles WHERE user_id = ? AND client_id = ?'
@@ -1556,8 +1556,8 @@ export default {
         // Notification values — per-client config with Pod Digital as fallback
         const notifyEmails  = clientConfig.notifyEmails  || ['jacob@poddigital.co.uk', 'mike@poddigital.co.uk'];
         const notifyPhone   = clientConfig.notifyPhone   || '+447468621246';
-        const brandName     = clientConfig.brandName     || 'Pod Digital';
-        console.log('[Webhook] 📋 Routing notifications | client:', clientId || '(none)', '| brand:', brandName);
+        const businessName  = clientConfig.businessName  || 'Pod Digital';
+        console.log('[Webhook] 📋 Routing notifications | client:', clientId || '(none)', '| brand:', businessName);
 
         // ── Lead notifications ─────────────────────────────────────────────
         // Only fire when the user spoke their name and email — these go to
@@ -1603,11 +1603,11 @@ export default {
         }
 
         try {
-          const thankYouHtml = generateThankYouEmail({ name, brandName });
+          const thankYouHtml = generateThankYouEmail({ name, businessName });
           await sendEmail({
             from: env.FROM_EMAIL || 'mail@websiteavatar.co.uk',
             to: email,
-            subject: `Thank you for contacting ${brandName}`,
+            subject: `Thank you for contacting ${businessName}`,
             html: thankYouHtml
           }, env);
           console.log('[Webhook] ✅ Thank you email sent to:', email);
