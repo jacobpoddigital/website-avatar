@@ -63,7 +63,12 @@
         <div class="wa-greeting-bubble">
           <p>${greetingMessage}</p>
         </div>
-        ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-greeting-avatar" onerror="this.style.display='none'" />` : ''}
+        <div class="wa-greeting-orb">
+          <div class="wa-orb wa-orb-speaking">
+            <div class="wa-orb-blob"></div>
+            ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-orb-avatar" onerror="this.style.display='none'" />` : ''}
+          </div>
+        </div>
         <div class="wa-greeting-name">${nameLabel}</div>
         <div class="wa-greeting-fade"></div>
         <div class="wa-greeting-actions">
