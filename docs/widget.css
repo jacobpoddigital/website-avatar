@@ -727,7 +727,7 @@ input.wa-magic-email[type=email] {
 #wa-greeting {
   position: fixed;
   inset: 0;
-  z-index: 9999999999999;
+  z-index: 9999999999999999;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -758,6 +758,7 @@ input.wa-magic-email[type=email] {
   align-items: center;
   width: 100%;
   max-width: 500px;
+  padding: 0 50px;
   animation: waGreetingSlideIn 0.6s cubic-bezier(0.34, 1.20, 0.64, 1);
 }
 
@@ -772,7 +773,7 @@ input.wa-magic-email[type=email] {
   background: #fff;
   border-radius: 18px;
   padding: 10px 14px;
-  width: 65%;
+  width: 80%;
   box-shadow: 0 8px 32px rgba(0,0,0,0.20), 0 2px 8px rgba(0,0,0,0.12);
   margin-bottom: 20px;
   animation: waGreetingBubble 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.2s backwards;
@@ -829,7 +830,7 @@ input.wa-magic-email[type=email] {
   display: inline-block;
   background: var(--wa-user-bubble);
   color: var(--wa-primary-text);
-  padding: 2px 8px;
+  padding: 3px 6px;
   border-radius: 6px;
   font-size: 11px;
   font-weight: 700;
@@ -856,7 +857,6 @@ input.wa-magic-email[type=email] {
 
 .wa-greeting-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 5px;
@@ -870,6 +870,7 @@ input.wa-magic-email[type=email] {
   transition: all 0.2s ease;
   box-shadow: var(--wa-shadow-sm);
   color: var(--wa-text);
+  min-height: 60px;
 }
 
 .wa-greeting-btn:hover {
@@ -881,44 +882,39 @@ input.wa-magic-email[type=email] {
   transform: translateY(0) scale(0.97);
 }
 
-/* Speak button — primary, filled with brand colour */
-.wa-greeting-btn--speak {
-  background: var(--wa-user-bubble);
-  border-color: transparent;
-}
-
-.wa-greeting-btn--speak:hover {
-  background: var(--wa-user-bubble);
-  opacity: 0.88;
-}
-
-.wa-greeting-btn--speak .wa-greeting-btn-icon,
-.wa-greeting-btn--speak .wa-greeting-btn-label {
-  color: var(--wa-primary-text);
-}
-
 .wa-greeting-btn-icon {
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
+  color: var(--wa-text);
 }
 
 .wa-greeting-btn-label {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255,255,255,0.90);
+  color: var(--wa-text);
   letter-spacing: 0.02em;
+}
+
+/* Greeting orb — reuses wa-orb/wa-orb-blob, sized for the card and running at voice-speaking speed */
+.wa-greeting-orb {
+  margin-bottom: 10px;
+}
+
+.wa-greeting-orb .wa-orb {
+  width: 160px;
+  height: 160px;
+}
+
+.wa-greeting-orb .wa-orb-blob {
+  animation-duration: 1.4s;
 }
 
 /* ── "How it can help" bullets — glass card ── */
 .wa-greeting-bullets {
   width: 100%;
-  background: var(--wa-user-bubble);
-  border: 1px solid var(--wa-glass-border);
-  border-radius: 14px;
-  padding: 14px 18px 14px 22px;
-  box-shadow: var(--wa-shadow-sm);
+  padding: 10px;
   animation: waGreetingBullets 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.4s backwards;
 }
 
@@ -937,7 +933,7 @@ input.wa-magic-email[type=email] {
   font-size: 13px;
   color: rgba(255,255,255,0.85);
   line-height: 1.5;
-  padding: 5px 0 5px 16px;
+  padding: 8px 0 8px 16px;
   position: relative;
 }
 
