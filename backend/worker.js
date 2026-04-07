@@ -1476,6 +1476,23 @@ export default {
         // 3. Spoken email from data_collection_results — last resort, fragile
         //    (speech-to-text errors, user may give a different address).
         const dynVars = callData.data?.conversation_initiation_client_data?.dynamic_variables || {};
+
+        // ── Resolve client_id early — dynVar may be missing if session raced ahead ──
+        let resolvedClientId = dynVars.client_id || '';
+        if (!resolvedClientId && conversationId) {
+          try {
+            const convRow = await env.website_avatar_db.prepare(
+              'SELECT client_id FROM conversations WHERE conversation_id = ? LIMIT 1'
+            ).bind(conversationId).first();
+            if (convRow?.client_id) {
+              resolvedClientId = convRow.client_id;
+              console.log('[Webhook] 🔍 Resolved client_id from DB fallback:', resolvedClientId);
+            }
+          } catch (e) {
+            console.warn('[Webhook] ⚠️ DB fallback for client_id failed:', e.message);
+          }
+        }
+
         try {
 
           // ── DEBUG: log everything we received so we can trace resolution ──
@@ -1527,14 +1544,14 @@ export default {
           if (authUserId) {
             // Always upsert any new contact fields collected this call.
             // overwrite=true: webhook data from a verified call should update existing fields.
-            await upsertUserProfile(env.website_avatar_db, authUserId, dynVars.client_id || '', {
+            await upsertUserProfile(env.website_avatar_db, authUserId, resolvedClientId, {
               name:    name    !== 'Unknown'      ? name    : null,
               phone:   phone   !== 'Not provided' ? phone   : null,
               company: company !== 'Not provided' ? company : null,
             }, true);
-            console.log('[Webhook] ✅ Profile upserted for user:', authUserId, '| client:', dynVars.client_id || '(none)');
+            console.log('[Webhook] ✅ Profile upserted for user:', authUserId, '| client:', resolvedClientId || '(none)');
             // Always refresh persona — we have their data, don't need them to re-speak it
-            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary, dynVars.client_id || ''));
+            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary, resolvedClientId));
           } else {
             console.log('[Webhook] ℹ️ No authenticated user resolved — guest call, skipping profile update');
           }
@@ -1543,7 +1560,7 @@ export default {
         }
 
         // ── Resolve client config for per-client notification routing ──────────
-        const clientId = dynVars.client_id || '';
+        const clientId = resolvedClientId;
         let clientConfig = {};
         if (clientId) {
           try {
