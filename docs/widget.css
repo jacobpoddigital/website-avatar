@@ -225,7 +225,7 @@
 .wa-header-avatar {
   width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
   object-position: top;
-  background-color: var(--wa-user-bubble);
+  background: linear-gradient(to top, var(--wa-user-bubble-dark), var(--wa-user-bubble));
   margin: 8px;
 }
 
@@ -580,11 +580,11 @@
 .wa-orb-blob {
   position: absolute;
   inset: 0;
-  background: var(--wa-primary-colour, #3C82F6);
   border-radius: 50%;
   animation: waOrbMorph 6s ease-in-out infinite;
   box-shadow: 0 0 30px 8px color-mix(in srgb, var(--wa-primary-colour, #3C82F6) 40%, transparent);
   opacity: 0.92;
+  background: linear-gradient(to top, var(--wa-user-bubble-dark), var(--wa-user-bubble));
 }
 
 /* Avatar sits above the blob, clipped to a circle */
