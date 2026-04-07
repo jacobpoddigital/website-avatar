@@ -19,6 +19,8 @@
   --wa-text-light:      rgba(20,20,18,0.38);
   --wa-accent:          var(--wa-primary-colour, #3C82F6);
   --wa-user-bubble:     var(--wa-primary-colour, #3C82F6);
+  --wa-user-bubble-light: var(--wa-primary-light, hsl(217,100%,82%));
+  --wa-user-bubble-dark:  var(--wa-primary-dark,  hsl(217,100%,42%));
   --wa-primary-text:    #ffffff; /* overridden at boot via WCAG luminance calc in website-avatar.js */
   --wa-agent-bubble:    rgba(255,255,255,0.45);
   --wa-action-bg:       rgba(235, 246, 255, 0.651);
@@ -339,6 +341,18 @@
   background: var(--wa-glass-subtle);
 }
 
+/* ── AI DISCLAIMER ───────────────────────────────────────────────────────────── */
+.wa-ai-disclaimer {
+  padding: 4px 16px 5px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--wa-text-light);
+  background: var(--wa-glass-subtle);
+  user-select: none;
+  pointer-events: none;
+}
+
 /* ── INPUT ROW ───────────────────────────────────────────────────────────────── */
 /* ── GDPR CONSENT BANNER ─────────────────────────────────────────────────────── */
 #wa-panel > .wa-consent-banner {
@@ -527,6 +541,7 @@
 .wa-voice-mode #wa-messages          { display: none; }
 .wa-voice-mode .wa-suggested-prompts { display: none; }
 .wa-voice-mode .wa-status-row        { display: none; }
+.wa-voice-mode .wa-ai-disclaimer     { display: none; }
 .wa-voice-mode #wa-input             { display: none; }
 .wa-voice-mode #wa-mic               { display: none; }
 .wa-voice-mode #wa-mic-wave          { display: none; }
@@ -618,7 +633,7 @@
   cursor: pointer; text-align: center; padding: 8px 16px;
   transition: color .15s;
 }
-.wa-btn-end-session:hover { color: #991b1b; }
+.wa-btn-end-session:hover { background: #ef4444; border-color: var(--wa-glass-border-dim); color: #fff; }
 .wa-btn-abort {
   display: block; width: calc(100% - 32px); margin: 4px 16px;
   background: rgba(200,75,47,.08); border: 1px solid rgba(200,75,47,.2);
@@ -828,7 +843,7 @@ input.wa-magic-email[type=email] {
 /* Inline "AI" badge — styled like the send button */
 .wa-greeting-name span {
   display: inline-block;
-  background: var(--wa-user-bubble);
+  background: var(--wa-user-bubble-light);
   color: var(--wa-primary-text);
   padding: 3px 6px;
   border-radius: 6px;
@@ -1139,13 +1154,26 @@ span.wa-msg-text {
   font-size: 11px; color: #c84b2f; margin: 6px 0 0;
 }
 #wa-panel .wa-history-auth-status {
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px;
+}
+#wa-panel .wa-history-auth-identity {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
 }
 #wa-panel .wa-history-auth-label {
   font-size: 10px; color: var(--wa-primary-text); text-transform: uppercase; letter-spacing: 0.05em;
 }
 #wa-panel .wa-history-auth-email {
   font-size: 12px; font-weight: 500; color: var(--wa-primary-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#wa-panel .wa-history-auth-signout {
+  font-size: 11px; font-weight: 600; padding: 5px 10px; flex-shrink: 0;
+  background: rgba(255,255,255,0.15); color: var(--wa-primary-text);
+  border: 1px solid rgba(255,255,255,0.30); border-radius: 6px;
+  cursor: pointer; transition: background .15s ease;
+}
+#wa-panel .wa-history-auth-signout:hover {
+  background: rgba(255,255,255,0.25);
 }
 
 /* ── HEADER ACTIONS (advice + history buttons) ───────────────────────────────── */

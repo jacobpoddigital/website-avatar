@@ -125,11 +125,18 @@
   // Run immediately — must happen before WA initialises so getUserId() sees the token
   interceptAuthHash();
 
+  // ─── SIGN OUT ─────────────────────────────────────────────────────────────
+
+  function signOut() {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
   WA.auth = {
     getCurrentUser,
     requestMagicLink,
+    signOut,
     parseJWT,
     isTokenValid,
     isValidEmail,

@@ -165,6 +165,7 @@
         </div>
         <div id="wa-suggested-prompts" class="wa-suggested-prompts"></div>
         <div class="wa-status-row"><span id="wa-status-label">Offline</span></div>
+        <div class="wa-ai-disclaimer" aria-hidden="true">AI can make mistakes. Check important info.</div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" disabled />
           <canvas id="wa-mic-wave" aria-hidden="true"></canvas>
@@ -387,18 +388,44 @@
         };
         const debug = window.WA_CONFIG.debug;
 
-        // Inject brand colour as a CSS custom property so widget styles can reference it.
-        // Also derive --wa-primary-text (black or white) via WCAG relative luminance so
-        // text on primary-coloured backgrounds stays readable for any brand colour.
+        // Inject brand colour as CSS custom properties.
+        // Derives --wa-primary-text (black/white) via WCAG luminance, and
+        // --wa-primary-light / --wa-primary-dark via HSL manipulation so the
+        // widget has a richer palette without requiring extra config fields.
         document.documentElement.style.setProperty('--wa-primary-colour', window.WA_CONFIG.primaryColor);
         (function () {
           const hex = (window.WA_CONFIG.primaryColor || '#3C82F6').replace('#', '');
           if (!/^[0-9a-fA-F]{6}$/.test(hex)) return; // skip if not a valid 6-digit hex
+
+          const r = parseInt(hex.slice(0,2),16);
+          const g = parseInt(hex.slice(2,4),16);
+          const b = parseInt(hex.slice(4,6),16);
+
+          // ── WCAG relative luminance → --wa-primary-text ──────────────────
           const toLinear = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-          const L = 0.2126 * toLinear(parseInt(hex.slice(0,2),16))
-                  + 0.7152 * toLinear(parseInt(hex.slice(2,4),16))
-                  + 0.0722 * toLinear(parseInt(hex.slice(4,6),16));
+          const L = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
           document.documentElement.style.setProperty('--wa-primary-text', L > 0.179 ? '#1a1a1a' : '#ffffff');
+
+          // ── RGB → HSL ────────────────────────────────────────────────────
+          const rn = r/255, gn = g/255, bn = b/255;
+          const max = Math.max(rn,gn,bn), min = Math.min(rn,gn,bn), d = max - min;
+          let h = 0, s = 0;
+          const l = (max + min) / 2;
+          if (d !== 0) {
+            s = d / (1 - Math.abs(2*l - 1));
+            h = max === rn ? ((gn-bn)/d + (gn<bn?6:0)) / 6
+              : max === gn ? ((bn-rn)/d + 2) / 6
+                           : ((rn-gn)/d + 4) / 6;
+          }
+
+          // ── Derive palette — boost saturation +10%, shift lightness ─────
+          const sPct  = Math.min(1, s + 0.10);                 // +10% saturation
+          const lLt   = Math.min(0.92, l + 0.22);             // lighter  (+22%)
+          const lDk   = Math.max(0.08, l - 0.18);             // darker   (-18%)
+
+          const hslStr = (hv, sv, lv) => `hsl(${Math.round(hv*360)},${Math.round(sv*100)}%,${Math.round(lv*100)}%)`;
+          document.documentElement.style.setProperty('--wa-primary-light', hslStr(h, sPct, lLt));
+          document.documentElement.style.setProperty('--wa-primary-dark',  hslStr(h, sPct, lDk));
         })();
 
         const link = document.createElement('link');
