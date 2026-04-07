@@ -1869,6 +1869,107 @@ export default {
       }
     }
 
+    // ── POST /dashboard/ask ───────────────────────────────────────────────────
+    // LLM query over client data. Admin-only. Cost-capped: pre-digested context
+    // only (persona fields + transcript summaries), output capped at 400 tokens.
+    if (url.pathname === '/dashboard/ask' && request.method === 'POST') {
+      if (!env.ADMIN_SECRET || !env.OPENAI_KEY) {
+        return json({ error: 'Server misconfiguration' }, 500, cors);
+      }
+      const askAuth = request.headers.get('Authorization') || '';
+      if (askAuth.slice(7) !== env.ADMIN_SECRET) {
+        return json({ error: 'Unauthorised' }, 401, cors);
+      }
+
+      const { client_id, question } = await request.json().catch(() => ({}));
+      if (!client_id || !question?.trim()) {
+        return json({ error: 'Missing client_id or question' }, 400, cors);
+      }
+
+      // ── Fetch context from D1 ─────────────────────────────────────────────
+      const sinceEpoch = Math.floor(Date.now() / 1000) - (30 * 86400);
+
+      const [profileRows, convRows, usageRows] = await Promise.all([
+        env.website_avatar_db.prepare(
+          'SELECT user_id, name, persona_summary FROM user_profiles WHERE client_id = ? LIMIT 10'
+        ).bind(client_id).all(),
+        env.website_avatar_db.prepare(
+          'SELECT user_id, created_at, analysis FROM conversations WHERE client_id = ? ORDER BY created_at DESC LIMIT 15'
+        ).bind(client_id).all(),
+        env.website_avatar_db.prepare(
+          'SELECT event_type, COUNT(*) AS total FROM usage_events WHERE client_id = ? AND created_at >= ? GROUP BY event_type'
+        ).bind(client_id, sinceEpoch).all(),
+      ]);
+
+      // ── Build compact context string ──────────────────────────────────────
+      // Usage block
+      const usageMap = {};
+      for (const r of (usageRows.results || [])) usageMap[r.event_type] = r.total;
+      const usageBlock = `Sessions: ${usageMap.session_started || 0} | Webhook calls: ${usageMap.webhook_call_complete || 0} | Persona updates: ${usageMap.openai_persona || 0}`;
+
+      // User persona block — extract only the high-signal fields
+      const PERSONA_FIELDS = ['pain_points', 'interests', 'goals', 'needs', 'budget_signals'];
+      const userBlocks = (profileRows.results || []).map(p => {
+        let personaLines = '';
+        if (p.persona_summary) {
+          try {
+            const ps = JSON.parse(p.persona_summary);
+            personaLines = PERSONA_FIELDS
+              .filter(f => ps[f] && (Array.isArray(ps[f]) ? ps[f].length : ps[f]))
+              .map(f => `  ${f}: ${Array.isArray(ps[f]) ? ps[f].join(', ') : ps[f]}`)
+              .join('\n');
+          } catch { personaLines = '  (legacy persona — no structured data)'; }
+        }
+        return `User: ${p.name || p.user_id}\n${personaLines || '  (no persona yet)'}`;
+      }).join('\n\n');
+
+      // Conversation summary block — transcript_summary from analysis JSON
+      const convBlocks = (convRows.results || []).map(c => {
+        let summary = '(no summary)';
+        try {
+          const a = JSON.parse(c.analysis || '{}');
+          summary = a.transcript_summary || a.call_summary_title || '(no summary)';
+        } catch { /* ignore */ }
+        const date = c.created_at?.slice(0, 10) || '?';
+        return `[${date}] ${summary}`;
+      }).join('\n');
+
+      const context = `CLIENT: ${client_id}
+USAGE (last 30 days): ${usageBlock}
+
+KNOWN USERS:
+${userBlocks || '(none)'}
+
+RECENT CONVERSATIONS (newest first):
+${convBlocks || '(none)'}`;
+
+      // ── Call gpt-4o-mini ──────────────────────────────────────────────────
+      const aiResp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${env.OPENAI_KEY}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          max_tokens: 400,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer the question concisely and accurately using only the data provided. If the data is insufficient, say so briefly.'
+            },
+            { role: 'user', content: `Data:\n${context}\n\nQuestion: ${question.trim()}` }
+          ]
+        })
+      });
+
+      if (!aiResp.ok) {
+        return json({ error: 'OpenAI request failed' }, 502, cors);
+      }
+      const aiData = await aiResp.json();
+      const answer = aiData.choices?.[0]?.message?.content?.trim() || 'No answer returned.';
+      const tokensUsed = aiData.usage?.total_tokens || 0;
+
+      return json({ answer, tokens_used: tokensUsed }, 200, cors);
+    }
+
     return json({ error: 'Not found', code: 'NOT_FOUND' }, 404, cors);
   }
 };

@@ -395,9 +395,9 @@
   function renderActionCard(action) {
     const actionTypeLabel = ACTION_TYPE_LABELS[action.type] || action.type;
     const messageParts = [action.description];
-    if (action.payload?.targetLabel)  messageParts.push(`Destination: ${action.payload.targetLabel}`);
-    else if (action.payload?.elementTitle) messageParts.push(`Section: ${action.payload.elementTitle}`);
-    else if (action.payload?.elementText)  messageParts.push(`Element: ${action.payload.elementText}`);
+    if (action.payload?.targetLabel)       messageParts.push(`Destination:<br><strong>${action.payload.targetLabel}</strong>`);
+    else if (action.payload?.elementTitle) messageParts.push(`Section:<br><strong>${action.payload.elementTitle}</strong>`);
+    else if (action.payload?.elementText)  messageParts.push(`Element:<br><strong>${action.payload.elementText}</strong>`);
 
     WA.renderCard({
       label:    'Proposed action',
@@ -486,10 +486,17 @@
     if (user?.isAuthenticated) {
       el.innerHTML = `
         <div class="wa-history-auth-status">
-          <span class="wa-history-auth-label">Signed in as</span>
-          <span class="wa-history-auth-email">${user.email}</span>
+          <div class="wa-history-auth-identity">
+            <span class="wa-history-auth-label">Signed in as</span>
+            <span class="wa-history-auth-email">${user.email}</span>
+          </div>
+          <button class="wa-history-auth-signout" id="wa-history-signout-btn">Sign out</button>
         </div>
       `;
+      el.querySelector('#wa-history-signout-btn').addEventListener('click', () => {
+        WA.auth.signOut();
+        renderHistoryAuth();
+      });
       return;
     }
 

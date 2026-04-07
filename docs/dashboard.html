@@ -179,6 +179,28 @@
     tr:last-child td { border-bottom: none; }
     td.zero { color: var(--wa-text-light); }
     td.date { color: var(--wa-text-mid); font-variant-numeric: tabular-nums; }
+
+    /* ── Ask section ── */
+    .ask-panel { padding: 1.5rem 1.75rem; margin-top: 1.5rem; }
+    .ask-panel h2 { font-size: .95rem; font-weight: 600; color: #fff; margin-bottom: .35rem; }
+    .ask-panel .ask-hint { font-size: .78rem; color: var(--wa-text-mid); margin-bottom: 1rem; }
+    .ask-row { display: flex; gap: .75rem; align-items: flex-end; }
+    .ask-row textarea {
+      flex: 1; resize: vertical; min-height: 62px;
+      background: rgba(255,255,255,0.08); border: 1px solid var(--wa-glass-border);
+      border-radius: 8px; padding: .6rem .9rem; color: var(--wa-text);
+      font-size: .9rem; font-family: inherit; outline: none;
+      transition: border-color .15s; line-height: 1.5;
+    }
+    .ask-row textarea::placeholder { color: var(--wa-text-light); }
+    .ask-row textarea:focus { border-color: var(--wa-accent); }
+    .ask-answer {
+      margin-top: 1rem; padding: 1rem 1.25rem;
+      background: rgba(255,255,255,0.05); border: 1px solid var(--wa-glass-border);
+      border-radius: 10px; font-size: .875rem; line-height: 1.65;
+      color: var(--wa-text); white-space: pre-wrap; display: none;
+    }
+    .ask-meta { margin-top: .4rem; font-size: .7rem; color: var(--wa-text-light); }
   </style>
 </head>
 <body>
@@ -261,6 +283,16 @@
           <tbody id="dailyBody"></tbody>
         </table>
       </div>
+      <div class="glass ask-panel" id="askSection" style="display:none">
+        <h2>Ask about your data</h2>
+        <p class="ask-hint">Powered by gpt-4o-mini · last 15 conversations + user personas · ~400 token cap per answer</p>
+        <div class="ask-row">
+          <textarea id="askInput" placeholder="e.g. What are the most common pain points? Which users are closest to converting?"></textarea>
+          <button id="askBtn" onclick="askData()">Ask</button>
+        </div>
+        <div id="askAnswer" class="ask-answer"></div>
+        <div id="askMeta" class="ask-meta"></div>
+      </div>
     </div>
   </div>
 
@@ -297,6 +329,7 @@
         renderDashboard(data);
         document.getElementById('status').style.display = 'none';
         document.getElementById('metricsSection').style.display = 'block';
+        document.getElementById('askSection').style.display = 'block';
 
       } catch (err) {
         showStatus('error', `Error: ${err.message}`);
@@ -375,6 +408,51 @@
       el.className = `status ${type}`;
       el.textContent = msg;
     }
+
+    async function askData() {
+      const clientId = document.getElementById('clientId').value.trim();
+      const secret   = document.getElementById('adminSecret').value.trim();
+      const question = document.getElementById('askInput').value.trim();
+      const btn      = document.getElementById('askBtn');
+      const answerEl = document.getElementById('askAnswer');
+      const metaEl   = document.getElementById('askMeta');
+
+      if (!question) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Thinking…';
+      answerEl.style.display = 'none';
+      metaEl.textContent = '';
+
+      try {
+        const res = await fetch(`${BACKEND}/dashboard/ask`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${secret}`
+          },
+          body: JSON.stringify({ client_id: clientId, question })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        answerEl.textContent = data.answer;
+        answerEl.style.display = 'block';
+        if (data.tokens_used) metaEl.textContent = `${data.tokens_used} tokens used`;
+      } catch (err) {
+        answerEl.textContent = `Error: ${err.message}`;
+        answerEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ask';
+      }
+    }
+
+    // Allow Ctrl+Enter to submit
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('askInput')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) askData();
+      });
+    });
 
   </script>
 </body>
