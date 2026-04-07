@@ -734,6 +734,8 @@ input.wa-magic-email[type=email] {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s ease;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 #wa-greeting.wa-greeting-visible {
@@ -744,7 +746,7 @@ input.wa-magic-email[type=email] {
 .wa-greeting-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -754,93 +756,123 @@ input.wa-magic-email[type=email] {
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
+  max-width: 500px;
   animation: waGreetingSlideIn 0.6s cubic-bezier(0.34, 1.20, 0.64, 1);
 }
 
 @keyframes waGreetingSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(30px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Avatar circle */
-.wa-greeting-avatar {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 3px solid var(--wa-glass-border);
-  box-shadow: var(--wa-shadow), 0 0 0 8px var(--wa-glass-subtle);
-  margin-bottom: 20px;
-  background: var(--wa-glass-strong);
-  position: relative;
-  z-index: 1;
-}
-
-/* Speech bubble */
+/* ── Speech bubble — solid white, downward triangle ── */
 .wa-greeting-bubble {
   position: relative;
-  background: var(--wa-glass-strong);
-  backdrop-filter: var(--wa-blur);
-  -webkit-backdrop-filter: var(--wa-blur);
-  border: 1px solid var(--wa-glass-border);
+  background: #fff;
   border-radius: 18px;
   padding: 20px 24px;
-  max-width: 380px;
-  box-shadow: var(--wa-shadow);
-  margin-bottom: 24px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.20), 0 2px 8px rgba(0,0,0,0.12);
+  margin-bottom: 20px;
   animation: waGreetingBubble 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.2s backwards;
 }
 
+/* Downward-pointing triangle — makes it a speech bubble aimed at the avatar */
+.wa-greeting-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 12px 10px 0 10px;
+  border-style: solid;
+  border-color: #fff transparent transparent transparent;
+}
+
 @keyframes waGreetingBubble {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .wa-greeting-bubble p {
   margin: 0;
   font-size: 15px;
   line-height: 1.6;
-  color: var(--wa-text);
+  color: rgba(20,20,18,0.90);
   text-align: center;
-  position: relative;
-  z-index: 1;
 }
 
-/* Action buttons container */
+/* ── Avatar circle ── */
+.wa-greeting-avatar {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid rgba(255,255,255,0.60);
+  box-shadow: var(--wa-shadow), 0 0 0 8px rgba(255,255,255,0.10);
+  background: var(--wa-glass-strong);
+  margin-bottom: 10px;
+}
+
+/* ── Agent name label ── */
+.wa-greeting-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
+  text-align: center;
+  margin-bottom: 18px;
+  letter-spacing: 0.01em;
+}
+
+/* Inline "AI" badge — styled like the send button */
+.wa-greeting-name span {
+  display: inline-block;
+  background: var(--wa-user-bubble);
+  color: var(--wa-primary-text);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+  margin-left: 4px;
+  text-transform: uppercase;
+}
+
+/* ── Gradient fade strip (user bubble colour → transparent) ── */
+.wa-greeting-fade {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--wa-user-bubble), transparent);
+  margin-bottom: 20px;
+}
+
+/* ── Three action buttons: Speak / Chat / Close ── */
 .wa-greeting-actions {
   display: flex;
+  gap: 10px;
   justify-content: center;
+  width: 100%;
+  margin-bottom: 16px;
   animation: waGreetingActions 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.3s backwards;
 }
 
 @keyframes waGreetingActions {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .wa-greeting-btn {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 14px 40px;
+  gap: 5px;
+  padding: 12px 16px;
+  flex: 1;
+  max-width: 140px;
   background: var(--wa-glass-strong);
   backdrop-filter: var(--wa-blur-light);
   -webkit-backdrop-filter: var(--wa-blur-light);
@@ -849,102 +881,114 @@ input.wa-magic-email[type=email] {
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: var(--wa-shadow-sm);
-  min-width: 160px;
-  position: relative;
 }
 
 .wa-greeting-btn:hover {
   transform: translateY(-2px);
   box-shadow: var(--wa-shadow);
-  background: var(--wa-glass-bg);
 }
 
 .wa-greeting-btn:active {
-  transform: translateY(0) scale(0.98);
+  transform: translateY(0) scale(0.97);
+}
+
+/* Speak button — primary, filled with brand colour */
+.wa-greeting-btn--speak {
+  background: var(--wa-user-bubble);
+  border-color: transparent;
+}
+
+.wa-greeting-btn--speak:hover {
+  background: var(--wa-user-bubble);
+  opacity: 0.88;
+}
+
+.wa-greeting-btn--speak .wa-greeting-btn-icon,
+.wa-greeting-btn--speak .wa-greeting-btn-label {
+  color: var(--wa-primary-text);
+}
+
+.wa-greeting-btn-icon {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .wa-greeting-btn-label {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--wa-text);
+  color: rgba(255,255,255,0.90);
   letter-spacing: 0.02em;
-  position: relative;
-  z-index: 1;
 }
 
-/* Close button */
-.wa-greeting-close {
-  position: absolute;
-  top: -80px;
-  right: 50%;
-  transform: translateX(50%);
-  width: 36px;
-  height: 36px;
-  line-height: 36px;
+/* ── "How it can help" bullets — glass card ── */
+.wa-greeting-bullets {
+  width: 100%;
   background: var(--wa-glass-strong);
-  backdrop-filter: var(--wa-blur-light);
-  -webkit-backdrop-filter: var(--wa-blur-light);
+  backdrop-filter: var(--wa-blur);
+  -webkit-backdrop-filter: var(--wa-blur);
   border: 1px solid var(--wa-glass-border);
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  color: var(--wa-text-mid);
-  transition: all 0.2s ease;
+  border-radius: 14px;
+  padding: 14px 18px 14px 22px;
   box-shadow: var(--wa-shadow-sm);
-  animation: waGreetingClose 0.4s cubic-bezier(0.34, 1.30, 0.64, 1) 0.5s backwards;
+  animation: waGreetingBullets 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.4s backwards;
 }
 
-@keyframes waGreetingClose {
-  from {
-    opacity: 0;
-    transform: translateX(50%) scale(0.7);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(50%) scale(1);
-  }
+@keyframes waGreetingBullets {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.wa-greeting-close:hover {
-  background: var(--wa-glass-bg);
-  color: var(--wa-text);
-  transform: translateX(50%) scale(1.1);
+.wa-greeting-bullets-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.wa-greeting-close:active {
-  transform: translateX(50%) scale(0.95);
+.wa-greeting-bullets-list li {
+  font-size: 13px;
+  color: rgba(255,255,255,0.85);
+  line-height: 1.5;
+  padding: 5px 0 5px 16px;
+  position: relative;
 }
 
-/* Responsive adjustments */
+.wa-greeting-bullets-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wa-user-bubble);
+}
+
+.wa-greeting-bullets-list li + li {
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+/* ── Responsive ── */
 @media (max-width: 640px) {
-  .wa-greeting-avatar {
-    width: 110px;
-    height: 110px;
-  }
-  
   .wa-greeting-bubble {
-    max-width: 320px;
-    padding: 18px 20px;
+    padding: 16px 18px;
   }
-  
+
   .wa-greeting-bubble p {
     font-size: 14px;
   }
-  
+
+  .wa-greeting-avatar {
+    width: 96px;
+    height: 96px;
+  }
+
   .wa-greeting-btn {
-    min-width: 140px;
-    padding: 12px 32px;
+    padding: 10px 12px;
   }
-  
+
   .wa-greeting-btn-label {
-    font-size: 14px;
-  }
-  
-  .wa-greeting-close {
-    top: -60px;
+    font-size: 12px;
   }
 }
 

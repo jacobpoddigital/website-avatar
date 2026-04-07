@@ -32,10 +32,22 @@
   function injectGreeting(config = {}) {
     if (document.getElementById('wa-greeting')) return;
 
-    const agentName = config.agentName || 'Website Avatar';
-    const avatarUrl = config.avatar_url || '';
+    const agentName     = config.agentName     || 'Website Avatar';
+    const businessName  = config.businessName  || '';
+    const avatarUrl     = config.avatar_url    || '';
     const greetingMessage = config.greetingMessage ||
-      `Hi, I'm ${agentName}${config.businessName ? ` from ${config.businessName}` : ''}. I'm an AI trained on everything we do. Can we have a quick chat?`;
+      `Hi, I'm ${agentName}${businessName ? ` from ${businessName}` : ''}. I'm an AI trained on everything we do. Can we have a quick chat?`;
+
+    // Up to 3 bullet points from suggestedPrompts
+    const bullets = (config.suggestedPrompts || []).slice(0, 3);
+    const bulletsHTML = bullets.length ? `
+      <div class="wa-greeting-bullets">
+        <ul class="wa-greeting-bullets-list">
+          ${bullets.map(b => `<li>${b}</li>`).join('')}
+        </ul>
+      </div>` : '';
+
+    const nameLabel = agentName + (businessName ? ` — ${businessName}` : '') + ' <span>AI</span>';
 
     const greeting = document.createElement('div');
     greeting.id = 'wa-greeting';
@@ -43,18 +55,27 @@
     greeting.innerHTML = `
       <div class="wa-greeting-overlay"></div>
       <div class="wa-greeting-container">
-        <button class="wa-greeting-close" data-action="close" aria-label="Close">
-          ✕
-        </button>
-        ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-greeting-avatar" onerror="this.style.display='none'" />` : ''}
         <div class="wa-greeting-bubble">
           <p>${greetingMessage}</p>
         </div>
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${agentName}" class="wa-greeting-avatar" onerror="this.style.display='none'" />` : ''}
+        <div class="wa-greeting-name">${nameLabel}</div>
+        <div class="wa-greeting-fade"></div>
         <div class="wa-greeting-actions">
-          <button class="wa-greeting-btn" data-action="start">
-            <div class="wa-greeting-btn-label">Start Chat</div>
+          <button class="wa-greeting-btn wa-greeting-btn--speak" data-action="speak" aria-label="Start voice conversation">
+            <span class="wa-greeting-btn-icon">🎙</span>
+            <span class="wa-greeting-btn-label">Speak</span>
+          </button>
+          <button class="wa-greeting-btn wa-greeting-btn--chat" data-action="start" aria-label="Start text chat">
+            <span class="wa-greeting-btn-icon">💬</span>
+            <span class="wa-greeting-btn-label">Chat</span>
+          </button>
+          <button class="wa-greeting-btn wa-greeting-btn--close" data-action="close" aria-label="Close">
+            <span class="wa-greeting-btn-icon">✕</span>
+            <span class="wa-greeting-btn-label">Close</span>
           </button>
         </div>
+        ${bulletsHTML}
       </div>
     `;
     document.body.appendChild(greeting);

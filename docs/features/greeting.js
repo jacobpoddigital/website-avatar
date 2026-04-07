@@ -12,12 +12,15 @@
     window.WebsiteAvatarGreeting = {
       
       /**
-       * Check if greeting should be shown
+       * Check if greeting should be shown.
+       * Dev override: add ?wa_greeting=1 to the URL to bypass the dismissed flag.
        */
       shouldShow() {
+        if (new URLSearchParams(window.location.search).get('wa_greeting') === '1') return true;
+
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return true;
-        
+
         try {
           const data = JSON.parse(stored);
           const now = Date.now();
@@ -85,13 +88,12 @@
       },
   
       /**
-       * Handle "Start Chat" button - open main widget
+       * Handle "Chat" button - open main widget in text mode
        */
       handleStart() {
         this.dismiss();
         this.hide();
-        
-        // Open the main chat widget
+
         setTimeout(() => {
           if (window.WebsiteAvatar && window.WebsiteAvatar.toggleChat) {
             window.WebsiteAvatar.toggleChat();
@@ -100,7 +102,27 @@
           }
         }, 300);
       },
-  
+
+      /**
+       * Handle "Speak" button - open main widget then activate voice mode
+       */
+      handleSpeak() {
+        this.dismiss();
+        this.hide();
+
+        setTimeout(() => {
+          const WA = window.WebsiteAvatar;
+          if (!WA) return;
+          if (WA.toggleChat) WA.toggleChat();
+          else if (WA.openChat) WA.openChat();
+
+          // Give the panel a moment to open before toggling voice
+          setTimeout(() => {
+            if (WA.toggleVoiceMode) WA.toggleVoiceMode();
+          }, 200);
+        }, 300);
+      },
+
       /**
        * Handle "Close" button - just dismiss
        */
@@ -132,16 +154,24 @@
         const greeting = document.getElementById('wa-greeting');
         if (!greeting) return;
   
+        const speakBtn = greeting.querySelector('[data-action="speak"]');
         const startBtn = greeting.querySelector('[data-action="start"]');
         const closeBtn = greeting.querySelector('[data-action="close"]');
-  
+
+        if (speakBtn) {
+          speakBtn.onclick = (e) => {
+            e.preventDefault();
+            this.handleSpeak();
+          };
+        }
+
         if (startBtn) {
           startBtn.onclick = (e) => {
             e.preventDefault();
             this.handleStart();
           };
         }
-  
+
         if (closeBtn) {
           closeBtn.onclick = (e) => {
             e.preventDefault();
