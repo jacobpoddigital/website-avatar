@@ -1890,9 +1890,14 @@ export default {
       const sinceEpoch = Math.floor(Date.now() / 1000) - (30 * 86400);
 
       const [profileRows, convRows, usageRows] = await Promise.all([
-        env.website_avatar_db.prepare(
-          'SELECT user_id, name, persona_summary FROM user_profiles WHERE client_id = ? LIMIT 10'
-        ).bind(client_id).all(),
+        env.website_avatar_db.prepare(`
+          SELECT p.user_id, p.name, p.phone, p.company, p.job_title, p.persona_summary,
+                 u.email
+          FROM user_profiles p
+          LEFT JOIN authenticated_users u ON u.id = p.user_id
+          WHERE p.client_id = ?
+          LIMIT 10
+        `).bind(client_id).all(),
         env.website_avatar_db.prepare(
           'SELECT user_id, created_at, analysis FROM conversations WHERE client_id = ? ORDER BY created_at DESC LIMIT 15'
         ).bind(client_id).all(),
@@ -1907,9 +1912,16 @@ export default {
       for (const r of (usageRows.results || [])) usageMap[r.event_type] = r.total;
       const usageBlock = `Sessions: ${usageMap.session_started || 0} | Webhook calls: ${usageMap.webhook_call_complete || 0} | Persona updates: ${usageMap.openai_persona || 0}`;
 
-      // User persona block — extract only the high-signal fields
+      // User block — contact details + high-signal persona fields
       const PERSONA_FIELDS = ['pain_points', 'interests', 'goals', 'needs', 'budget_signals'];
       const userBlocks = (profileRows.results || []).map(p => {
+        const contact = [
+          p.email     ? `email: ${p.email}`         : null,
+          p.phone     ? `phone: ${p.phone}`         : null,
+          p.company   ? `company: ${p.company}`     : null,
+          p.job_title ? `job title: ${p.job_title}` : null,
+        ].filter(Boolean).join(' | ');
+
         let personaLines = '';
         if (p.persona_summary) {
           try {
@@ -1920,7 +1932,8 @@ export default {
               .join('\n');
           } catch { personaLines = '  (legacy persona — no structured data)'; }
         }
-        return `User: ${p.name || p.user_id}\n${personaLines || '  (no persona yet)'}`;
+        const header = `User: ${p.name || '(unnamed)'}${contact ? `  [${contact}]` : ''}`;
+        return `${header}\n${personaLines || '  (no persona yet)'}`;
       }).join('\n\n');
 
       // Conversation summary block — transcript_summary from analysis JSON
