@@ -38,8 +38,8 @@
     const greetingMessage = config.greetingMessage ||
       `Hi, I'm ${agentName}${businessName ? ` from ${businessName}` : ''}. I'm an AI trained on everything we do. Can we have a quick chat?`;
 
-    // Up to 3 bullet points from suggestedPrompts
-    const bullets = (config.suggestedPrompts || []).slice(0, 3);
+    // Up to 3 client-specific bullets from the dedicated greetingBullets config field
+    const bullets = (config.greetingBullets || []).slice(0, 3);
     const bulletsHTML = bullets.length ? `
       <div class="wa-greeting-bullets">
         <ul class="wa-greeting-bullets-list">
@@ -48,6 +48,11 @@
       </div>` : '';
 
     const nameLabel = agentName + (businessName ? ` — ${businessName}` : '') + ' <span>AI</span>';
+
+    // SVG icons — matching widget style (Lucide, stroke-based)
+    const iconSpeak = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="14" x2="4" y2="10"/><line x1="8" y1="16" x2="8" y2="8"/><line x1="12" y1="18" x2="12" y2="6"/><line x1="16" y1="16" x2="16" y2="8"/><line x1="20" y1="14" x2="20" y2="10"/></svg>`;
+    const iconChat  = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>`;
+    const iconClose = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
     const greeting = document.createElement('div');
     greeting.id = 'wa-greeting';
@@ -63,15 +68,15 @@
         <div class="wa-greeting-fade"></div>
         <div class="wa-greeting-actions">
           <button class="wa-greeting-btn wa-greeting-btn--speak" data-action="speak" aria-label="Start voice conversation">
-            <span class="wa-greeting-btn-icon">🎙</span>
+            <span class="wa-greeting-btn-icon">${iconSpeak}</span>
             <span class="wa-greeting-btn-label">Speak</span>
           </button>
           <button class="wa-greeting-btn wa-greeting-btn--chat" data-action="start" aria-label="Start text chat">
-            <span class="wa-greeting-btn-icon">💬</span>
+            <span class="wa-greeting-btn-icon">${iconChat}</span>
             <span class="wa-greeting-btn-label">Chat</span>
           </button>
           <button class="wa-greeting-btn wa-greeting-btn--close" data-action="close" aria-label="Close">
-            <span class="wa-greeting-btn-icon">✕</span>
+            <span class="wa-greeting-btn-icon">${iconClose}</span>
             <span class="wa-greeting-btn-label">Close</span>
           </button>
         </div>
