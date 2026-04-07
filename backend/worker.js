@@ -458,7 +458,7 @@ export default {
         'agentName', 'businessName',
         'dialogueAgentId',
         'avatar_url', 'greetingMessage', 'primaryColor',
-        'debug', 'loadingStyle', 'suggestedPrompts',
+        'debug', 'loadingStyle', 'suggestedPrompts', 'greetingBullets',
       ];
       const raw_config = JSON.parse(raw);
       const config = Object.fromEntries(
