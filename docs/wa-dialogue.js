@@ -742,6 +742,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
 
     const resolvedUserId = (WA.getUserId ? WA.getUserId() : null) || 'anonymous';
+    const reconnectCtx  = buildReconnectContext();
+    const pageCtx       = buildPageContext();
+    const contextToSend = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
 
     log('Starting voice session | agentId:', voiceAgentId);
 
