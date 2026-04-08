@@ -703,8 +703,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   }
 
   // ─── VOICE SESSION ────────────────────────────────────────────────────────
-  // Separate session for voice mode — no text_only flag, uses voiceAgentId if
-  // configured, falls back to the same agent as text mode.
+  // Completely isolated from the text session — no shared state, no shared
+  // callbacks, no writes to the WA session object.
+  //
+  // Isolation guarantees:
+  //   • Voice messages are NOT shown in the chat UI (orb state only)
+  //   • Voice does NOT write to WA session (dialogueConversationId, messages)
+  //   • Text disconnect before voice uses WA.disconnectBridge() so bridge.js
+  //     marks it intentional — no auto-reconnect race during voice startup
+  //   • Voice onDisconnect triggers a single clean text reconnect via
+  //     WA.reconnectBridge(), which has the proper guard logic
 
   let voiceSession = null;
 
@@ -722,19 +730,18 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       return;
     }
 
-    // Suspend text session so only one connection is active at a time
+    // Mark text disconnect as intentional so bridge.js does NOT auto-reconnect
+    // while voice is starting up.
     if (session) {
-      log('Suspending text session for voice');
-      await disconnect();
+      log('Pausing text session for voice');
+      if (typeof WA.disconnectBridge === 'function') {
+        await WA.disconnectBridge();
+      } else {
+        await disconnect();
+      }
     }
 
-    const metadata = WA.getConversationMetadata ? WA.getConversationMetadata() : {
-      user_id: 'anonymous', session_id: Date.now().toString(), message_count: 0
-    };
-    const resolvedUserId = (WA.getUserId ? WA.getUserId() : null) || metadata.user_id;
-    const reconnectCtx   = buildReconnectContext();
-    const pageCtx        = buildPageContext();
-    const contextToSend  = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
+    const resolvedUserId = (WA.getUserId ? WA.getUserId() : null) || 'anonymous';
 
     log('Starting voice session | agentId:', voiceAgentId);
 
@@ -749,54 +756,42 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             const u = WA.auth.getCurrentUser();
             return u?.isAuthenticated ? u.id : null;
           })(),
-          client_id: WA.getClientId ? WA.getClientId() : '',
-          context: contextToSend || ''
+          client_id: WA.getClientId ? WA.getClientId() : ''
         },
 
         onConnect: async function() {
           log('Voice session connected');
-          setConnectUI('connected');
-
-          const conversationId = await captureConversationId(voiceSession);
-          if (conversationId) {
-            const waSession = WA.getSession ? WA.getSession() : {};
-            waSession.dialogueConversationId = conversationId;
-            if (WA.saveSession) WA.saveSession(waSession);
-            console.log('[WA:Bridge] ✅ Voice connected —', conversationId);
-          }
-
+          // Do NOT touch WA session state — voice is ephemeral
+          console.log('[WA:Bridge] ✅ Voice connected');
           if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
         },
 
         onDisconnect: async () => {
           log('Voice session disconnected');
           voiceSession = null;
-          setConnectUI('offline');
           if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
-          // If voice ended while voice mode is still visually active, reset the UI
+          // Reset voice UI if the session dropped unexpectedly
           if (typeof WA.exitVoiceMode === 'function') WA.exitVoiceMode();
+          // Restore text session via reconnectBridge which has proper guard logic
+          // Give the browser a moment to release the mic before opening a new connection
+          setTimeout(() => {
+            if (typeof WA.reconnectBridge === 'function') WA.reconnectBridge();
+          }, 800);
         },
 
         onMessage: (msg) => {
+          // Voice messages are audio-only — update orb state, never touch chat UI or WA session
           if (!msg.message) return;
           if (msg.source === 'ai') {
             if (msg.isFinal === false) return;
             if (typeof WA.setOrbState === 'function') WA.setOrbState('speaking');
-            const cleanText = msg.message.replace(/\[[^\]]+\]\s*/g, '').trim();
-            if (cleanText && typeof WA.onAgentMessage === 'function') {
-              WA.onAgentMessage(cleanText, null);
-            }
           }
           if (msg.source === 'user') {
             if (msg.isFinal === false) {
               if (typeof WA.setOrbState === 'function') WA.setOrbState('listening');
               return;
             }
-            const text = msg.message.trim();
-            if (text && text !== '...' && text !== '…') {
-              if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
-              if (typeof WA.onUserMessage === 'function') WA.onUserMessage(text);
-            }
+            if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
           }
         },
 
@@ -804,6 +799,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           console.error('[WA:Bridge] Voice onError:', err);
           voiceSession = null;
           if (typeof WA.exitVoiceMode === 'function') WA.exitVoiceMode();
+          setTimeout(() => {
+            if (typeof WA.reconnectBridge === 'function') WA.reconnectBridge();
+          }, 800);
         },
 
         onStatusChange: (info) => {
@@ -814,29 +812,21 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       console.error('[WA:Bridge] connectVoice threw:', err.message);
       voiceSession = null;
       if (typeof WA.exitVoiceMode === 'function') WA.exitVoiceMode();
+      // Text session was paused — restore it
+      setTimeout(() => {
+        if (typeof WA.reconnectBridge === 'function') WA.reconnectBridge();
+      }, 200);
     }
   }
 
   async function disconnectVoice() {
     if (!voiceSession) return;
+    // endSession triggers onDisconnect above, which handles reconnect and UI reset
     try { await voiceSession.endSession(); } catch(e) {}
-    voiceSession = null;
-    setConnectUI('offline');
-    // Restore text session connection
-    reconnectAfterVoice();
+    // voiceSession is set to null inside onDisconnect — don't duplicate it here
   }
 
   function isVoiceConnected() { return !!voiceSession; }
-
-  function reconnectAfterVoice() {
-    // Give ElevenLabs a moment to clean up mic resources before re-connecting
-    setTimeout(() => {
-      if (WA.bridge && !WA.bridge.isConnected()) {
-        log('Restoring text session after voice end');
-        WA.bridge.connect();
-      }
-    }, 800);
-  }
 
   function sendText(text) {
     if (!session) return false;
