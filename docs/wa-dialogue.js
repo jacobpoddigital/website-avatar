@@ -465,6 +465,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       session = await Conversation.startSession({
         agentId: AGENT_ID,
 
+        // Suppress mic access for text-only chat — prevents the red dot / active
+        // microphone indicator in the browser tab during text sessions.
+        conversationConfig: {
+          conversation: { text_only: true }
+        },
+
         // ✅ PASS SESSION METADATA
         metadata: {
           session_id: metadata.session_id,
@@ -696,6 +702,142 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     setConnectUI('offline');
   }
 
+  // ─── VOICE SESSION ────────────────────────────────────────────────────────
+  // Separate session for voice mode — no text_only flag, uses voiceAgentId if
+  // configured, falls back to the same agent as text mode.
+
+  let voiceSession = null;
+
+  async function connectVoice() {
+    log('connectVoice() called');
+
+    const voiceAgentId = (window.WA_CONFIG || {}).voiceAgentId || AGENT_ID;
+    if (!voiceAgentId) {
+      warn('No voice agent ID configured');
+      return;
+    }
+
+    if (voiceSession) {
+      log('Voice session already active — ignoring');
+      return;
+    }
+
+    // Suspend text session so only one connection is active at a time
+    if (session) {
+      log('Suspending text session for voice');
+      await disconnect();
+    }
+
+    const metadata = WA.getConversationMetadata ? WA.getConversationMetadata() : {
+      user_id: 'anonymous', session_id: Date.now().toString(), message_count: 0
+    };
+    const resolvedUserId = (WA.getUserId ? WA.getUserId() : null) || metadata.user_id;
+    const reconnectCtx   = buildReconnectContext();
+    const pageCtx        = buildPageContext();
+    const contextToSend  = reconnectCtx ? `${pageCtx}\n\n${reconnectCtx}` : pageCtx;
+
+    log('Starting voice session | agentId:', voiceAgentId);
+
+    try {
+      voiceSession = await Conversation.startSession({
+        agentId: voiceAgentId,
+
+        dynamicVariables: {
+          user_id: resolvedUserId,
+          authenticated_user_id: (() => {
+            if (!WA.auth) return null;
+            const u = WA.auth.getCurrentUser();
+            return u?.isAuthenticated ? u.id : null;
+          })(),
+          client_id: WA.getClientId ? WA.getClientId() : '',
+          context: contextToSend || ''
+        },
+
+        onConnect: async function() {
+          log('Voice session connected');
+          setConnectUI('connected');
+
+          const conversationId = await captureConversationId(voiceSession);
+          if (conversationId) {
+            const waSession = WA.getSession ? WA.getSession() : {};
+            waSession.dialogueConversationId = conversationId;
+            if (WA.saveSession) WA.saveSession(waSession);
+            console.log('[WA:Bridge] ✅ Voice connected —', conversationId);
+          }
+
+          if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
+        },
+
+        onDisconnect: async () => {
+          log('Voice session disconnected');
+          voiceSession = null;
+          setConnectUI('offline');
+          if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
+          // If voice ended while voice mode is still visually active, reset the UI
+          if (typeof WA.exitVoiceMode === 'function') WA.exitVoiceMode();
+        },
+
+        onMessage: (msg) => {
+          if (!msg.message) return;
+          if (msg.source === 'ai') {
+            if (msg.isFinal === false) return;
+            if (typeof WA.setOrbState === 'function') WA.setOrbState('speaking');
+            const cleanText = msg.message.replace(/\[[^\]]+\]\s*/g, '').trim();
+            if (cleanText && typeof WA.onAgentMessage === 'function') {
+              WA.onAgentMessage(cleanText, null);
+            }
+          }
+          if (msg.source === 'user') {
+            if (msg.isFinal === false) {
+              if (typeof WA.setOrbState === 'function') WA.setOrbState('listening');
+              return;
+            }
+            const text = msg.message.trim();
+            if (text && text !== '...' && text !== '…') {
+              if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
+              if (typeof WA.onUserMessage === 'function') WA.onUserMessage(text);
+            }
+          }
+        },
+
+        onError: (err) => {
+          console.error('[WA:Bridge] Voice onError:', err);
+          voiceSession = null;
+          if (typeof WA.exitVoiceMode === 'function') WA.exitVoiceMode();
+        },
+
+        onStatusChange: (info) => {
+          log('Voice status:', info.status);
+        }
+      });
+    } catch (err) {
+      console.error('[WA:Bridge] connectVoice threw:', err.message);
+      voiceSession = null;
+      if (typeof WA.exitVoiceMode === 'function') WA.exitVoiceMode();
+    }
+  }
+
+  async function disconnectVoice() {
+    if (!voiceSession) return;
+    try { await voiceSession.endSession(); } catch(e) {}
+    voiceSession = null;
+    setConnectUI('offline');
+    // Restore text session connection
+    reconnectAfterVoice();
+  }
+
+  function isVoiceConnected() { return !!voiceSession; }
+
+  function reconnectAfterVoice() {
+    // Give ElevenLabs a moment to clean up mic resources before re-connecting
+    setTimeout(() => {
+      if (WA.bridge && !WA.bridge.isConnected()) {
+        log('Restoring text session after voice end');
+        WA.bridge.connect();
+      }
+    }, 800);
+  }
+
   function sendText(text) {
     if (!session) return false;
     try {
@@ -741,7 +883,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
   // ─── EXPOSE BRIDGE ────────────────────────────────────────────────────────
 
-  WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected };
+  WA.bridge = { connect, disconnect, sendText, skipTurn, isConnected, connectVoice, disconnectVoice, isVoiceConnected };
 
   // ─── PERSONALISED GREETING BUBBLE ────────────────────────────────────────
   // Shows a small speech bubble above wa-bubble on page load for authenticated

@@ -835,19 +835,36 @@
 
   // ─── VOICE MODE ───────────────────────────────────────────────────────────────
 
-  function toggleVoiceMode() {
+  function _applyVoiceModeUI(active) {
     const panel = document.getElementById('wa-panel');
     const btn   = document.getElementById('wa-voice-toggle');
     const orb   = document.getElementById('wa-orb-panel');
     if (!panel || !btn) return;
+    voiceModeActive = active;
+    panel.classList.toggle('wa-voice-mode', active);
+    btn.classList.toggle('wa-voice-active', active);
+    btn.innerHTML = active ? VOICE_END_ICON : VOICE_ICON;
+    btn.setAttribute('aria-label', active ? 'Switch to text' : 'Switch to voice');
+    btn.setAttribute('title',      active ? 'Text conversation' : 'Voice conversation');
+    if (orb) orb.setAttribute('aria-hidden', String(!active));
+  }
 
-    voiceModeActive = !voiceModeActive;
-    panel.classList.toggle('wa-voice-mode', voiceModeActive);
-    btn.classList.toggle('wa-voice-active', voiceModeActive);
-    btn.innerHTML = voiceModeActive ? VOICE_END_ICON : VOICE_ICON;
-    btn.setAttribute('aria-label', voiceModeActive ? 'Switch to text' : 'Switch to voice');
-    btn.setAttribute('title',      voiceModeActive ? 'Text conversation' : 'Voice conversation');
-    if (orb) orb.setAttribute('aria-hidden', String(!voiceModeActive));
+  function toggleVoiceMode() {
+    if (!voiceModeActive) {
+      // Entering voice mode
+      _applyVoiceModeUI(true);
+      if (WA.setOrbState) WA.setOrbState('idle');
+      if (WA.bridge?.connectVoice) WA.bridge.connectVoice();
+    } else {
+      // Leaving voice mode
+      _applyVoiceModeUI(false);
+      if (WA.bridge?.disconnectVoice) WA.bridge.disconnectVoice();
+    }
+  }
+
+  // Called from wa-dialogue.js if voice session drops unexpectedly
+  function exitVoiceMode() {
+    if (voiceModeActive) _applyVoiceModeUI(false);
   }
 
   function setOrbState(state) {
@@ -902,6 +919,7 @@
   WA.closeAdvicePanel       = closeAdvicePanel;
   WA.toggleFullscreen       = toggleFullscreen;
   WA.toggleVoiceMode        = toggleVoiceMode;
+  WA.exitVoiceMode          = exitVoiceMode;
   WA.setOrbState            = setOrbState;
   WA.renderHistorySession   = renderHistorySession;
   WA.renderDebug            = renderDebug;

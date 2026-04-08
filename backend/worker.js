@@ -456,7 +456,7 @@ export default {
       // Anything not listed here (notifyEmails, notifyPhone, allowedOrigin, etc.) is never returned.
       const FRONTEND_FIELDS = [
         'agentName', 'businessName',
-        'dialogueAgentId',
+        'dialogueAgentId', 'voiceAgentId',
         'avatar_url', 'greetingMessage', 'primaryColor',
         'debug', 'loadingStyle', 'suggestedPrompts', 'greetingBullets',
       ];
@@ -531,6 +531,23 @@ export default {
       try {
         const clientId = corsOrigins[requestOrigin] || '';
 
+        // ── Greeting cache: one call per user per time window ─────────────────
+        const greetingWindow = (() => {
+          const h = new Date().getUTCHours(); // UTC; adjust if you want per-timezone later
+          if (h < 7)  return 'early_morning';
+          if (h < 12) return 'morning';
+          if (h < 17) return 'afternoon';
+          if (h < 20) return 'evening';
+          return 'night';
+        })();
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const cacheKey = `greeting:${user_id}:${today}:${greetingWindow}`;
+        const cached = await env.CONFIGS.get(cacheKey);
+        if (cached) {
+          console.log('[Greeting] ✅ Cache hit for:', user_id, '| window:', greetingWindow);
+          return json({ greeting: cached }, 200, cors);
+        }
+
         // Fetch client config to get the website's business name
         const rawClientConfig = clientId ? await env.CONFIGS.get(clientId) : null;
         const clientConfig = rawClientConfig ? JSON.parse(rawClientConfig) : {};
@@ -599,6 +616,10 @@ export default {
         const greeting = data.choices?.[0]?.message?.content?.trim() || null;
 
         console.log('[Greeting] ✅ Generated for:', firstName, '|', greeting);
+        // Cache for the remainder of the time window (rough TTL in seconds)
+        const windowTTLs = { early_morning: 7*3600, morning: 5*3600, afternoon: 5*3600, evening: 3*3600, night: 4*3600 };
+        const ttl = windowTTLs[greetingWindow] || 3600;
+        ctx.waitUntil(env.CONFIGS.put(cacheKey, greeting, { expirationTtl: ttl }));
         ctx.waitUntil(logEvent(env.website_avatar_db, clientId, 'openai_greeting'));
         return json({ greeting }, 200, cors);
 
@@ -1550,8 +1571,15 @@ export default {
               company: company !== 'Not provided' ? company : null,
             }, true);
             console.log('[Webhook] ✅ Profile upserted for user:', authUserId, '| client:', resolvedClientId || '(none)');
-            // Always refresh persona — we have their data, don't need them to re-speak it
-            ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary, resolvedClientId));
+            // Only refresh persona if the call had enough substance to improve it
+            const callDurationSecs = callData.data?.metadata?.call_duration_secs || 0;
+            const agentTurns = dynVars.system__agent_turns || 0;
+            const hasSubstance = callDurationSecs >= 60 && agentTurns >= 3;
+            if (hasSubstance) {
+              ctx.waitUntil(refreshPersonaSummary(env.website_avatar_db, authUserId, env, transcriptSummary, resolvedClientId));
+            } else {
+              console.log('[Webhook] ⏭️ Skipping persona refresh — low substance call | duration:', callDurationSecs + 's', '| turns:', agentTurns);
+            }
           } else {
             console.log('[Webhook] ℹ️ No authenticated user resolved — guest call, skipping profile update');
           }
