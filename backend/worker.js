@@ -1459,14 +1459,14 @@ export default {
         }
         await env.CONFIGS.put(idempotencyKey, '1', { expirationTtl: 86400 }); // 24h TTL
 
+        const analysis = callData.data.analysis || {};
+        const metadata = callData.data.metadata || {};
+
         // Only process successful calls
-        if (callData?.data?.analysis?.call_successful !== 'success') {
+        if (analysis.call_successful !== 'success') {
           console.log('[Webhook] Skipping - call not successful | conv:', convId);
           return json({ message: 'Call not successful, skipping notifications' }, 200, cors);
         }
-
-        const analysis = callData.data.analysis;
-        const metadata = callData.data.metadata;
         const collectedData = analysis.data_collection_results || {};
 
         // Extract data
@@ -1609,6 +1609,45 @@ export default {
         // Google Sheet, admin email/SMS, and a thank-you to the user.
         // Persona refresh above is intentionally separate and always runs.
         const hasValidData = (name !== 'Unknown') && (email !== 'Not provided' && email.includes('@'));
+
+        // ── Persist transcript_summary to the conversations row ──────────────
+        // Runs for every successful call. Merges into the existing row if the
+        // frontend has already saved it, or creates a placeholder if not yet.
+        const summary = transcriptSummary || analysis.call_summary_title || null;
+        if (summary) {
+          ctx.waitUntil((async () => {
+            try {
+              const existing = await env.website_avatar_db.prepare(
+                'SELECT analysis FROM conversations WHERE conversation_id = ? LIMIT 1'
+              ).bind(convId).first();
+
+              if (existing) {
+                let analysisObj = {};
+                try { analysisObj = JSON.parse(existing.analysis || '{}'); } catch { /* ignore */ }
+                analysisObj.transcript_summary = summary;
+                if (analysis.call_summary_title) analysisObj.call_summary_title = analysis.call_summary_title;
+                await env.website_avatar_db.prepare(
+                  'UPDATE conversations SET analysis = ? WHERE conversation_id = ?'
+                ).bind(JSON.stringify(analysisObj), convId).run();
+                console.log('[Webhook] ✅ transcript_summary saved:', summary);
+              } else {
+                // Row not yet created by frontend — insert placeholder so summary isn't lost
+                const placeholderUserId = dynVars.authenticated_user_id || dynVars.user_id || 'unknown';
+                await env.website_avatar_db.prepare(`
+                  INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
+                  VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT(conversation_id) DO UPDATE SET analysis = excluded.analysis
+                `).bind(
+                  placeholderUserId, convId, resolvedClientId || '', '[]',
+                  JSON.stringify({ transcript_summary: summary, call_summary_title: analysis.call_summary_title || null })
+                ).run();
+                console.log('[Webhook] ✅ Placeholder row created with summary');
+              }
+            } catch (err) {
+              console.warn('[Webhook] ⚠️ Failed to save transcript_summary:', err.message);
+            }
+          })());
+        }
 
         if (!hasValidData) {
           console.log('[Webhook] ℹ️ No contact data spoken — skipping lead notifications');
