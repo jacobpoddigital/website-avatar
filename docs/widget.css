@@ -245,6 +245,16 @@
   background: #34c77b;
   animation: waOnlinePulse 3s ease-in-out infinite;
 }
+#wa-status-label[data-hint="true"] {
+  animation: waHintPulse 2.4s ease-in-out infinite;
+}
+@keyframes waHintPulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
+}
+@media (prefers-reduced-motion: reduce) {
+  #wa-status-label[data-hint="true"] { animation: none; }
+}
 
 /* ── MESSAGES ─────────────────────────────────────────────────────────────────── */
 .wa-messages {
@@ -414,10 +424,16 @@
 .wa-prompts-collapsed .wa-prompts-toggle svg { transform: rotate(-90deg); }
 
 .wa-prompts-chips {
-  display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 6px;
-  overflow: hidden; transition: max-height .2s ease, opacity .2s ease;
+  display: flex; flex-wrap: nowrap; gap: 6px; padding-bottom: 6px;
+  overflow-x: auto; overflow-y: hidden;
+  scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  /* Hide scrollbar — drag or touch to scroll */
+  scrollbar-width: none;
+  transition: max-height .2s ease, opacity .2s ease;
   max-height: 200px; opacity: 1;
 }
+.wa-prompts-chips::-webkit-scrollbar { display: none; }
 .wa-prompts-collapsed .wa-prompts-chips {
   max-height: 0; opacity: 0; pointer-events: none; padding-bottom: 0;
 }
@@ -635,6 +651,39 @@
 }
 
 /* ── END SESSION & ABORT ─────────────────────────────────────────────────────── */
+/* ── CLOSE CONFIRMATION BAR ──────────────────────────────────────────────────── */
+.wa-close-confirm {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--wa-glass-strong);
+  border-top: 1px solid var(--wa-glass-border-dim);
+  gap: 10px;
+  animation: waFadeSlideUp .18s ease;
+}
+@keyframes waFadeSlideUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.wa-close-confirm-label {
+  font-size: 12px; color: rgba(255,255,255,0.8); flex: 1;
+}
+.wa-close-confirm-actions {
+  display: flex; gap: 6px; flex-shrink: 0;
+}
+.wa-close-confirm-btn {
+  font-size: 12px; padding: 5px 12px; border-radius: 6px;
+  border: 1px solid var(--wa-glass-border); cursor: pointer;
+  transition: background .15s, opacity .15s;
+}
+.wa-close-confirm-minimise {
+  background: transparent; color: #fff;
+}
+.wa-close-confirm-minimise:hover { background: var(--wa-glass-subtle); }
+.wa-close-confirm-end {
+  background: #ef4444; color: #fff; border-color: transparent;
+}
+.wa-close-confirm-end:hover { opacity: .85; }
+
 .wa-btn-end-session {
   display: block; width: 100%;
   background: none; border: none; border-top: 1px solid var(--wa-glass-border-dim);

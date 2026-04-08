@@ -180,8 +180,61 @@
     td.zero { color: var(--wa-text-light); }
     td.date { color: var(--wa-text-mid); font-variant-numeric: tabular-nums; }
 
+    /* ── Two-column panel grid ── */
+    .panel-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    @media (max-width: 700px) { .panel-grid { grid-template-columns: 1fr; } }
+
+    /* ── Panel base ── */
+    .dash-panel { padding: 1.25rem 1.5rem; }
+    .dash-panel h2 { font-size: .9rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
+    .dash-panel .panel-sub { font-size: .75rem; color: var(--wa-text-mid); margin-bottom: 1rem; }
+
+    /* ── Lead quality bars ── */
+    .lq-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .6rem; }
+    .lq-label { font-size: .78rem; color: var(--wa-text-mid); width: 70px; flex-shrink: 0; }
+    .lq-bar-wrap { flex: 1; background: rgba(255,255,255,0.08); border-radius: 99px; height: 6px; overflow: hidden; }
+    .lq-bar { height: 100%; border-radius: 99px; background: var(--wa-accent); transition: width .4s ease; }
+    .lq-val { font-size: .78rem; color: var(--wa-text); width: 60px; text-align: right; flex-shrink: 0; }
+
+    /* ── Returning split ── */
+    .ret-split { display: flex; gap: 1rem; margin-top: .5rem; }
+    .ret-block { flex: 1; background: rgba(255,255,255,0.06); border-radius: 10px; padding: .9rem 1rem; text-align: center; }
+    .ret-block .ret-val { font-size: 1.6rem; font-weight: 700; color: #fff; line-height: 1; }
+    .ret-block .ret-label { font-size: .7rem; color: var(--wa-text-mid); margin-top: .3rem; text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ── Leads table ── */
+    .leads-table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+    .leads-table-wrap table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    .leads-table-wrap th {
+      position: sticky; top: 0;
+      background: rgba(15,32,64,0.95); backdrop-filter: blur(8px);
+      text-align: left; padding: .4rem .65rem;
+      font-size: .68rem; font-weight: 600; color: var(--wa-text-mid);
+      letter-spacing: .07em; text-transform: uppercase;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+    }
+    .leads-table-wrap td { padding: .45rem .65rem; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--wa-text); }
+    .leads-table-wrap tr:last-child td { border-bottom: none; }
+    .leads-table-wrap td.muted { color: var(--wa-text-light); }
+    .badge { display: inline-block; font-size: .65rem; padding: 2px 7px; border-radius: 99px; font-weight: 600; }
+    .badge-blue { background: rgba(59,130,246,.2); color: #93c5fd; }
+
+    /* ── Conversations feed ── */
+    .conv-feed { display: flex; flex-direction: column; gap: .5rem; max-height: 320px; overflow-y: auto; }
+    .conv-item { background: rgba(255,255,255,0.05); border-radius: 8px; padding: .7rem .9rem; }
+    .conv-item .conv-meta { display: flex; align-items: center; gap: .5rem; margin-bottom: .3rem; flex-wrap: wrap; }
+    .conv-item .conv-user { font-size: .8rem; font-weight: 600; color: #fff; }
+    .conv-item .conv-date { font-size: .72rem; color: var(--wa-text-light); margin-left: auto; }
+    .conv-item .conv-summary { font-size: .8rem; color: var(--wa-text-mid); line-height: 1.5; }
+    .conv-item .conv-msgs { font-size: .7rem; color: var(--wa-text-light); margin-top: .2rem; }
+
     /* ── Ask section ── */
-    .ask-panel { padding: 1.5rem 1.75rem; margin-top: 1.5rem; }
+    .ask-panel { padding: 1.5rem 1.75rem; margin-top: 1rem; }
     .ask-panel h2 { font-size: .95rem; font-weight: 600; color: #fff; margin-bottom: .35rem; }
     .ask-panel .ask-hint { font-size: .78rem; color: var(--wa-text-mid); margin-bottom: 1rem; }
     .ask-row { display: flex; gap: .75rem; align-items: flex-end; }
@@ -283,9 +336,52 @@
           <tbody id="dailyBody"></tbody>
         </table>
       </div>
+      <!-- Panel A — Known Leads + Panel C — Lead Quality (side by side) -->
+      <div class="panel-grid" id="panelGridTop" style="display:none">
+        <div class="glass dash-panel">
+          <h2>Lead Quality</h2>
+          <p class="panel-sub">Contact data captured across all profiles</p>
+          <div id="leadQualityBars"></div>
+          <div class="ret-split" id="returningBlocks"></div>
+        </div>
+        <div class="glass dash-panel">
+          <h2>Returning vs New</h2>
+          <p class="panel-sub" id="returningSubtitle">Visitor breakdown for selected period</p>
+          <div class="ret-split" id="returningBlocks2"></div>
+        </div>
+      </div>
+
+      <!-- Panel B — Recent Conversations (full width) -->
+      <div class="glass dash-panel" id="recentConvsPanel" style="display:none; margin-bottom:1rem;">
+        <h2>Recent Conversations</h2>
+        <p class="panel-sub" id="recentConvsSub"></p>
+        <div class="conv-feed" id="convFeed"></div>
+      </div>
+
+      <!-- Panel A — Known Leads table (full width) -->
+      <div class="glass dash-panel" id="leadsPanel" style="display:none; margin-bottom:1rem;">
+        <h2>Known Leads</h2>
+        <p class="panel-sub" id="leadsSub"></p>
+        <div class="leads-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Company</th>
+                <th>Phone</th>
+                <th>Sessions</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody id="leadsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="glass ask-panel" id="askSection" style="display:none">
         <h2>Ask about your data</h2>
-        <p class="ask-hint">Powered by gpt-4o-mini · last 15 conversations + user personas · ~400 token cap per answer</p>
+        <p class="ask-hint">Powered by gpt-4o-mini · up to 50 profiles + 30 conversations + engagement metrics · Ctrl+Enter to submit</p>
         <div class="ask-row">
           <textarea id="askInput" placeholder="e.g. What are the most common pain points? Which users are closest to converting?"></textarea>
           <button id="askBtn" onclick="askData()">Ask</button>
@@ -327,8 +423,15 @@
 
         const data = await res.json();
         renderDashboard(data);
+        renderLeadQuality(data.lead_quality || {});
+        renderReturning(data.returning || {}, days);
+        renderRecentConvs(data.recent_convs || []);
+        renderLeads(data.leads || []);
         document.getElementById('status').style.display = 'none';
         document.getElementById('metricsSection').style.display = 'block';
+        document.getElementById('panelGridTop').style.display = 'grid';
+        document.getElementById('recentConvsPanel').style.display = 'block';
+        document.getElementById('leadsPanel').style.display = 'block';
         document.getElementById('askSection').style.display = 'block';
 
       } catch (err) {
@@ -396,6 +499,104 @@
         }).join('');
         tbody.appendChild(tr);
       }
+    }
+
+    function renderLeadQuality(lq) {
+      const total = lq.total_profiles || 0;
+      const bars = document.getElementById('leadQualityBars');
+      if (!bars) return;
+      if (total === 0) { bars.innerHTML = '<p style="color:var(--wa-text-light);font-size:.8rem">No profiles captured yet.</p>'; return; }
+      const fields = [
+        { label: 'Email',   val: lq.has_email   || 0 },
+        { label: 'Phone',   val: lq.has_phone   || 0 },
+        { label: 'Company', val: lq.has_company || 0 },
+        { label: 'Persona', val: lq.has_persona || 0 },
+      ];
+      bars.innerHTML = fields.map(f => {
+        const pct = Math.round((f.val / total) * 100);
+        return `<div class="lq-row">
+          <span class="lq-label">${f.label}</span>
+          <div class="lq-bar-wrap"><div class="lq-bar" style="width:${pct}%"></div></div>
+          <span class="lq-val">${f.val} <span style="color:var(--wa-text-light)">(${pct}%)</span></span>
+        </div>`;
+      }).join('');
+      bars.innerHTML += `<p style="font-size:.72rem;color:var(--wa-text-light);margin-top:.5rem">${total} total profiles</p>`;
+    }
+
+    function renderReturning(ret, days) {
+      const total = ret.total || 0;
+      const returning = ret.returning || 0;
+      const newV = ret.new || 0;
+      const retPct = total > 0 ? Math.round((returning / total) * 100) : 0;
+      const sub = document.getElementById('returningSubtitle');
+      if (sub) sub.textContent = `Unique visitors in the last ${days} days`;
+      const el = document.getElementById('returningBlocks2');
+      if (!el) return;
+      el.innerHTML = `
+        <div class="ret-block">
+          <div class="ret-val">${newV}</div>
+          <div class="ret-label">New</div>
+        </div>
+        <div class="ret-block">
+          <div class="ret-val">${returning}</div>
+          <div class="ret-label">Returning</div>
+        </div>
+        <div class="ret-block">
+          <div class="ret-val">${retPct}%</div>
+          <div class="ret-label">Return rate</div>
+        </div>`;
+    }
+
+    function renderRecentConvs(convs) {
+      const panel = document.getElementById('recentConvsPanel');
+      const feed  = document.getElementById('convFeed');
+      const sub   = document.getElementById('recentConvsSub');
+      if (!feed) return;
+      if (sub) sub.textContent = `${convs.length} most recent conversation${convs.length !== 1 ? 's' : ''}`;
+      if (convs.length === 0) {
+        feed.innerHTML = '<p style="color:var(--wa-text-light);font-size:.8rem">No conversations yet.</p>';
+        return;
+      }
+      feed.innerHTML = convs.map(c => {
+        const user   = c.user_name || c.user_email || `Visitor ${(c.user_id || '').slice(0, 8)}`;
+        const date   = (c.created_at || '').slice(0, 10);
+        const summary = c.conv_summary || '(no summary available)';
+        const msgs   = c.msg_count ? `${c.msg_count} messages` : '';
+        return `<div class="conv-item">
+          <div class="conv-meta">
+            <span class="conv-user">${esc(user)}</span>
+            <span class="conv-date">${date}</span>
+          </div>
+          <div class="conv-summary">${esc(summary)}</div>
+          ${msgs ? `<div class="conv-msgs">${msgs}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function renderLeads(leads) {
+      const sub  = document.getElementById('leadsSub');
+      const body = document.getElementById('leadsBody');
+      if (!body) return;
+      if (sub) sub.textContent = `${leads.length} known user${leads.length !== 1 ? 's' : ''} with captured contact data`;
+      if (leads.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--wa-text-light);padding:1.5rem 0">No leads captured yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = leads.map(l => {
+        const lastSeen = l.last_seen ? l.last_seen.slice(0, 10) : '—';
+        return `<tr>
+          <td>${esc(l.name || '—')}</td>
+          <td>${l.email ? `<span class="badge badge-blue">${esc(l.email)}</span>` : '<span class="muted">—</span>'}</td>
+          <td>${esc(l.company || '—')}</td>
+          <td>${esc(l.phone || '—')}</td>
+          <td>${l.total_sessions || 1}</td>
+          <td class="date">${lastSeen}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function esc(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
     function fmt(n) {

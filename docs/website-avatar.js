@@ -476,6 +476,22 @@
             header.querySelector('.wa-prompts-toggle').addEventListener('click', () => {
               container.classList.toggle('wa-prompts-collapsed');
             });
+
+            // Click-drag to scroll for mouse users
+            let isDragging = false, startX = 0, scrollLeft = 0;
+            chipsEl.addEventListener('mousedown', e => {
+              isDragging = true;
+              startX = e.pageX - chipsEl.offsetLeft;
+              scrollLeft = chipsEl.scrollLeft;
+              chipsEl.style.cursor = 'grabbing';
+            });
+            chipsEl.addEventListener('mouseleave', () => { isDragging = false; chipsEl.style.cursor = ''; });
+            chipsEl.addEventListener('mouseup',    () => { isDragging = false; chipsEl.style.cursor = ''; });
+            chipsEl.addEventListener('mousemove',  e => {
+              if (!isDragging) return;
+              e.preventDefault();
+              chipsEl.scrollLeft = scrollLeft - (e.pageX - chipsEl.offsetLeft - startX);
+            });
           }
         }
 

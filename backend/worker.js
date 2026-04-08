@@ -1858,43 +1858,130 @@ export default {
       const sinceEpoch = Math.floor(Date.now() / 1000) - (days * 86400);
 
       try {
-        // Event totals from usage_events
-        const summaryResult = await env.website_avatar_db.prepare(`
-          SELECT event_type, COUNT(*) AS total
-          FROM usage_events
-          WHERE client_id = ? AND created_at >= ?
-          GROUP BY event_type
-        `).bind(dashClientId, sinceEpoch).all();
+        const [
+          summaryResult,
+          dailyResult,
+          sessionResult,
+          dailySessionsResult,
+          leadsResult,
+          recentConvsResult,
+          leadQualityResult,
+          returningResult,
+        ] = await Promise.all([
+          // Event totals from usage_events
+          env.website_avatar_db.prepare(`
+            SELECT event_type, COUNT(*) AS total
+            FROM usage_events
+            WHERE client_id = ? AND created_at >= ?
+            GROUP BY event_type
+          `).bind(dashClientId, sinceEpoch).all(),
 
-        // Daily event breakdown from usage_events
-        const dailyResult = await env.website_avatar_db.prepare(`
-          SELECT date(created_at, 'unixepoch') AS day, event_type, COUNT(*) AS count
-          FROM usage_events
-          WHERE client_id = ? AND created_at >= ?
-          GROUP BY day, event_type
-          ORDER BY day ASC
-        `).bind(dashClientId, sinceEpoch).all();
+          // Daily event breakdown from usage_events
+          env.website_avatar_db.prepare(`
+            SELECT date(created_at, 'unixepoch') AS day, event_type, COUNT(*) AS count
+            FROM usage_events
+            WHERE client_id = ? AND created_at >= ?
+            GROUP BY day, event_type
+            ORDER BY day ASC
+          `).bind(dashClientId, sinceEpoch).all(),
 
-        // Session/visitor totals from conversations (authoritative source)
-        const sessionResult = await env.website_avatar_db.prepare(`
-          SELECT COUNT(*) AS total_sessions, COUNT(DISTINCT user_id) AS unique_visitors
-          FROM conversations
-          WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
-        `).bind(dashClientId, sinceEpoch).first();
+          // Session/visitor totals from conversations (authoritative source)
+          env.website_avatar_db.prepare(`
+            SELECT COUNT(*) AS total_sessions, COUNT(DISTINCT user_id) AS unique_visitors
+            FROM conversations
+            WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+          `).bind(dashClientId, sinceEpoch).first(),
 
-        // Daily session breakdown from conversations
-        const dailySessionsResult = await env.website_avatar_db.prepare(`
-          SELECT date(created_at) AS day, COUNT(*) AS sessions, COUNT(DISTINCT user_id) AS visitors
-          FROM conversations
-          WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
-          GROUP BY day
-          ORDER BY day ASC
-        `).bind(dashClientId, sinceEpoch).all();
+          // Daily session breakdown from conversations
+          env.website_avatar_db.prepare(`
+            SELECT date(created_at) AS day, COUNT(*) AS sessions, COUNT(DISTINCT user_id) AS visitors
+            FROM conversations
+            WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+            GROUP BY day
+            ORDER BY day ASC
+          `).bind(dashClientId, sinceEpoch).all(),
+
+          // Panel A — Known leads: profiles with at least a name or email
+          env.website_avatar_db.prepare(`
+            SELECT p.user_id, p.name, p.company, p.job_title, p.phone,
+                   u.email, u.last_login,
+                   MAX(c.created_at) AS last_seen,
+                   COUNT(c.id) AS total_sessions
+            FROM user_profiles p
+            LEFT JOIN authenticated_users u ON u.id = p.user_id
+            LEFT JOIN conversations c ON c.user_id = p.user_id AND c.client_id = p.client_id
+            WHERE p.client_id = ?
+              AND (p.name IS NOT NULL OR u.email IS NOT NULL)
+            GROUP BY p.user_id
+            ORDER BY last_seen DESC
+            LIMIT 50
+          `).bind(dashClientId).all(),
+
+          // Panel B — Recent conversations with summary
+          env.website_avatar_db.prepare(`
+            SELECT c.id, c.user_id, c.created_at, c.analysis,
+                   p.name AS user_name, u.email AS user_email
+            FROM conversations c
+            LEFT JOIN user_profiles p ON p.user_id = c.user_id AND p.client_id = c.client_id
+            LEFT JOIN authenticated_users u ON u.id = c.user_id
+            WHERE c.client_id = ?
+            ORDER BY c.created_at DESC
+            LIMIT 30
+          `).bind(dashClientId).all(),
+
+          // Panel C — Lead quality: how many profiles have each contact field
+          env.website_avatar_db.prepare(`
+            SELECT
+              COUNT(*) AS total_profiles,
+              SUM(CASE WHEN u.email IS NOT NULL THEN 1 ELSE 0 END) AS has_email,
+              SUM(CASE WHEN p.phone IS NOT NULL AND p.phone != '' THEN 1 ELSE 0 END) AS has_phone,
+              SUM(CASE WHEN p.company IS NOT NULL AND p.company != '' THEN 1 ELSE 0 END) AS has_company,
+              SUM(CASE WHEN p.name IS NOT NULL AND p.name != '' THEN 1 ELSE 0 END) AS has_name,
+              SUM(CASE WHEN p.persona_summary IS NOT NULL THEN 1 ELSE 0 END) AS has_persona
+            FROM user_profiles p
+            LEFT JOIN authenticated_users u ON u.id = p.user_id
+            WHERE p.client_id = ?
+          `).bind(dashClientId).first(),
+
+          // Panel F — Returning vs new: users with >1 conversation in the window
+          env.website_avatar_db.prepare(`
+            SELECT
+              COUNT(DISTINCT user_id) AS total_visitors,
+              SUM(CASE WHEN session_count > 1 THEN 1 ELSE 0 END) AS returning_visitors,
+              SUM(CASE WHEN session_count = 1 THEN 1 ELSE 0 END) AS new_visitors
+            FROM (
+              SELECT user_id, COUNT(*) AS session_count
+              FROM conversations
+              WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+              GROUP BY user_id
+            )
+          `).bind(dashClientId, sinceEpoch).first(),
+        ]);
 
         const summary = {};
         for (const row of (summaryResult.results || [])) {
           summary[row.event_type] = row.total;
         }
+
+        // Parse analysis JSON for recent conversations
+        const recentConvs = (recentConvsResult.results || []).map(c => {
+          let conv_summary = null;
+          let msg_count = null;
+          try {
+            const a = JSON.parse(c.analysis || '{}');
+            conv_summary = a.transcript_summary || a.call_summary_title || null;
+            msg_count = a.messageCount || null;
+          } catch { /* ignore */ }
+          return {
+            id:           c.id,
+            user_id:      c.user_id,
+            user_name:    c.user_name || null,
+            user_email:   c.user_email || null,
+            created_at:   c.created_at,
+            conv_summary,
+            msg_count,
+          };
+        });
 
         return json({
           client_id:      dashClientId,
@@ -1905,7 +1992,15 @@ export default {
             total:  sessionResult?.total_sessions  || 0,
             unique: sessionResult?.unique_visitors || 0,
           },
-          daily_sessions: dailySessionsResult.results || [],
+          daily_sessions:  dailySessionsResult.results || [],
+          leads:           leadsResult.results || [],
+          recent_convs:    recentConvs,
+          lead_quality:    leadQualityResult || {},
+          returning: {
+            total:     returningResult?.total_visitors    || 0,
+            returning: returningResult?.returning_visitors || 0,
+            new:       returningResult?.new_visitors       || 0,
+          },
         }, 200, cors);
 
       } catch (err) {
@@ -1915,8 +2010,9 @@ export default {
     }
 
     // ── POST /dashboard/ask ───────────────────────────────────────────────────
-    // LLM query over client data. Admin-only. Cost-capped: pre-digested context
-    // only (persona fields + transcript summaries), output capped at 400 tokens.
+    // LLM query over pre-aggregated client data (Option B).
+    // Runs multiple targeted D1 queries to build a rich analytics context,
+    // then asks gpt-4o-mini to answer the question against that context.
     if (url.pathname === '/dashboard/ask' && request.method === 'POST') {
       if (!env.ADMIN_SECRET || !env.OPENAI_KEY) {
         return json({ error: 'Server misconfiguration' }, 500, cors);
@@ -1926,45 +2022,129 @@ export default {
         return json({ error: 'Unauthorised' }, 401, cors);
       }
 
-      const { client_id, question } = await request.json().catch(() => ({}));
+      const { client_id, question, days: askDays = 30 } = await request.json().catch(() => ({}));
       if (!client_id || !question?.trim()) {
         return json({ error: 'Missing client_id or question' }, 400, cors);
       }
 
-      // ── Fetch context from D1 ─────────────────────────────────────────────
-      const sinceEpoch = Math.floor(Date.now() / 1000) - (30 * 86400);
+      const lookback = Math.min(Math.max(parseInt(askDays, 10) || 30, 1), 90);
+      const sinceEpoch = Math.floor(Date.now() / 1000) - (lookback * 86400);
 
-      const [profileRows, convRows, usageRows] = await Promise.all([
+      // ── Parallel D1 queries ───────────────────────────────────────────────
+      const PERSONA_FIELDS = ['pain_points', 'interests', 'goals', 'needs', 'budget_signals'];
+
+      const [profileRows, convRows, usageRows, engagementRow, leadQualRow, returningRow] = await Promise.all([
+        // Profiles — raised cap to 50, include session count per user
         env.website_avatar_db.prepare(`
           SELECT p.user_id, p.name, p.phone, p.company, p.job_title, p.persona_summary,
-                 u.email
+                 u.email,
+                 COUNT(c.id) AS session_count,
+                 MAX(c.created_at) AS last_seen
+          FROM user_profiles p
+          LEFT JOIN authenticated_users u ON u.id = p.user_id
+          LEFT JOIN conversations c ON c.user_id = p.user_id AND c.client_id = p.client_id
+          WHERE p.client_id = ?
+          GROUP BY p.user_id
+          ORDER BY last_seen DESC
+          LIMIT 50
+        `).bind(client_id).all(),
+
+        // Conversations — raised cap to 30, include message count
+        env.website_avatar_db.prepare(`
+          SELECT user_id, created_at, analysis
+          FROM conversations
+          WHERE client_id = ?
+          ORDER BY created_at DESC
+          LIMIT 30
+        `).bind(client_id).all(),
+
+        // Usage event totals
+        env.website_avatar_db.prepare(`
+          SELECT event_type, COUNT(*) AS total
+          FROM usage_events
+          WHERE client_id = ? AND created_at >= ?
+          GROUP BY event_type
+        `).bind(client_id, sinceEpoch).all(),
+
+        // Session engagement: avg messages, % with >3 msgs
+        env.website_avatar_db.prepare(`
+          SELECT
+            COUNT(*) AS total_sessions,
+            AVG(CAST(json_extract(analysis, '$.messageCount') AS INTEGER)) AS avg_messages,
+            SUM(CASE WHEN CAST(json_extract(analysis, '$.messageCount') AS INTEGER) > 3 THEN 1 ELSE 0 END) AS engaged_sessions
+          FROM conversations
+          WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+        `).bind(client_id, sinceEpoch).first(),
+
+        // Lead quality: capture rates
+        env.website_avatar_db.prepare(`
+          SELECT
+            COUNT(*) AS total_profiles,
+            SUM(CASE WHEN u.email IS NOT NULL THEN 1 ELSE 0 END) AS has_email,
+            SUM(CASE WHEN p.phone IS NOT NULL AND p.phone != '' THEN 1 ELSE 0 END) AS has_phone,
+            SUM(CASE WHEN p.company IS NOT NULL AND p.company != '' THEN 1 ELSE 0 END) AS has_company,
+            SUM(CASE WHEN p.persona_summary IS NOT NULL THEN 1 ELSE 0 END) AS has_persona
           FROM user_profiles p
           LEFT JOIN authenticated_users u ON u.id = p.user_id
           WHERE p.client_id = ?
-          LIMIT 10
-        `).bind(client_id).all(),
-        env.website_avatar_db.prepare(
-          'SELECT user_id, created_at, analysis FROM conversations WHERE client_id = ? ORDER BY created_at DESC LIMIT 15'
-        ).bind(client_id).all(),
-        env.website_avatar_db.prepare(
-          'SELECT event_type, COUNT(*) AS total FROM usage_events WHERE client_id = ? AND created_at >= ? GROUP BY event_type'
-        ).bind(client_id, sinceEpoch).all(),
+        `).bind(client_id).first(),
+
+        // Returning vs new visitors
+        env.website_avatar_db.prepare(`
+          SELECT
+            COUNT(DISTINCT user_id) AS total_visitors,
+            SUM(CASE WHEN session_count > 1 THEN 1 ELSE 0 END) AS returning_visitors
+          FROM (
+            SELECT user_id, COUNT(*) AS session_count
+            FROM conversations
+            WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+            GROUP BY user_id
+          )
+        `).bind(client_id, sinceEpoch).first(),
       ]);
 
-      // ── Build compact context string ──────────────────────────────────────
-      // Usage block
+      // ── Build pre-aggregated context ──────────────────────────────────────
+
+      // Usage summary
       const usageMap = {};
       for (const r of (usageRows.results || [])) usageMap[r.event_type] = r.total;
-      const usageBlock = `Sessions: ${usageMap.session_started || 0} | Webhook calls: ${usageMap.webhook_call_complete || 0} | Persona updates: ${usageMap.openai_persona || 0}`;
+      const totalSessions = engagementRow?.total_sessions || 0;
+      const avgMsgs = engagementRow?.avg_messages ? Math.round(engagementRow.avg_messages * 10) / 10 : 0;
+      const engagedPct = totalSessions > 0
+        ? Math.round((engagementRow.engaged_sessions / totalSessions) * 100)
+        : 0;
 
-      // User block — contact details + high-signal persona fields
-      const PERSONA_FIELDS = ['pain_points', 'interests', 'goals', 'needs', 'budget_signals'];
+      const usageBlock = [
+        `Period: last ${lookback} days`,
+        `Sessions: ${usageMap.session_started || 0}`,
+        `Voice calls completed: ${usageMap.webhook_call_complete || 0}`,
+        `Persona updates: ${usageMap.openai_persona || 0}`,
+        `Avg messages/session: ${avgMsgs}`,
+        `Engaged sessions (>3 msgs): ${engagedPct}%`,
+        `Returning visitors: ${returningRow?.returning_visitors || 0} of ${returningRow?.total_visitors || 0}`,
+      ].join(' | ');
+
+      // Lead quality block
+      const lq = leadQualRow || {};
+      const total = lq.total_profiles || 0;
+      const pct = n => total > 0 ? ` (${Math.round((n / total) * 100)}%)` : '';
+      const leadBlock = total > 0 ? [
+        `Total profiles: ${total}`,
+        `Email captured: ${lq.has_email || 0}${pct(lq.has_email)}`,
+        `Phone captured: ${lq.has_phone || 0}${pct(lq.has_phone)}`,
+        `Company captured: ${lq.has_company || 0}${pct(lq.has_company)}`,
+        `Persona built: ${lq.has_persona || 0}${pct(lq.has_persona)}`,
+      ].join(' | ') : 'No profiles yet';
+
+      // User profiles with persona signals
       const userBlocks = (profileRows.results || []).map(p => {
         const contact = [
           p.email     ? `email: ${p.email}`         : null,
           p.phone     ? `phone: ${p.phone}`         : null,
           p.company   ? `company: ${p.company}`     : null,
-          p.job_title ? `job title: ${p.job_title}` : null,
+          p.job_title ? `role: ${p.job_title}`       : null,
+          p.session_count > 1 ? `sessions: ${p.session_count}` : null,
+          p.last_seen ? `last seen: ${p.last_seen?.slice(0, 10)}` : null,
         ].filter(Boolean).join(' | ');
 
         let personaLines = '';
@@ -1975,30 +2155,33 @@ export default {
               .filter(f => ps[f] && (Array.isArray(ps[f]) ? ps[f].length : ps[f]))
               .map(f => `  ${f}: ${Array.isArray(ps[f]) ? ps[f].join(', ') : ps[f]}`)
               .join('\n');
-          } catch { personaLines = '  (legacy persona — no structured data)'; }
+          } catch { personaLines = '  (legacy persona)'; }
         }
         const header = `User: ${p.name || '(unnamed)'}${contact ? `  [${contact}]` : ''}`;
         return `${header}\n${personaLines || '  (no persona yet)'}`;
       }).join('\n\n');
 
-      // Conversation summary block — transcript_summary from analysis JSON
+      // Recent conversation summaries with message counts
       const convBlocks = (convRows.results || []).map(c => {
         let summary = '(no summary)';
+        let msgCount = '';
         try {
           const a = JSON.parse(c.analysis || '{}');
           summary = a.transcript_summary || a.call_summary_title || '(no summary)';
+          if (a.messageCount) msgCount = ` [${a.messageCount} msgs]`;
         } catch { /* ignore */ }
         const date = c.created_at?.slice(0, 10) || '?';
-        return `[${date}] ${summary}`;
+        return `[${date}${msgCount}] ${summary}`;
       }).join('\n');
 
       const context = `CLIENT: ${client_id}
-USAGE (last 30 days): ${usageBlock}
+ENGAGEMENT (${lookback} days): ${usageBlock}
+LEAD CAPTURE: ${leadBlock}
 
-KNOWN USERS:
+KNOWN USERS (${(profileRows.results || []).length} profiles, most recent first):
 ${userBlocks || '(none)'}
 
-RECENT CONVERSATIONS (newest first):
+RECENT CONVERSATIONS (${(convRows.results || []).length}, newest first):
 ${convBlocks || '(none)'}`;
 
       // ── Call gpt-4o-mini ──────────────────────────────────────────────────
@@ -2007,11 +2190,11 @@ ${convBlocks || '(none)'}`;
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${env.OPENAI_KEY}` },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
-          max_tokens: 400,
+          max_tokens: 500,
           messages: [
             {
               role: 'system',
-              content: 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer the question concisely and accurately using only the data provided. If the data is insufficient, say so briefly.'
+              content: 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer concisely and accurately using only the data provided. If data is insufficient, say so briefly. Where relevant, name specific users or highlight actionable signals.'
             },
             { role: 'user', content: `Data:\n${context}\n\nQuestion: ${question.trim()}` }
           ]

@@ -63,13 +63,14 @@
     const label = document.getElementById('wa-status-label');
     if (!label) return;
     label.textContent = 'Type a message to start…';
+    label.dataset.hint = 'true';
     waitingHintActive = true;
   }
 
   function hideWaitingHint() {
     if (waitingHintActive) {
       const label = document.getElementById('wa-status-label');
-      if (label) label.textContent = 'Connected';
+      if (label) { label.textContent = 'Connected'; delete label.dataset.hint; }
       waitingHintActive = false;
     }
     if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }
@@ -272,38 +273,84 @@
 
   // ─── PANEL ────────────────────────────────────────────────────────────────
 
+  function _closePanelUI() {
+    const panel  = document.getElementById('wa-panel');
+    const bubble = document.getElementById('wa-bubble');
+    if (panel) panel.classList.remove('wa-open');
+    if (bubble) {
+      const avatarUrl = window.WA_CONFIG?.avatar_url || '';
+      bubble.innerHTML = avatarUrl
+        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`
+        : '💬<div class="wa-badge" id="wa-badge"></div>';
+      bubble.classList.remove('wa-close-mode');
+    }
+    _dismissCloseConfirm();
+  }
+
+  function _dismissCloseConfirm() {
+    const bar = document.getElementById('wa-close-confirm');
+    if (bar) bar.remove();
+  }
+
+  function _showCloseConfirm() {
+    if (document.getElementById('wa-close-confirm')) return;
+    const panel = document.getElementById('wa-panel');
+    if (!panel) return;
+
+    const bar = document.createElement('div');
+    bar.id = 'wa-close-confirm';
+    bar.className = 'wa-close-confirm';
+    bar.innerHTML =
+      '<span class="wa-close-confirm-label">Leave session running?</span>' +
+      '<span class="wa-close-confirm-actions">' +
+        '<button class="wa-close-confirm-btn wa-close-confirm-minimise">Minimise</button>' +
+        '<button class="wa-close-confirm-btn wa-close-confirm-end">End &amp; close</button>' +
+      '</span>';
+
+    bar.querySelector('.wa-close-confirm-minimise').onclick = () => {
+      // Just close the panel — session stays connected
+      _closePanelUI();
+    };
+    bar.querySelector('.wa-close-confirm-end').onclick = () => {
+      _closePanelUI();
+      if (typeof WA.endSession === 'function') WA.endSession();
+    };
+
+    panel.appendChild(bar);
+    // Auto-dismiss if user does nothing after 6 seconds
+    setTimeout(() => _dismissCloseConfirm(), 6000);
+  }
+
   function toggleChat() {
     const panel = document.getElementById('wa-panel');
     const bubble = document.getElementById('wa-bubble');
     if (!panel) return;
-    const isOpen = panel.classList.toggle('wa-open');
 
-    if (isOpen) {
+    const isCurrentlyOpen = panel.classList.contains('wa-open');
+
+    if (!isCurrentlyOpen) {
+      // Opening
+      panel.classList.add('wa-open');
       const badge = document.getElementById('wa-badge');
       if (badge) badge.classList.remove('wa-show');
-      
-      // Swap bubble to close icon
       if (bubble) {
         bubble.innerHTML = '×<div class="wa-badge" id="wa-badge"></div>';
         bubble.classList.add('wa-close-mode');
       }
-      
-      // Trigger reconnect via WA.onPanelOpened if it exists
       if (typeof WA.onPanelOpened === 'function') WA.onPanelOpened();
+      return true;
     } else {
-      // Swap bubble back to avatar
-      if (bubble) {
-        const avatarUrl = window.WA_CONFIG?.avatar_url || '';
-        if (avatarUrl) {
-          bubble.innerHTML = `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`;
-        } else {
-          bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
-        }
-        bubble.classList.remove('wa-close-mode');
+      // Closing — intercept if a session is active
+      _dismissCloseConfirm();
+      const session = WA.getSession ? WA.getSession() : {};
+      const hasActiveSession = session.messages?.length > 0 && WA.bridge?.isConnected?.();
+      if (hasActiveSession) {
+        _showCloseConfirm();
+        return false;
       }
+      _closePanelUI();
+      return false;
     }
-
-    return isOpen;
   }
 
   function openPanel() {
