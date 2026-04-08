@@ -638,7 +638,7 @@
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         answerEl.textContent = data.answer;
         answerEl.style.display = 'block';
-        if (data.tokens_used) metaEl.textContent = `${data.tokens_used} tokens used`;
+        if (data.tokens_used) metaEl.textContent = `${data.tokens_used} tokens total (${data.prompt_tokens} prompt + ${data.completion_tokens} completion)`;
       } catch (err) {
         answerEl.textContent = `Error: ${err.message}`;
         answerEl.style.display = 'block';

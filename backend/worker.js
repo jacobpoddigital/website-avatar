@@ -1459,14 +1459,14 @@ export default {
         }
         await env.CONFIGS.put(idempotencyKey, '1', { expirationTtl: 86400 }); // 24h TTL
 
+        const analysis = callData.data.analysis || {};
+        const metadata = callData.data.metadata || {};
+
         // Only process successful calls
-        if (callData?.data?.analysis?.call_successful !== 'success') {
+        if (analysis.call_successful !== 'success') {
           console.log('[Webhook] Skipping - call not successful | conv:', convId);
           return json({ message: 'Call not successful, skipping notifications' }, 200, cors);
         }
-
-        const analysis = callData.data.analysis;
-        const metadata = callData.data.metadata;
         const collectedData = analysis.data_collection_results || {};
 
         // Extract data
@@ -1609,6 +1609,45 @@ export default {
         // Google Sheet, admin email/SMS, and a thank-you to the user.
         // Persona refresh above is intentionally separate and always runs.
         const hasValidData = (name !== 'Unknown') && (email !== 'Not provided' && email.includes('@'));
+
+        // ── Persist transcript_summary to the conversations row ──────────────
+        // Runs for every successful call. Merges into the existing row if the
+        // frontend has already saved it, or creates a placeholder if not yet.
+        const summary = transcriptSummary || analysis.call_summary_title || null;
+        if (summary) {
+          ctx.waitUntil((async () => {
+            try {
+              const existing = await env.website_avatar_db.prepare(
+                'SELECT analysis FROM conversations WHERE conversation_id = ? LIMIT 1'
+              ).bind(convId).first();
+
+              if (existing) {
+                let analysisObj = {};
+                try { analysisObj = JSON.parse(existing.analysis || '{}'); } catch { /* ignore */ }
+                analysisObj.transcript_summary = summary;
+                if (analysis.call_summary_title) analysisObj.call_summary_title = analysis.call_summary_title;
+                await env.website_avatar_db.prepare(
+                  'UPDATE conversations SET analysis = ? WHERE conversation_id = ?'
+                ).bind(JSON.stringify(analysisObj), convId).run();
+                console.log('[Webhook] ✅ transcript_summary saved:', summary);
+              } else {
+                // Row not yet created by frontend — insert placeholder so summary isn't lost
+                const placeholderUserId = dynVars.authenticated_user_id || dynVars.user_id || 'unknown';
+                await env.website_avatar_db.prepare(`
+                  INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
+                  VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT(conversation_id) DO UPDATE SET analysis = excluded.analysis
+                `).bind(
+                  placeholderUserId, convId, resolvedClientId || '', '[]',
+                  JSON.stringify({ transcript_summary: summary, call_summary_title: analysis.call_summary_title || null })
+                ).run();
+                console.log('[Webhook] ✅ Placeholder row created with summary');
+              }
+            } catch (err) {
+              console.warn('[Webhook] ⚠️ Failed to save transcript_summary:', err.message);
+            }
+          })());
+        }
 
         if (!hasValidData) {
           console.log('[Webhook] ℹ️ No contact data spoken — skipping lead notifications');
@@ -2185,6 +2224,19 @@ RECENT CONVERSATIONS (${(convRows.results || []).length}, newest first):
 ${convBlocks || '(none)'}`;
 
       // ── Call gpt-4o-mini ──────────────────────────────────────────────────
+      const systemPrompt = 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer concisely and accurately using only the data provided. If data is insufficient, say so briefly. Where relevant, name specific users or highlight actionable signals.';
+      const userPrompt   = `Data:\n${context}\n\nQuestion: ${question.trim()}`;
+
+      console.log('[Ask] ── OUTBOUND ─────────────────────────────────');
+      console.log('[Ask] Question:', question.trim());
+      console.log('[Ask] Context length:', context.length, 'chars');
+      console.log('[Ask] Context breakdown:',
+        `profiles=${profileRows.results?.length || 0}`,
+        `convs=${convRows.results?.length || 0}`,
+        `lookback=${lookback}d`
+      );
+      console.log('[Ask] Full context sent:\n', context);
+
       const aiResp = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${env.OPENAI_KEY}` },
@@ -2192,23 +2244,28 @@ ${convBlocks || '(none)'}`;
           model: 'gpt-4o-mini',
           max_tokens: 500,
           messages: [
-            {
-              role: 'system',
-              content: 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer concisely and accurately using only the data provided. If data is insufficient, say so briefly. Where relevant, name specific users or highlight actionable signals.'
-            },
-            { role: 'user', content: `Data:\n${context}\n\nQuestion: ${question.trim()}` }
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userPrompt   }
           ]
         })
       });
 
       if (!aiResp.ok) {
+        console.error('[Ask] OpenAI error:', aiResp.status, await aiResp.text());
         return json({ error: 'OpenAI request failed' }, 502, cors);
       }
       const aiData = await aiResp.json();
-      const answer = aiData.choices?.[0]?.message?.content?.trim() || 'No answer returned.';
-      const tokensUsed = aiData.usage?.total_tokens || 0;
+      const answer     = aiData.choices?.[0]?.message?.content?.trim() || 'No answer returned.';
+      const tokensUsed = aiData.usage?.total_tokens    || 0;
+      const promptTok  = aiData.usage?.prompt_tokens   || 0;
+      const completionTok = aiData.usage?.completion_tokens || 0;
 
-      return json({ answer, tokens_used: tokensUsed }, 200, cors);
+      console.log('[Ask] ── INBOUND ──────────────────────────────────');
+      console.log('[Ask] Answer:', answer);
+      console.log('[Ask] Tokens — prompt:', promptTok, '| completion:', completionTok, '| total:', tokensUsed);
+      console.log('[Ask] ─────────────────────────────────────────────');
+
+      return json({ answer, tokens_used: tokensUsed, prompt_tokens: promptTok, completion_tokens: completionTok }, 200, cors);
     }
 
     return json({ error: 'Not found', code: 'NOT_FOUND' }, 404, cors);
