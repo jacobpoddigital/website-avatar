@@ -851,20 +851,25 @@
 
   function toggleVoiceMode() {
     if (!voiceModeActive) {
-      // Entering voice mode
+      // Entering voice mode — disable actions (voice agent has no action capability)
       _applyVoiceModeUI(true);
+      WA.actionsDisabled = true;
       if (WA.setOrbState) WA.setOrbState('idle');
       if (WA.bridge?.connectVoice) WA.bridge.connectVoice();
     } else {
-      // Leaving voice mode
+      // Leaving voice mode — restore actions for text agent
       _applyVoiceModeUI(false);
+      WA.actionsDisabled = false;
       if (WA.bridge?.disconnectVoice) WA.bridge.disconnectVoice();
     }
   }
 
   // Called from wa-dialogue.js if voice session drops unexpectedly
   function exitVoiceMode() {
-    if (voiceModeActive) _applyVoiceModeUI(false);
+    if (voiceModeActive) {
+      _applyVoiceModeUI(false);
+      WA.actionsDisabled = false;
+    }
   }
 
   function setOrbState(state) {
@@ -872,7 +877,12 @@
     const statusEl = document.getElementById('wa-voice-status');
     if (!orb) return;
     orb.className = `wa-orb wa-orb-${state}`;
-    const labels = { idle: 'Tap to start speaking', listening: 'Listening…', speaking: 'Speaking…' };
+    const labels = {
+      idle:       'Listening…',
+      listening:  'Listening…',
+      processing: 'Thinking…',
+      speaking:   'Speaking…'
+    };
     if (statusEl) statusEl.textContent = labels[state] || '';
   }
 
