@@ -2224,6 +2224,19 @@ RECENT CONVERSATIONS (${(convRows.results || []).length}, newest first):
 ${convBlocks || '(none)'}`;
 
       // ── Call gpt-4o-mini ──────────────────────────────────────────────────
+      const systemPrompt = 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer concisely and accurately using only the data provided. If data is insufficient, say so briefly. Where relevant, name specific users or highlight actionable signals.';
+      const userPrompt   = `Data:\n${context}\n\nQuestion: ${question.trim()}`;
+
+      console.log('[Ask] ── OUTBOUND ─────────────────────────────────');
+      console.log('[Ask] Question:', question.trim());
+      console.log('[Ask] Context length:', context.length, 'chars');
+      console.log('[Ask] Context breakdown:',
+        `profiles=${profileRows.results?.length || 0}`,
+        `convs=${convRows.results?.length || 0}`,
+        `lookback=${lookback}d`
+      );
+      console.log('[Ask] Full context sent:\n', context);
+
       const aiResp = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${env.OPENAI_KEY}` },
@@ -2231,23 +2244,28 @@ ${convBlocks || '(none)'}`;
           model: 'gpt-4o-mini',
           max_tokens: 500,
           messages: [
-            {
-              role: 'system',
-              content: 'You are an analytics assistant for Website Avatar, an AI chat widget. Answer concisely and accurately using only the data provided. If data is insufficient, say so briefly. Where relevant, name specific users or highlight actionable signals.'
-            },
-            { role: 'user', content: `Data:\n${context}\n\nQuestion: ${question.trim()}` }
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userPrompt   }
           ]
         })
       });
 
       if (!aiResp.ok) {
+        console.error('[Ask] OpenAI error:', aiResp.status, await aiResp.text());
         return json({ error: 'OpenAI request failed' }, 502, cors);
       }
       const aiData = await aiResp.json();
-      const answer = aiData.choices?.[0]?.message?.content?.trim() || 'No answer returned.';
-      const tokensUsed = aiData.usage?.total_tokens || 0;
+      const answer     = aiData.choices?.[0]?.message?.content?.trim() || 'No answer returned.';
+      const tokensUsed = aiData.usage?.total_tokens    || 0;
+      const promptTok  = aiData.usage?.prompt_tokens   || 0;
+      const completionTok = aiData.usage?.completion_tokens || 0;
 
-      return json({ answer, tokens_used: tokensUsed }, 200, cors);
+      console.log('[Ask] ── INBOUND ──────────────────────────────────');
+      console.log('[Ask] Answer:', answer);
+      console.log('[Ask] Tokens — prompt:', promptTok, '| completion:', completionTok, '| total:', tokensUsed);
+      console.log('[Ask] ─────────────────────────────────────────────');
+
+      return json({ answer, tokens_used: tokensUsed, prompt_tokens: promptTok, completion_tokens: completionTok }, 200, cors);
     }
 
     return json({ error: 'Not found', code: 'NOT_FOUND' }, 404, cors);
