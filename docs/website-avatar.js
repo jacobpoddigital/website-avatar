@@ -479,6 +479,12 @@
           }
         }
 
+        // Hide voice toggle if no voiceAgentId is configured
+        if (!window.WA_CONFIG.voiceAgentId) {
+          const voiceBtn = document.getElementById('wa-voice-toggle');
+          if (voiceBtn) voiceBtn.style.display = 'none';
+        }
+
         // ── Core scripts ──
         await Promise.all([
           loadScript(BASE_URL + '/core/state.js'),
