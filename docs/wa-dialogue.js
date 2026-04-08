@@ -780,18 +780,30 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
         },
 
         onMessage: (msg) => {
-          // Voice messages are audio-only — update orb state, never touch chat UI or WA session
-          if (!msg.message) return;
-          if (msg.source === 'ai') {
-            if (msg.isFinal === false) return;
-            if (typeof WA.setOrbState === 'function') WA.setOrbState('speaking');
-          }
+          // Voice messages drive orb state only — no chat UI, no WA session writes
           if (msg.source === 'user') {
             if (msg.isFinal === false) {
+              // User is actively speaking
               if (typeof WA.setOrbState === 'function') WA.setOrbState('listening');
-              return;
+            } else {
+              // User finished speaking — agent is now processing the request
+              if (typeof WA.setOrbState === 'function') WA.setOrbState('processing');
             }
-            if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
+            return;
+          }
+          if (msg.source === 'ai') {
+            // Agent response arrived — speaking begins
+            if (typeof WA.setOrbState === 'function') WA.setOrbState('speaking');
+            // Return to idle after a delay proportional to response length (min 2s).
+            // ElevenLabs has no "agent done speaking" event so we estimate from text length.
+            const speakDuration = Math.max(2000, (msg.message || '').length * 60);
+            setTimeout(() => {
+              // Only reset if still in speaking state (not already listening/processing)
+              const orb = document.getElementById('wa-orb');
+              if (orb && orb.classList.contains('wa-orb-speaking')) {
+                if (typeof WA.setOrbState === 'function') WA.setOrbState('idle');
+              }
+            }, speakDuration);
           }
         },
 
