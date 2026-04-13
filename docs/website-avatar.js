@@ -54,37 +54,35 @@
     const iconChat  = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>`;
     const iconClose = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
-    // If the user has already consented, show the normal Chat/Speak/Close buttons.
-    // If not, replace the action buttons with the consent block (same text as the widget
-    // banner) so consent is explicit before they can start a conversation.
+    // If consent not yet given, show the consent block first (two buttons: Accept / Close).
+    // Accepting reveals the normal Chat/Speak/Close action buttons beneath.
+    // On return visits the consent block is omitted entirely.
     const consentGiven = !!localStorage.getItem('wa_gdpr_consent');
 
-    const actionsHTML = consentGiven
-      ? `<div class="wa-greeting-actions">
-          <button class="wa-greeting-btn wa-greeting-btn--speak" data-action="speak" aria-label="Start voice conversation">
-            <span class="wa-greeting-btn-icon">${iconSpeak}</span>
-            <span class="wa-greeting-btn-label">Speak</span>
-          </button>
-          <button class="wa-greeting-btn wa-greeting-btn--chat" data-action="start" aria-label="Start text chat">
-            <span class="wa-greeting-btn-icon">${iconChat}</span>
-            <span class="wa-greeting-btn-label">Chat</span>
-          </button>
-          <button class="wa-greeting-btn wa-greeting-btn--close" data-action="close" aria-label="Close">
-            <span class="wa-greeting-btn-icon">${iconClose}</span>
-            <span class="wa-greeting-btn-label">Close</span>
-          </button>
-        </div>`
-      : `<div class="wa-greeting-consent-block" id="wa-greeting-consent-block">
-          <p class="wa-greeting-consent-text">This chat uses an AI to provide responses. Messages will be stored and processed, and may be used to improve our service. See our <a href="/privacy-policy" target="_blank" rel="noopener" class="wa-consent-link">Privacy Policy</a>.</p>
-          <div class="wa-greeting-consent-actions">
-            <button class="wa-greeting-consent-start" data-action="accept-start" aria-label="Accept and start text chat">Start Chat</button>
-            <button class="wa-greeting-consent-speak" data-action="accept-speak" aria-label="Accept and start voice conversation">Speak instead</button>
-          </div>
-          <button class="wa-greeting-btn wa-greeting-btn--close wa-greeting-consent-close" data-action="close" aria-label="Close">
-            <span class="wa-greeting-btn-icon">${iconClose}</span>
-            <span class="wa-greeting-btn-label">Close</span>
-          </button>
-        </div>`;
+    const actionButtons = `
+      <div class="wa-greeting-actions" id="wa-greeting-actions"${consentGiven ? '' : ' style="display:none"'}>
+        <button class="wa-greeting-btn wa-greeting-btn--speak" data-action="speak" aria-label="Start voice conversation">
+          <span class="wa-greeting-btn-icon">${iconSpeak}</span>
+          <span class="wa-greeting-btn-label">Speak</span>
+        </button>
+        <button class="wa-greeting-btn wa-greeting-btn--chat" data-action="start" aria-label="Start text chat">
+          <span class="wa-greeting-btn-icon">${iconChat}</span>
+          <span class="wa-greeting-btn-label">Chat</span>
+        </button>
+        <button class="wa-greeting-btn wa-greeting-btn--close" data-action="close" aria-label="Close">
+          <span class="wa-greeting-btn-icon">${iconClose}</span>
+          <span class="wa-greeting-btn-label">Close</span>
+        </button>
+      </div>`;
+
+    const consentBlock = consentGiven ? '' : `
+      <div class="wa-greeting-consent-block" id="wa-greeting-consent-block">
+        <p class="wa-greeting-consent-text">This chat uses an AI to provide responses. Messages will be stored and processed, and may be used to improve our service. See our <a href="/privacy-policy" target="_blank" rel="noopener" class="wa-consent-link">Privacy Policy</a>.</p>
+        <div class="wa-greeting-consent-actions">
+          <button class="wa-greeting-consent-accept" data-action="accept-consent" aria-label="Accept">Accept</button>
+          <button class="wa-greeting-consent-decline" data-action="close" aria-label="Close">Close</button>
+        </div>
+      </div>`;
 
     const greeting = document.createElement('div');
     greeting.id = 'wa-greeting';
@@ -103,7 +101,8 @@
         </div>
         <div class="wa-greeting-name">${nameLabel}</div>
         <div class="wa-greeting-fade"></div>
-        ${actionsHTML}
+        ${consentBlock}
+        ${actionButtons}
         ${bulletsHTML}
       </div>
     `;
@@ -128,10 +127,18 @@
       bubble.id = 'wa-bubble';
       bubble.style.visibility = 'hidden';
       bubble.innerHTML = avatarUrl
-        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" onerror="this.style.display='none'" /><div class="wa-badge" id="wa-badge"></div>`
-        : '💬<div class="wa-badge" id="wa-badge"></div>';
+        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" onerror="this.style.display='none'" />`
+        : '💬';
       bubble.onclick = () => window.WebsiteAvatar && WebsiteAvatar.toggleChat();
       document.body.appendChild(bubble);
+
+      // Badge lives outside #wa-bubble so its pulse ring isn't clipped by overflow:hidden
+      if (!document.getElementById('wa-badge')) {
+        const badge = document.createElement('div');
+        badge.id = 'wa-badge';
+        badge.className = 'wa-badge';
+        document.body.appendChild(badge);
+      }
     }
 
     if (!document.getElementById('wa-panel')) {
@@ -185,7 +192,6 @@
         <div id="wa-suggested-prompts" class="wa-suggested-prompts"></div>
         <div class="wa-status-row"><span id="wa-status-label">Offline</span></div>
         <div class="wa-ai-disclaimer" aria-hidden="true">AI can make mistakes. Check important info.</div>
-        <div class="wa-poweredby" aria-hidden="true">Powered by <a title="Powered by Website Avatar" target="_blank" rel="noopener" href="https://www.websiteavatar.co.uk/">Website Avatar</a></div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" disabled />
           <canvas id="wa-mic-wave" aria-hidden="true"></canvas>
@@ -271,6 +277,16 @@
         </div>
       `;
       document.body.appendChild(panel);
+
+      // Powered-by sits outside the panel so it's not clipped by overflow:hidden
+      if (!document.getElementById('wa-poweredby')) {
+        const pb = document.createElement('div');
+        pb.id = 'wa-poweredby';
+        pb.className = 'wa-poweredby';
+        pb.setAttribute('aria-hidden', 'true');
+        pb.innerHTML = 'Powered by <a title="Powered by Website Avatar" target="_blank" rel="noopener" href="https://www.websiteavatar.co.uk/">Website Avatar</a>';
+        document.body.appendChild(pb);
+      }
 
       panel.querySelector('#wa-send').onclick    = () => WebsiteAvatar.sendMessage();
       panel.querySelector('#wa-input').onkeydown = (e) => WebsiteAvatar.handleKey(e);
