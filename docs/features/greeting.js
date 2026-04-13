@@ -124,19 +124,19 @@
       },
 
       /**
-       * Handle consent "Start Chat" — record consent then open text chat
+       * Handle "Accept" on consent block — record consent, hide block, reveal action buttons
        */
-      handleAcceptStart() {
+      handleAcceptConsent() {
         if (window.WA_acceptConsent) window.WA_acceptConsent();
-        this.handleStart();
-      },
 
-      /**
-       * Handle consent "Speak instead" — record consent then open voice
-       */
-      handleAcceptSpeak() {
-        if (window.WA_acceptConsent) window.WA_acceptConsent();
-        this.handleSpeak();
+        const greeting = document.getElementById('wa-greeting');
+        if (!greeting) return;
+
+        const consentBlock  = greeting.querySelector('#wa-greeting-consent-block');
+        const actionButtons = greeting.querySelector('#wa-greeting-actions');
+
+        if (consentBlock)  consentBlock.style.display  = 'none';
+        if (actionButtons) actionButtons.style.display = '';
       },
 
       /**
@@ -173,8 +173,7 @@
         const speakBtn       = greeting.querySelector('[data-action="speak"]');
         const startBtn       = greeting.querySelector('[data-action="start"]');
         const closeBtns      = greeting.querySelectorAll('[data-action="close"]');
-        const acceptStartBtn = greeting.querySelector('[data-action="accept-start"]');
-        const acceptSpeakBtn = greeting.querySelector('[data-action="accept-speak"]');
+        const acceptBtn      = greeting.querySelector('[data-action="accept-consent"]');
 
         if (speakBtn) {
           speakBtn.onclick = (e) => { e.preventDefault(); this.handleSpeak(); };
@@ -188,12 +187,8 @@
           btn.onclick = (e) => { e.preventDefault(); this.handleClose(); };
         });
 
-        if (acceptStartBtn) {
-          acceptStartBtn.onclick = (e) => { e.preventDefault(); this.handleAcceptStart(); };
-        }
-
-        if (acceptSpeakBtn) {
-          acceptSpeakBtn.onclick = (e) => { e.preventDefault(); this.handleAcceptSpeak(); };
+        if (acceptBtn) {
+          acceptBtn.onclick = (e) => { e.preventDefault(); this.handleAcceptConsent(); };
         }
   
         // Close on overlay click

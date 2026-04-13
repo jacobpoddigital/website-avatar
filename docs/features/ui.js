@@ -285,8 +285,8 @@
     if (bubble) {
       const avatarUrl = window.WA_CONFIG?.avatar_url || '';
       bubble.innerHTML = avatarUrl
-        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`
-        : '💬<div class="wa-badge" id="wa-badge"></div>';
+        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" />`
+        : '💬';
       bubble.classList.remove('wa-close-mode');
     }
     _dismissCloseConfirm();
@@ -339,7 +339,7 @@
       const badge = document.getElementById('wa-badge');
       if (badge) badge.classList.remove('wa-show');
       if (bubble) {
-        bubble.innerHTML = '×<div class="wa-badge" id="wa-badge"></div>';
+        bubble.innerHTML = '×';
         bubble.classList.add('wa-close-mode');
       }
       if (typeof WA.onPanelOpened === 'function') WA.onPanelOpened();
@@ -366,7 +366,7 @@
       
       // Swap bubble to close icon
       if (bubble) {
-        bubble.innerHTML = '×<div class="wa-badge" id="wa-badge"></div>';
+        bubble.innerHTML = '×';
         bubble.classList.add('wa-close-mode');
       }
     }
@@ -516,11 +516,9 @@
     if (panel)    panel.classList.remove('wa-open');
     if (bubble) {
       const avatarUrl = window.WA_CONFIG?.avatar_url || '';
-      if (avatarUrl) {
-        bubble.innerHTML = `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" /><div class="wa-badge" id="wa-badge"></div>`;
-      } else {
-        bubble.innerHTML = '💬<div class="wa-badge" id="wa-badge"></div>';
-      }
+      bubble.innerHTML = avatarUrl
+        ? `<img src="${avatarUrl}" alt="Chat" class="wa-bubble-avatar" />`
+        : '💬';
       bubble.classList.remove('wa-close-mode');
     }
   }
