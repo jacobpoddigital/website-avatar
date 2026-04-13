@@ -124,19 +124,12 @@
       },
 
       /**
-       * Handle "Accept" on consent block — record consent, hide block, reveal action buttons
+       * Handle "Accept" on consent block.
+       * WA_acceptConsent records consent AND clears both the greeting block
+       * and the widget banner in a single call.
        */
       handleAcceptConsent() {
         if (window.WA_acceptConsent) window.WA_acceptConsent();
-
-        const greeting = document.getElementById('wa-greeting');
-        if (!greeting) return;
-
-        const consentBlock  = greeting.querySelector('#wa-greeting-consent-block');
-        const actionButtons = greeting.querySelector('#wa-greeting-actions');
-
-        if (consentBlock)  consentBlock.style.display  = 'none';
-        if (actionButtons) actionButtons.style.display = '';
       },
 
       /**
