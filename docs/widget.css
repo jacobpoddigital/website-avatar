@@ -1056,6 +1056,93 @@ input.wa-magic-email[type=email] {
 .wa-greeting-consent-decline:active { transform: scale(.97); }
 
 /* Greeting orb — reuses wa-orb/wa-orb-blob, sized for the card and running at voice-speaking speed */
+/* ── RE-ENGAGEMENT CARD ──────────────────────────────────────────────────────
+   Mini greeting card — sits above the bubble, no overlay, slides up on appear.
+   Shown for mid-session inactivity and exit-intent triggers. */
+
+#wa-re-engage {
+  position: fixed;
+  bottom: 104px; left: 32px;
+  width: 272px;
+  z-index: 999999999998;
+  background: var(--wa-glass-bg);
+  backdrop-filter: var(--wa-blur); -webkit-backdrop-filter: var(--wa-blur);
+  border: 1px solid var(--wa-glass-border);
+  border-radius: 20px;
+  box-shadow: var(--wa-shadow);
+  padding: 20px 18px 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  /* enter state */
+  opacity: 0;
+  transform: translateY(16px) scale(0.97);
+  transform-origin: bottom left;
+  transition: opacity .3s ease, transform .35s cubic-bezier(0.34, 1.30, 0.64, 1);
+  pointer-events: none;
+}
+#wa-re-engage.wa-re-engage--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.wa-re-engage-close {
+  position: absolute; top: 10px; right: 12px;
+  background: none; border: none; cursor: pointer;
+  color: var(--wa-text-mid); font-size: 18px; line-height: 1;
+  padding: 2px 4px;
+  transition: color .15s ease;
+}
+.wa-re-engage-close:hover { color: #fff; }
+
+.wa-re-engage-orb {
+  margin-bottom: 4px;
+}
+.wa-re-engage-orb .wa-orb {
+  width: 88px; height: 88px; /* larger than bubble (58px), smaller than greeting (160px) */
+}
+.wa-re-engage-orb .wa-orb-blob {
+  animation-duration: 1.4s;
+}
+
+.wa-re-engage-name {
+  font-size: 13px; font-weight: 600; color: #fff;
+  text-align: center;
+}
+.wa-re-engage-name span {
+  font-size: 11px; font-weight: 400;
+  color: var(--wa-text-mid); margin-left: 3px;
+}
+
+.wa-re-engage-bubble {
+  background: var(--wa-glass-strong);
+  border: 1px solid var(--wa-glass-border);
+  border-radius: 14px 14px 14px 4px;
+  padding: 10px 13px;
+  width: 100%;
+}
+.wa-re-engage-bubble p {
+  margin: 0;
+  font-size: 13px; line-height: 1.45;
+  color: #fff;
+}
+
+.wa-re-engage-chat {
+  width: 100%;
+  padding: 11px;
+  background: var(--wa-user-bubble);
+  color: var(--wa-primary-text);
+  border: none; border-radius: 12px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  margin-top: 2px;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.wa-re-engage-chat:hover  { opacity: .88; }
+.wa-re-engage-chat:active { transform: scale(.97); }
+
+/* Hide when panel is open — panel sits at same position */
+#wa-panel.wa-open ~ #wa-re-engage { display: none; }
+
 .wa-greeting-orb {
   margin-bottom: 10px;
 }

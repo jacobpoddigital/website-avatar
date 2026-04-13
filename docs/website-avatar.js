@@ -325,19 +325,10 @@
         localStorage.setItem(CONSENT_KEY, new Date().toISOString());
       }
 
-      // Expose so greeting.js can accept consent before opening the panel.
-      window.WA_acceptConsent = _recordConsent;
-
-      if (localStorage.getItem(CONSENT_KEY)) {
-        _applyConsent(panel);
-      } else {
-        panel.querySelector('#wa-consent-btn').onclick = async () => {
-          await _recordConsent();
-          _applyConsent(panel);
-        };
-      }
-
-      function _applyConsent(panel) {
+      // _applyConsent — clears the widget banner AND the greeting consent block
+      // (whichever is still visible). Called from both the widget button and greeting.js.
+      function _applyConsent() {
+        // Widget banner
         const banner = panel.querySelector('#wa-consent-banner');
         const input  = panel.querySelector('#wa-input');
         const send   = panel.querySelector('#wa-send');
@@ -346,7 +337,27 @@
         if (input)  input.disabled = false;
         if (send)   send.disabled  = false;
         if (mic)    mic.disabled   = false;
-        if (input)  input.focus();
+
+        // Greeting consent block — hide it and reveal action buttons if still in DOM
+        const greetingBlock   = document.getElementById('wa-greeting-consent-block');
+        const greetingActions = document.getElementById('wa-greeting-actions');
+        if (greetingBlock)   greetingBlock.style.display   = 'none';
+        if (greetingActions) greetingActions.style.display = '';
+      }
+
+      // Expose combined record + apply so greeting.js triggers both sides at once.
+      window.WA_acceptConsent = async () => {
+        await _recordConsent();
+        _applyConsent();
+      };
+
+      if (localStorage.getItem(CONSENT_KEY)) {
+        _applyConsent();
+      } else {
+        panel.querySelector('#wa-consent-btn').onclick = async () => {
+          await _recordConsent();
+          _applyConsent();
+        };
       }
     }
   }
@@ -568,6 +579,9 @@
 
         // ── Session sync script ──
         await loadScript(BASE_URL + '/session-sync.js');
+
+        // ── Re-engagement (inactivity + exit intent) ──
+        await loadScript(BASE_URL + '/features/re-engagement.js');
 
         // Initialize greeting after all scripts loaded
         if (window.WebsiteAvatarGreeting) {
