@@ -20,7 +20,7 @@
   const SESSION_GAP   = 30 * 60 * 1000;         // 30 min gap = new session
   const MIN_ON_SITE   = 30 * 1000;              // must have been on site 30s before exit fires
   const INACTIVITY_MS = 60 * 1000;              // 60s idle triggers mid-session card
-  const AUTO_DISMISS  = 12 * 1000;              // card auto-dismisses after 12s
+  const AUTO_DISMISS  = 120 * 1000;              // card auto-dismisses after 12s
 
   // ── LOGGING ──────────────────────────────────────────────────────────────────
   // Gated on WA.DEBUG — enable via ?debug=1 or WA_CONFIG.debug: true
