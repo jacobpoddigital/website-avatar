@@ -180,10 +180,11 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           user_id:              user.id,
           page_title:           document.title,
           time_of_day:          (() => {
-            const h = new Date().getHours();
+            const h = new Date().getUTCHours(); // GMT
+            if (h < 7)  return 'early_morning';
             if (h < 12) return 'morning';
             if (h < 17) return 'afternoon';
-            if (h < 21) return 'evening';
+            if (h < 20) return 'evening';
             return 'night';
           })(),
           last_session_snippet: (() => {

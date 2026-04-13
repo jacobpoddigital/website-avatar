@@ -124,6 +124,22 @@
       },
 
       /**
+       * Handle consent "Start Chat" — record consent then open text chat
+       */
+      handleAcceptStart() {
+        if (window.WA_acceptConsent) window.WA_acceptConsent();
+        this.handleStart();
+      },
+
+      /**
+       * Handle consent "Speak instead" — record consent then open voice
+       */
+      handleAcceptSpeak() {
+        if (window.WA_acceptConsent) window.WA_acceptConsent();
+        this.handleSpeak();
+      },
+
+      /**
        * Handle "Close" button - just dismiss
        */
       handleClose() {
@@ -154,29 +170,30 @@
         const greeting = document.getElementById('wa-greeting');
         if (!greeting) return;
   
-        const speakBtn = greeting.querySelector('[data-action="speak"]');
-        const startBtn = greeting.querySelector('[data-action="start"]');
-        const closeBtn = greeting.querySelector('[data-action="close"]');
+        const speakBtn       = greeting.querySelector('[data-action="speak"]');
+        const startBtn       = greeting.querySelector('[data-action="start"]');
+        const closeBtns      = greeting.querySelectorAll('[data-action="close"]');
+        const acceptStartBtn = greeting.querySelector('[data-action="accept-start"]');
+        const acceptSpeakBtn = greeting.querySelector('[data-action="accept-speak"]');
 
         if (speakBtn) {
-          speakBtn.onclick = (e) => {
-            e.preventDefault();
-            this.handleSpeak();
-          };
+          speakBtn.onclick = (e) => { e.preventDefault(); this.handleSpeak(); };
         }
 
         if (startBtn) {
-          startBtn.onclick = (e) => {
-            e.preventDefault();
-            this.handleStart();
-          };
+          startBtn.onclick = (e) => { e.preventDefault(); this.handleStart(); };
         }
 
-        if (closeBtn) {
-          closeBtn.onclick = (e) => {
-            e.preventDefault();
-            this.handleClose();
-          };
+        closeBtns.forEach(btn => {
+          btn.onclick = (e) => { e.preventDefault(); this.handleClose(); };
+        });
+
+        if (acceptStartBtn) {
+          acceptStartBtn.onclick = (e) => { e.preventDefault(); this.handleAcceptStart(); };
+        }
+
+        if (acceptSpeakBtn) {
+          acceptSpeakBtn.onclick = (e) => { e.preventDefault(); this.handleAcceptSpeak(); };
         }
   
         // Close on overlay click
