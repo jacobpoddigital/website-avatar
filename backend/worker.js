@@ -459,6 +459,10 @@ export default {
         'dialogueAgentId', 'voiceAgentId',
         'avatar_url', 'greetingMessage', 'primaryColor',
         'debug', 'loadingStyle', 'suggestedPrompts', 'greetingBullets',
+        // Ecommerce — opt-in only; platform determines which provider loads
+        'ecomEnabled', 'ecomPlatform',
+        // Shopify only — public Storefront API token (never Admin API keys)
+        'shopifyToken', 'shopifyStoreDomain',
       ];
       const raw_config = JSON.parse(raw);
       const config = Object.fromEntries(

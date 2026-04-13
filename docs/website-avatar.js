@@ -583,6 +583,16 @@
         // ── Re-engagement (inactivity + exit intent) ──
         await loadScript(BASE_URL + '/features/re-engagement.js');
 
+        // ── Ecommerce (config-driven, WooCommerce first) ──
+        // Only loads if ecomEnabled in client config
+        const _cfg = window.WA_CONFIG || {};
+        if (_cfg.ecomEnabled && _cfg.ecomPlatform) {
+          // Load EcomFactory + action registration first
+          await loadScript(BASE_URL + '/features/ecom/index.js');
+          // Then load the matching provider (self-registers with EcomFactory)
+          await loadScript(BASE_URL + `/features/ecom/providers/${_cfg.ecomPlatform}.js`);
+        }
+
         // Initialize greeting after all scripts loaded
         if (window.WebsiteAvatarGreeting) {
           window.WebsiteAvatarGreeting.init();

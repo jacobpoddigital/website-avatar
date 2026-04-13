@@ -492,7 +492,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             return u?.isAuthenticated ? u.id : null;
           })(),
           client_id: WA.getClientId ? WA.getClientId() : '',
-          context: contextToSend || ''
+          context: contextToSend || '',
+          ...(WA.getEcomContext ? WA.getEcomContext() : {
+            ecom_platform:   null,
+            cart_item_count: 0,
+            ecom_currency:   '',
+          })
         },
 
         onConnect: async function() {
@@ -761,7 +766,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             return u?.isAuthenticated ? u.id : null;
           })(),
           client_id: WA.getClientId ? WA.getClientId() : '',
-          context: contextToSend || ''
+          context: contextToSend || '',
+          ...(WA.getEcomContext ? WA.getEcomContext() : {
+            ecom_platform:   null,
+            cart_item_count: 0,
+            ecom_currency:   '',
+          })
         },
 
         onConnect: async function() {
