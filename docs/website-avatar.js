@@ -54,6 +54,38 @@
     const iconChat  = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>`;
     const iconClose = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
+    // If the user has already consented, show the normal Chat/Speak/Close buttons.
+    // If not, replace the action buttons with the consent block (same text as the widget
+    // banner) so consent is explicit before they can start a conversation.
+    const consentGiven = !!localStorage.getItem('wa_gdpr_consent');
+
+    const actionsHTML = consentGiven
+      ? `<div class="wa-greeting-actions">
+          <button class="wa-greeting-btn wa-greeting-btn--speak" data-action="speak" aria-label="Start voice conversation">
+            <span class="wa-greeting-btn-icon">${iconSpeak}</span>
+            <span class="wa-greeting-btn-label">Speak</span>
+          </button>
+          <button class="wa-greeting-btn wa-greeting-btn--chat" data-action="start" aria-label="Start text chat">
+            <span class="wa-greeting-btn-icon">${iconChat}</span>
+            <span class="wa-greeting-btn-label">Chat</span>
+          </button>
+          <button class="wa-greeting-btn wa-greeting-btn--close" data-action="close" aria-label="Close">
+            <span class="wa-greeting-btn-icon">${iconClose}</span>
+            <span class="wa-greeting-btn-label">Close</span>
+          </button>
+        </div>`
+      : `<div class="wa-greeting-consent-block" id="wa-greeting-consent-block">
+          <p class="wa-greeting-consent-text">This chat uses an AI to provide responses. Messages will be stored and processed, and may be used to improve our service. See our <a href="/privacy-policy" target="_blank" rel="noopener" class="wa-consent-link">Privacy Policy</a>.</p>
+          <div class="wa-greeting-consent-actions">
+            <button class="wa-greeting-consent-start" data-action="accept-start" aria-label="Accept and start text chat">Start Chat</button>
+            <button class="wa-greeting-consent-speak" data-action="accept-speak" aria-label="Accept and start voice conversation">Speak instead</button>
+          </div>
+          <button class="wa-greeting-btn wa-greeting-btn--close wa-greeting-consent-close" data-action="close" aria-label="Close">
+            <span class="wa-greeting-btn-icon">${iconClose}</span>
+            <span class="wa-greeting-btn-label">Close</span>
+          </button>
+        </div>`;
+
     const greeting = document.createElement('div');
     greeting.id = 'wa-greeting';
     greeting.style.visibility = 'hidden';
@@ -71,20 +103,7 @@
         </div>
         <div class="wa-greeting-name">${nameLabel}</div>
         <div class="wa-greeting-fade"></div>
-        <div class="wa-greeting-actions">
-          <button class="wa-greeting-btn wa-greeting-btn--speak" data-action="speak" aria-label="Start voice conversation">
-            <span class="wa-greeting-btn-icon">${iconSpeak}</span>
-            <span class="wa-greeting-btn-label">Speak</span>
-          </button>
-          <button class="wa-greeting-btn wa-greeting-btn--chat" data-action="start" aria-label="Start text chat">
-            <span class="wa-greeting-btn-icon">${iconChat}</span>
-            <span class="wa-greeting-btn-label">Chat</span>
-          </button>
-          <button class="wa-greeting-btn wa-greeting-btn--close" data-action="close" aria-label="Close">
-            <span class="wa-greeting-btn-icon">${iconClose}</span>
-            <span class="wa-greeting-btn-label">Close</span>
-          </button>
-        </div>
+        ${actionsHTML}
         ${bulletsHTML}
       </div>
     `;
@@ -166,6 +185,7 @@
         <div id="wa-suggested-prompts" class="wa-suggested-prompts"></div>
         <div class="wa-status-row"><span id="wa-status-label">Offline</span></div>
         <div class="wa-ai-disclaimer" aria-hidden="true">AI can make mistakes. Check important info.</div>
+        <div class="wa-poweredby" aria-hidden="true">Powered by <a title="Powered by Website Avatar" target="_blank" rel="noopener" href="https://www.websiteavatar.co.uk/">Website Avatar</a></div>
         <div class="wa-input-row">
           <input type="text" id="wa-input" placeholder="Type a message…" disabled />
           <canvas id="wa-mic-wave" aria-hidden="true"></canvas>
@@ -267,31 +287,36 @@
       const CONSENT_KEY = 'wa_gdpr_consent';
       const CONSENT_URL = 'https://backend.jacob-e87.workers.dev/consent';
 
+      // _recordConsent — fire-and-forget backend log + localStorage flag.
+      // Exposed globally so greeting.js can call it when the user clicks Chat/Speak.
+      async function _recordConsent() {
+        if (localStorage.getItem(CONSENT_KEY)) return; // already recorded
+        const visitorId = localStorage.getItem('wc_visitor') || '';
+        try {
+          const res = await fetch(CONSENT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ visitor_id: visitorId, consent_given: true, client_id: accountId }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            console.warn('[WA] Consent record failed:', data.error || res.status);
+          }
+        } catch (e) {
+          // Network failure — log locally and continue; do not block the user.
+          console.warn('[WA] Consent POST error:', e.message);
+        }
+        localStorage.setItem(CONSENT_KEY, new Date().toISOString());
+      }
+
+      // Expose so greeting.js can accept consent before opening the panel.
+      window.WA_acceptConsent = _recordConsent;
+
       if (localStorage.getItem(CONSENT_KEY)) {
         _applyConsent(panel);
       } else {
         panel.querySelector('#wa-consent-btn').onclick = async () => {
-          const visitorId = localStorage.getItem('wc_visitor') || '';
-
-          // Persist consent to the backend compliance log.
-          // The /consent endpoint inserts a row into the D1 `consent` table.
-          try {
-            const res = await fetch(CONSENT_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ visitor_id: visitorId, consent_given: true, client_id: accountId }),
-            });
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-              console.warn('[WA] Consent record failed:', data.error || res.status);
-              // Non-blocking: still allow the user to chat even if logging fails.
-            }
-          } catch (e) {
-            // Network failure — log locally and continue; do not block the user.
-            console.warn('[WA] Consent POST error:', e.message);
-          }
-
-          localStorage.setItem(CONSENT_KEY, new Date().toISOString());
+          await _recordConsent();
           _applyConsent(panel);
         };
       }

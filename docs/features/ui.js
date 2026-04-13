@@ -60,17 +60,22 @@
 
   function showWaitingHint() {
     hideWaitingHint();
-    const label = document.getElementById('wa-status-label');
-    if (!label) return;
-    label.textContent = 'Type a message to start…';
-    label.dataset.hint = 'true';
+    const input = document.getElementById('wa-input');
+    if (!input) return;
+    input.dataset.hintPlaceholder = input.placeholder;
+    input.placeholder = 'Type a message to start…';
+    input.dataset.hint = 'true';
     waitingHintActive = true;
   }
 
   function hideWaitingHint() {
     if (waitingHintActive) {
-      const label = document.getElementById('wa-status-label');
-      if (label) { label.textContent = 'Connected'; delete label.dataset.hint; }
+      const input = document.getElementById('wa-input');
+      if (input && input.dataset.hint) {
+        input.placeholder = input.dataset.hintPlaceholder || 'Type a message…';
+        delete input.dataset.hint;
+        delete input.dataset.hintPlaceholder;
+      }
       waitingHintActive = false;
     }
     if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }

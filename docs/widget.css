@@ -146,14 +146,14 @@
 }
 .wa-badge.wa-show {
   display: block;
-  animation: waBadgePop .3s cubic-bezier(0.34,1.56,0.64,1);
+  animation: waBadgePop .3s cubic-bezier(0.34,1.56,0.64,1), waPulseRing 2s ease-out .3s infinite;
 }
 @keyframes waBadgePop { from { transform: scale(0); } to { transform: scale(1); } }
-.wa-badge.wa-show::after {
-  content: ''; position: absolute; inset: -4px; border-radius: 50%;
-  border: 2px solid var(--wa-accent); animation: waPulseRing 2s ease-out infinite;
+/* box-shadow is not clipped by parent overflow:hidden — replaces the ::after pseudo-element ring */
+@keyframes waPulseRing {
+  0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--wa-accent) 60%, transparent); }
+  100% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--wa-accent)  0%, transparent); }
 }
-@keyframes waPulseRing { 0% { opacity: .6; transform: scale(1); } 100% { opacity: 0; transform: scale(2.2); } }
 
 /* ── PANEL ───────────────────────────────────────────────────────────────────── */
 #wa-panel {
@@ -245,15 +245,16 @@
   background: #34c77b;
   animation: waOnlinePulse 3s ease-in-out infinite;
 }
-#wa-status-label[data-hint="true"] {
+/* Subtle pulse on the input placeholder when waiting hint is active */
+#wa-input[data-hint="true"]::placeholder {
   animation: waHintPulse 2.4s ease-in-out infinite;
 }
 @keyframes waHintPulse {
-  0%, 100% { opacity: 0.5; }
-  50%       { opacity: 1;   }
+  0%, 100% { opacity: 0.45; }
+  50%       { opacity: 1;    }
 }
 @media (prefers-reduced-motion: reduce) {
-  #wa-status-label[data-hint="true"] { animation: none; }
+  #wa-input[data-hint="true"]::placeholder { animation: none; }
 }
 
 /* ── MESSAGES ─────────────────────────────────────────────────────────────────── */
@@ -353,7 +354,7 @@
 
 /* ── AI DISCLAIMER ───────────────────────────────────────────────────────────── */
 .wa-ai-disclaimer {
-  padding: 4px 16px 5px;
+  padding: 4px 16px 2px;
   font-size: 10.5px;
   line-height: 1.4;
   text-align: center;
@@ -362,6 +363,19 @@
   user-select: none;
   pointer-events: none;
 }
+.wa-poweredby {
+  padding: 2px 16px 6px;
+  font-size: 10px;
+  text-align: center;
+  color: rgba(255,255,255,0.4);
+  background: var(--wa-glass-subtle);
+  user-select: none;
+}
+.wa-poweredby a {
+  color: rgba(255,255,255,0.5);
+  text-decoration: none;
+}
+.wa-poweredby a:hover { color: rgba(255,255,255,0.8); }
 
 /* ── INPUT ROW ───────────────────────────────────────────────────────────────── */
 /* ── GDPR CONSENT BANNER ─────────────────────────────────────────────────────── */
@@ -969,6 +983,71 @@ input.wa-magic-email[type=email] {
   color: var(--wa-text);
   letter-spacing: 0.02em;
 }
+
+/* ── GREETING CONSENT BLOCK ──────────────────────────────────────────────────── */
+/* Shown in place of Chat/Speak buttons when the user hasn't consented yet.
+   Mirrors the widget's consent banner text and blocks progression until accepted. */
+.wa-greeting-consent-block {
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 14px 16px 12px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--wa-glass-border);
+  border-radius: 14px;
+  animation: waGreetingActions 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.3s backwards;
+}
+.wa-greeting-consent-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--wa-text-mid);
+  margin: 0 0 12px;
+  text-align: center;
+}
+.wa-greeting-consent-text a { color: var(--wa-accent); text-decoration: underline; }
+.wa-greeting-consent-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.wa-greeting-consent-start {
+  flex: 1;
+  padding: 11px 12px;
+  background: var(--wa-user-bubble);
+  color: var(--wa-primary-text);
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.wa-greeting-consent-start:hover  { opacity: .88; }
+.wa-greeting-consent-start:active { transform: scale(.97); }
+.wa-greeting-consent-speak {
+  padding: 11px 12px;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  border: 1px solid var(--wa-glass-border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+  white-space: nowrap;
+}
+.wa-greeting-consent-speak:hover  { background: rgba(255,255,255,0.16); }
+.wa-greeting-consent-speak:active { transform: scale(.97); }
+.wa-greeting-consent-close {
+  width: 100%;
+  justify-content: center;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  min-height: auto;
+  padding: 6px;
+  opacity: 0.5;
+}
+.wa-greeting-consent-close:hover { opacity: 0.8; transform: none; }
 
 /* Greeting orb — reuses wa-orb/wa-orb-blob, sized for the card and running at voice-speaking speed */
 .wa-greeting-orb {
