@@ -1044,7 +1044,7 @@ input.wa-magic-email[type=email] {
 .wa-greeting-consent-decline {
   padding: 11px 12px;
   background: rgba(0,0,0,0.05);
-  color: #fff;
+  color: var(--wa-text);
   border: 1px solid rgba(0,0,0,0.1);
   border-radius: 10px;
   font-size: 13px;
