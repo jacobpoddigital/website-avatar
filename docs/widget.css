@@ -1009,7 +1009,7 @@ input.wa-magic-email[type=email] {
   width: 100%;
   margin-bottom: 16px;
   padding: 14px 16px 12px;
-  background: rgba(255,255,255,0.07);
+  background: #fff;
   border: 1px solid var(--wa-glass-border);
   border-radius: 14px;
   animation: waGreetingActions 0.5s cubic-bezier(0.34, 1.30, 0.64, 1) 0.3s backwards;
@@ -1043,9 +1043,9 @@ input.wa-magic-email[type=email] {
 .wa-greeting-consent-accept:active { transform: scale(.97); }
 .wa-greeting-consent-decline {
   padding: 11px 12px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.05);
   color: #fff;
-  border: 1px solid var(--wa-glass-border);
+  border: 1px solid rgba(0,0,0,0.1);
   border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
