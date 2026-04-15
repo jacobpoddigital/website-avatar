@@ -33,51 +33,25 @@
   const _pageStart = Date.now();
   const _onSiteMs  = () => Date.now() - _pageStart;
 
-  // ── PAGE CONTEXT ─────────────────────────────────────────────────────────────
-  // Classifies the current page into one of three types based on title + path
-  // keywords. Used to pick relevant copy without any backend call.
-
-  function _getPageContext() {
-    const title    = (document.title || '').toLowerCase();
-    const path     = (window.location.pathname || '').toLowerCase();
-    const combined = title + ' ' + path;
-
-    const serviceKeywords    = ['service', 'chauffeur', 'fleet', 'vehicle', 'transfer', 'package', 'product', 'solution', 'offer'];
-    const conversionKeywords = ['contact', 'price', 'pricing', 'quote', 'booking', 'book', 'enquir', 'request', 'get in touch', 'hire'];
-
-    if (conversionKeywords.some(k => combined.includes(k))) return 'conversion';
-    if (serviceKeywords.some(k => combined.includes(k)))    return 'service';
-    return 'generic';
-  }
-
-  // Returns a short label for the current page — used inline in messages.
-  function _getPageLabel() {
-    const title = document.title || '';
-    // Strip common suffixes like " | Brand Name" or " - Brand Name"
-    return title.split(/[|\-–]/)[0].trim() || 'this page';
-  }
-
   // ── COPY ─────────────────────────────────────────────────────────────────────
 
   function _getMessage(context) {
-    const pageType  = _getPageContext();
-    const pageLabel = _getPageLabel();
+    const isEcom = !!(window.WA_CONFIG?.ecomEnabled);
 
     const copy = {
       'mid-session': {
-        service:    `Any questions about ${pageLabel}? I can help you find exactly what you need.`,
-        conversion: `Ready to take the next step? I can walk you through the process quickly.`,
-        generic:    `Couldn't find what you're looking for? Ask me anything.`,
+        ecom:    `Any questions about what we have available? I'm happy to help.`,
+        service: `Not sure how we can support you? Feel free to ask — I'm here to help.`,
       },
       'exit-intent': {
-        service:    `Before you go — any questions about ${pageLabel} I can answer quickly?`,
-        conversion: `Not quite ready? I can answer any questions before you decide.`,
-        generic:    `Before you leave — is there anything I can help you with?`,
+        ecom:    `Before you go — any questions about what we have available?`,
+        service: `Before you leave — any questions about our services or how we can support you?`,
       },
     };
 
-    const message = copy[context]?.[pageType] || copy[context]?.generic;
-    _log(`Copy selected — context: "${context}", pageType: "${pageType}", pageLabel: "${pageLabel}"`);
+    const type    = isEcom ? 'ecom' : 'service';
+    const message = copy[context][type];
+    _log(`Copy selected — context: "${context}", ecom: ${isEcom}, message: "${message}"`);
     return message;
   }
 
@@ -213,7 +187,7 @@
 
   // ── INIT ─────────────────────────────────────────────────────────────────────
 
-  _log(`Loaded — page context: "${_getPageContext()}", pageLabel: "${_getPageLabel()}"`);
+  _log(`Loaded — ecom: ${!!(window.WA_CONFIG?.ecomEnabled)}`);
   _initInactivity();
   _initExitIntent();
 
