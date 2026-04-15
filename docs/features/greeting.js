@@ -169,7 +169,11 @@
         const acceptBtn      = greeting.querySelector('[data-action="accept-consent"]');
 
         if (speakBtn) {
-          speakBtn.onclick = (e) => { e.preventDefault(); this.handleSpeak(); };
+          if (!window.WA_CONFIG?.voiceAgentId) {
+            speakBtn.style.display = 'none';
+          } else {
+            speakBtn.onclick = (e) => { e.preventDefault(); this.handleSpeak(); };
+          }
         }
 
         if (startBtn) {

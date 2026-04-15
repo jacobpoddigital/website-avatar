@@ -459,6 +459,10 @@ export default {
         'dialogueAgentId', 'voiceAgentId',
         'avatar_url', 'greetingMessage', 'primaryColor',
         'debug', 'loadingStyle', 'suggestedPrompts', 'greetingBullets',
+        // Ecommerce — opt-in only; platform determines which provider loads
+        'ecomEnabled', 'ecomPlatform',
+        // Shopify only — public Storefront API token (never Admin API keys)
+        'shopifyToken', 'shopifyStoreDomain',
       ];
       const raw_config = JSON.parse(raw);
       const config = Object.fromEntries(
@@ -532,8 +536,12 @@ export default {
         const clientId = corsOrigins[requestOrigin] || '';
 
         // ── Greeting cache: one call per user per time window ─────────────────
-        const greetingWindow = (() => {
-          const h = new Date().getUTCHours(); // UTC; adjust if you want per-timezone later
+        // Use the time_of_day sent by the frontend (browser local time) so the
+        // cache key and prompt both reflect the user's actual timezone.
+        // Validate against known values to prevent cache key manipulation.
+        const VALID_WINDOWS = ['early_morning', 'morning', 'afternoon', 'evening', 'night'];
+        const greetingWindow = VALID_WINDOWS.includes(time_of_day) ? time_of_day : (() => {
+          const h = new Date().getUTCHours(); // UTC fallback if frontend omits time_of_day
           if (h < 7)  return 'early_morning';
           if (h < 12) return 'morning';
           if (h < 17) return 'afternoon';
@@ -1759,7 +1767,7 @@ export default {
     .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
     .content { padding: 40px 24px; }
     .message { font-size: 16px; line-height: 1.6; color: #374151; margin-bottom: 24px; }
-    .btn { display: inline-block; background-color: #c84b2f; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600; }
+    .btn { display: inline-block; background-color: #3C82F6; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600; }
     .note { font-size: 13px; color: #9ca3af; margin-top: 24px; }
   </style>
 </head>

@@ -180,7 +180,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           user_id:              user.id,
           page_title:           document.title,
           time_of_day:          (() => {
-            const h = new Date().getUTCHours(); // GMT
+            const h = new Date().getHours(); // local browser time — accurate for user's timezone
             if (h < 7)  return 'early_morning';
             if (h < 12) return 'morning';
             if (h < 17) return 'afternoon';
@@ -492,7 +492,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             return u?.isAuthenticated ? u.id : null;
           })(),
           client_id: WA.getClientId ? WA.getClientId() : '',
-          context: contextToSend || ''
+          context: contextToSend || '',
+          ...(WA.getEcomContext ? WA.getEcomContext() : {
+            ecom_platform:   null,
+            cart_item_count: 0,
+            ecom_currency:   '',
+          })
         },
 
         onConnect: async function() {
@@ -761,7 +766,12 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             return u?.isAuthenticated ? u.id : null;
           })(),
           client_id: WA.getClientId ? WA.getClientId() : '',
-          context: contextToSend || ''
+          context: contextToSend || '',
+          ...(WA.getEcomContext ? WA.getEcomContext() : {
+            ecom_platform:   null,
+            cart_item_count: 0,
+            ecom_currency:   '',
+          })
         },
 
         onConnect: async function() {
@@ -954,10 +964,34 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   }
 
   /**
+   * Build a general time-of-day greeting for a returning unauthenticated visitor.
+   * No backend call — uses local browser time and WA_CONFIG.businessName only.
+   * Shown only when the greeting card has already been dismissed (shouldShow() === false),
+   * so it never competes with the full greeting card UI.
+   */
+  function buildAnonReturningGreeting() {
+    const h = new Date().getHours();
+    const business = CONFIG.businessName || '';
+
+    const templates = {
+      early_morning: `Up early — we're here if you need anything${business ? ' from ' + business : ''}.`,
+      morning:       `Good morning${business ? ', welcome back to ' + business : ', welcome back'} — let us know if we can help.`,
+      afternoon:     `Good afternoon${business ? ' — welcome back to ' + business : ', welcome back'} — feel free to ask us anything.`,
+      evening:       `Good evening${business ? ', great to see you back at ' + business : ', welcome back'} — happy to help.`,
+      night:         `Evening${business ? ' — welcome back to ' + business : ', welcome back'} — let us know if there's anything you need.`,
+    };
+
+    const window_ = h < 7 ? 'early_morning' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 20 ? 'evening' : 'night';
+    return templates[window_];
+  }
+
+  /**
    * Async init: load profile → determine greeting → show bubble.
    * Authenticated users with a profile get an OpenAI-personalised greeting.
-   * Guest users fall back to WA_CONFIG.greetingMessage (no OpenAI call).
-   * In both cases the bubble shows, the greeting appears as the first panel
+   * Returning unauthenticated users (greeting card already dismissed) get a
+   * general time-of-day greeting — no backend call, no token spend.
+   * First-time visitors fall back to WA_CONFIG.greetingMessage.
+   * In all cases the bubble shows, the greeting appears as the first panel
    * message, and the Dialogue agent is told not to re-greet.
    */
   async function initPersonalisedGreeting() {
@@ -971,7 +1005,16 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     }
 
     if (!greeting) {
-      // Guest or no profile yet — use the configured default greeting
+      // Returning unauthenticated visitor — greeting card already dismissed,
+      // so it's safe to show a preview bubble without competing with the card UI.
+      const greetingCardDismissed = window.WebsiteAvatarGreeting?.shouldShow?.() === false;
+      if (greetingCardDismissed) {
+        greeting = buildAnonReturningGreeting();
+      }
+    }
+
+    if (!greeting) {
+      // First-time visitor or no greeting card state — use configured default
       greeting = CONFIG.greetingMessage || null;
     }
 
