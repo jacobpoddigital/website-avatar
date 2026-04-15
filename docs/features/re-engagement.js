@@ -3,10 +3,16 @@
  *
  * Shows a mini greeting card (avatar + message + Chat button) when the user
  * has been browsing without opening the chat. Two triggers:
- *   1. Inactivity — 60s of no interaction after minimum 30s on site
+ *   1. Inactivity — 45s of no interaction after minimum 10s on site
  *   2. Exit intent — cursor leaves viewport near the top (desktop only)
  *
- * Shown at most once per session (30-min gap = new session).
+ * Fires once per page load. No cross-page session gating — each navigation
+ * is a fresh opportunity. Gate conditions: panel open, bridge connected,
+ * or card already in DOM.
+ *
+ * Copy is page-aware: keyword matching on document.title + pathname determines
+ * whether the user is on a service page, a conversion page, or a generic page,
+ * and the message reflects that context.
  */
 
 (function () {
@@ -14,83 +20,70 @@
 
   // ── CONSTANTS ────────────────────────────────────────────────────────────────
 
-  const ELAPSED_KEY   = 'wa_session_elapsed';   // ms accumulated this session
-  const LAST_ACT_KEY  = 'wa_last_activity';     // timestamp of last page load
-  const SHOWN_KEY     = 'wa_re_engage_shown';   // sessionStorage — once per session
-  const SESSION_GAP   = 30 * 60 * 1000;         // 30 min gap = new session
-  const MIN_ON_SITE   = 30 * 1000;              // must have been on site 30s before exit fires
-  const INACTIVITY_MS = 60 * 1000;              // 60s idle triggers mid-session card
-  const AUTO_DISMISS  = 120 * 1000;              // card auto-dismisses after 12s
+  const MIN_ON_SITE   = 10 * 1000;   // must be on page at least 10s before card fires
+  const INACTIVITY_MS = 45 * 1000;   // 45s idle triggers mid-session card
+  const AUTO_DISMISS  = 12 * 1000;   // card auto-dismisses after 12s
 
   // ── LOGGING ──────────────────────────────────────────────────────────────────
-  // Gated on WA.DEBUG — enable via ?debug=1 or WA_CONFIG.debug: true
 
   const _log = (...args) => window.WebsiteAvatar?.DEBUG && console.log('[WA:ReEngage]', ...args);
 
-  // ── SESSION TIMER ────────────────────────────────────────────────────────────
+  // ── PAGE START ───────────────────────────────────────────────────────────────
 
   const _pageStart = Date.now();
+  const _onSiteMs  = () => Date.now() - _pageStart;
 
-  function _initTimer() {
-    const now     = Date.now();
-    const lastAct = parseInt(localStorage.getItem(LAST_ACT_KEY) || '0');
-    const gap     = now - lastAct;
+  // ── PAGE CONTEXT ─────────────────────────────────────────────────────────────
+  // Classifies the current page into one of three types based on title + path
+  // keywords. Used to pick relevant copy without any backend call.
 
-    if (gap > SESSION_GAP) {
-      localStorage.setItem(ELAPSED_KEY, '0');
-      _log(`New session (gap ${Math.round(gap / 60000)}min > 30min) — elapsed reset to 0`);
-    } else {
-      _log(`Resuming session — prior elapsed: ${Math.round(parseInt(localStorage.getItem(ELAPSED_KEY) || '0') / 1000)}s, gap since last page: ${Math.round(gap / 1000)}s`);
-    }
+  function _getPageContext() {
+    const title    = (document.title || '').toLowerCase();
+    const path     = (window.location.pathname || '').toLowerCase();
+    const combined = title + ' ' + path;
 
-    localStorage.setItem(LAST_ACT_KEY, String(now));
+    const serviceKeywords    = ['service', 'chauffeur', 'fleet', 'vehicle', 'transfer', 'package', 'product', 'solution', 'offer'];
+    const conversionKeywords = ['contact', 'price', 'pricing', 'quote', 'booking', 'book', 'enquir', 'request', 'get in touch', 'hire'];
 
-    function _flush() {
-      const stored = parseInt(localStorage.getItem(ELAPSED_KEY) || '0');
-      const added  = Date.now() - _pageStart;
-      localStorage.setItem(ELAPSED_KEY, String(stored + added));
-      localStorage.setItem(LAST_ACT_KEY, String(Date.now()));
-      _log(`Page hidden — flushed ${Math.round(added / 1000)}s, total elapsed now ${Math.round((stored + added) / 1000)}s`);
-    }
-
-    document.addEventListener('visibilitychange', () => { if (document.hidden) _flush(); });
-    window.addEventListener('pagehide', _flush);
+    if (conversionKeywords.some(k => combined.includes(k))) return 'conversion';
+    if (serviceKeywords.some(k => combined.includes(k)))    return 'service';
+    return 'generic';
   }
 
-  function _elapsedMs() {
-    const stored = parseInt(localStorage.getItem(ELAPSED_KEY) || '0');
-    return stored + (Date.now() - _pageStart);
-  }
-
-  function _getTier() {
-    const s    = _elapsedMs() / 1000;
-    const tier = s < 90 ? 'short' : s < 240 ? 'medium' : 'long';
-    _log(`Tier check — elapsed ${Math.round(s)}s → "${tier}"`);
-    return tier;
+  // Returns a short label for the current page — used inline in messages.
+  function _getPageLabel() {
+    const title = document.title || '';
+    // Strip common suffixes like " | Brand Name" or " - Brand Name"
+    return title.split(/[|\-–]/)[0].trim() || 'this page';
   }
 
   // ── COPY ─────────────────────────────────────────────────────────────────────
 
-  const _copy = {
-    'mid-session': {
-      short:  "Couldn't find what you're looking for? I can help.",
-      medium: "Still browsing? I can help you narrow things down.",
-      long:   "You've been here a while — want a personalised recommendation?",
-    },
-    'exit-intent': {
-      short:  "Before you go — any questions I can answer quickly?",
-      medium: "Heading off? I can give you a quick summary of your options.",
-      long:   "Don't leave without a recommendation — it only takes 30 seconds.",
-    },
-  };
+  function _getMessage(context) {
+    const pageType  = _getPageContext();
+    const pageLabel = _getPageLabel();
+
+    const copy = {
+      'mid-session': {
+        service:    `Any questions about ${pageLabel}? I can help you find exactly what you need.`,
+        conversion: `Ready to take the next step? I can walk you through the process quickly.`,
+        generic:    `Couldn't find what you're looking for? Ask me anything.`,
+      },
+      'exit-intent': {
+        service:    `Before you go — any questions about ${pageLabel} I can answer quickly?`,
+        conversion: `Not quite ready? I can answer any questions before you decide.`,
+        generic:    `Before you leave — is there anything I can help you with?`,
+      },
+    };
+
+    const message = copy[context]?.[pageType] || copy[context]?.generic;
+    _log(`Copy selected — context: "${context}", pageType: "${pageType}", pageLabel: "${pageLabel}"`);
+    return message;
+  }
 
   // ── GATE CHECK ───────────────────────────────────────────────────────────────
 
   function _shouldShow() {
-    if (sessionStorage.getItem(SHOWN_KEY)) {
-      _log('Gate blocked — already shown this session');
-      return false;
-    }
     if (document.getElementById('wa-re-engage')) {
       _log('Gate blocked — card already in DOM');
       return false;
@@ -114,14 +107,12 @@
     _log(`showCard called — context: "${context}"`);
     if (!_shouldShow()) return;
 
-    const tier    = _getTier();
-    const message = _copy[context][tier];
+    const message = _getMessage(context);
     const config  = window.WA_CONFIG || {};
     const name    = config.agentName  || 'Website Avatar';
     const avatar  = config.avatar_url || '';
 
-    _log(`Showing card — context: "${context}", tier: "${tier}", message: "${message}"`);
-    sessionStorage.setItem(SHOWN_KEY, '1');
+    _log(`Showing card — context: "${context}", message: "${message}"`);
 
     const card = document.createElement('div');
     card.id        = 'wa-re-engage';
@@ -146,9 +137,6 @@
 
     // Auto-dismiss
     const timer = setTimeout(() => _dismiss(card), AUTO_DISMISS);
-
-    // Auto-dismiss log
-    setTimeout(() => _log('Card auto-dismissed after timeout'), AUTO_DISMISS);
 
     // Dismiss button
     card.querySelector('.wa-re-engage-close').onclick = () => {
@@ -180,12 +168,12 @@
     function _reset() {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const elapsed = _elapsedMs();
-        if (elapsed >= MIN_ON_SITE) {
-          _log(`Inactivity timer fired — ${INACTIVITY_MS / 1000}s idle, elapsed ${Math.round(elapsed / 1000)}s — showing card`);
+        const onSite = _onSiteMs();
+        if (onSite >= MIN_ON_SITE) {
+          _log(`Inactivity timer fired — ${INACTIVITY_MS / 1000}s idle, ${Math.round(onSite / 1000)}s on page — showing card`);
           _showCard('mid-session');
         } else {
-          _log(`Inactivity timer fired but min on-site not met (${Math.round(elapsed / 1000)}s < ${MIN_ON_SITE / 1000}s) — skipping`);
+          _log(`Inactivity timer fired but min on-site not met (${Math.round(onSite / 1000)}s < ${MIN_ON_SITE / 1000}s) — skipping`);
         }
       }, INACTIVITY_MS);
     }
@@ -195,7 +183,7 @@
     });
 
     _log(`Inactivity trigger armed — fires after ${INACTIVITY_MS / 1000}s idle`);
-    _reset(); // start the clock
+    _reset();
   }
 
   // ── EXIT INTENT TRIGGER ──────────────────────────────────────────────────────
@@ -212,12 +200,12 @@
         _log(`mouseleave ignored — clientY ${e.clientY} (not near top)`);
         return;
       }
-      const elapsed = _elapsedMs();
-      if (elapsed < MIN_ON_SITE) {
-        _log(`Exit intent blocked — too soon (${Math.round(elapsed / 1000)}s < ${MIN_ON_SITE / 1000}s min)`);
+      const onSite = _onSiteMs();
+      if (onSite < MIN_ON_SITE) {
+        _log(`Exit intent blocked — too soon (${Math.round(onSite / 1000)}s < ${MIN_ON_SITE / 1000}s min)`);
         return;
       }
-      _log(`Exit intent triggered — clientY ${e.clientY}, elapsed ${Math.round(elapsed / 1000)}s`);
+      _log(`Exit intent triggered — clientY ${e.clientY}, ${Math.round(onSite / 1000)}s on page`);
       triggered = true;
       _showCard('exit-intent');
     });
@@ -225,32 +213,22 @@
 
   // ── INIT ─────────────────────────────────────────────────────────────────────
 
-  _initTimer();
-  _log(`Loaded — elapsed this session: ${Math.round(_elapsedMs() / 1000)}s, tier: "${_getTier()}", shown flag: ${!!sessionStorage.getItem(SHOWN_KEY)}`);
+  _log(`Loaded — page context: "${_getPageContext()}", pageLabel: "${_getPageLabel()}"`);
   _initInactivity();
   _initExitIntent();
 
   // ── DEBUG HELPER ─────────────────────────────────────────────────────────────
   // Test the card from DevTools without waiting for timers:
   //
-  //   WA_testReEngage()                        — mid-session, auto tier
-  //   WA_testReEngage('exit-intent')           — exit-intent, auto tier
-  //   WA_testReEngage('mid-session', 'long')   — force a specific tier
+  //   WA_testReEngage()                  — mid-session, auto page context
+  //   WA_testReEngage('exit-intent')     — exit-intent, auto page context
   //
-  // Clears the session flag automatically so you can fire it repeatedly.
+  // Removes any existing card so you can fire it repeatedly.
 
-  window.WA_testReEngage = function (context, tier) {
-    console.log('[WA:ReEngage] 🧪 Test triggered —', { context: context || 'mid-session', tier: tier || 'auto' });
-    sessionStorage.removeItem(SHOWN_KEY);
+  window.WA_testReEngage = function (context) {
+    console.log('[WA:ReEngage] 🧪 Test triggered —', { context: context || 'mid-session' });
     const existing = document.getElementById('wa-re-engage');
     if (existing) existing.remove();
-
-    if (tier) {
-      const tierMs = { short: 0, medium: 100000, long: 300000 };
-      localStorage.setItem(ELAPSED_KEY, String(tierMs[tier] ?? 0));
-      console.log('[WA:ReEngage] 🧪 Elapsed overridden to force tier:', tier);
-    }
-
     _showCard(context || 'mid-session');
   };
 

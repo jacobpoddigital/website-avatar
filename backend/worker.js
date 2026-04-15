@@ -565,8 +565,11 @@ export default {
           'SELECT name, company, persona_summary FROM user_profiles WHERE user_id = ? AND client_id = ?'
         ).bind(user_id, clientId).first();
 
-        const firstName = profile?.name?.split(' ')[0];
-        if (!firstName) return json({ greeting: null }, 200, cors);
+        const rawFirstName = profile?.name?.split(' ')[0];
+        if (!rawFirstName) return json({ greeting: null }, 200, cors);
+        // Treat placeholder names as uncaptured — omit from the greeting rather than saying "User"
+        const PLACEHOLDER_NAMES = ['user', '[user]', 'unknown', 'guest'];
+        const firstName = PLACEHOLDER_NAMES.includes(rawFirstName.toLowerCase()) ? null : rawFirstName;
 
         const countRow = await env.website_avatar_db.prepare(
           'SELECT COUNT(*) as n FROM conversations WHERE user_id = ? AND client_id = ?'
@@ -586,26 +589,30 @@ export default {
         }
 
         const context = [
-          `Name: ${firstName}`,
+          firstName                ? `Name: ${firstName}` : null,
           `Time of day: ${time_of_day || 'day'}`,
           `Page they landed on: ${page_title || 'Homepage'}`,
           `Number of past visits: ${visits}`,
-          personaHint     ? `What we know about them: ${personaHint}` : null,
-          last_session_snippet ? `Last visit they asked about: "${last_session_snippet}"` : null,
+          personaHint              ? `What we know about them: ${personaHint}` : null,
+          last_session_snippet     ? `Last visit they asked about: "${last_session_snippet}"` : null,
         ].filter(Boolean).join('\n');
+
+        const nameRule = firstName
+          ? `Use their first name.`
+          : `Their name is not known — do not use a name or placeholder. Address them warmly without one.`;
 
         const lines = [
           `You are a warm, intelligent assistant for ${businessName || 'our website'}. Write a single short greeting for a returning visitor based on the context below.`,
           ``,
           context,
           ``,
-          `Rules: one sentence only. Use their first name. Reference the time of day naturally. If you know something relevant about their interests or last visit, weave it in — but keep it light, never surveillance-like. No exclamation marks. No flattery. No dashes or colons. Sound like a knowledgeable person who's genuinely pleased to see them, not a chatbot. Be creative with phrasing but stay professional.`,
+          `Rules: one sentence only. ${nameRule} Reference the time of day naturally. If you know something relevant about their interests or last visit, weave it in — but keep it light, never surveillance-like. No exclamation marks. No flattery. No dashes or colons. Sound like a knowledgeable person who's genuinely pleased to see them, not a chatbot. Be creative with phrasing but stay professional.`,
           ``,
           `Examples of the right tone (use [Name], [time], [interest/topic] as stand-ins for real data):`,
           `"Good [time] [Name], hope we can point you in the right direction today."`,
           `"[Name], glad you're back this [time] — let us know what you're thinking about."`,
-          `"Hope your [time] is going well [Name], we're here if you want to explore [interest]."`,
-          `"Good to see you again [Name], we've got plenty to help with if [interest] is still on your mind."`,
+          `"Good [time], hope we can help you find what you're looking for."`,
+          `"Good to see you back this [time] — let us know if [interest] is still on your mind."`,
         ];
 
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
