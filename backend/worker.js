@@ -1852,6 +1852,41 @@ export default {
           console.log('[Auth] Migrated sessions for visitor:', visitorId, '→ user:', authUserId);
         }
 
+        // Seed persona from past transcript summaries if none exists yet.
+        // Only fires when: clientId is resolvable, no persona_summary on record,
+        // and at least one migrated conversation has a transcript_summary.
+        // Capped at last 3 summaries. Fire-and-forget — never blocks the redirect.
+        const clientIdForPersona = corsOrigins[originHost] || '';
+        if (clientIdForPersona) {
+          ctx.waitUntil((async () => {
+            try {
+              const existingProfile = await env.website_avatar_db.prepare(
+                'SELECT persona_summary FROM user_profiles WHERE user_id = ? AND client_id = ?'
+              ).bind(authUserId, clientIdForPersona).first();
+
+              if (!existingProfile?.persona_summary) {
+                const rows = await env.website_avatar_db.prepare(`
+                  SELECT analysis FROM conversations
+                  WHERE user_id = ? AND client_id = ?
+                    AND json_extract(analysis, '$.transcript_summary') IS NOT NULL
+                  ORDER BY created_at DESC LIMIT 3
+                `).bind(authUserId, clientIdForPersona).all();
+
+                const summaries = (rows.results || [])
+                  .map(r => { try { return JSON.parse(r.analysis).transcript_summary; } catch { return null; } })
+                  .filter(Boolean);
+
+                if (summaries.length > 0) {
+                  console.log('[Auth] 🔍 Seeding persona from', summaries.length, 'past transcript(s) for user:', authUserId);
+                  await refreshPersonaSummary(env.website_avatar_db, authUserId, env, summaries.join('\n\n---\n\n'), clientIdForPersona);
+                }
+              }
+            } catch (err) {
+              console.error('[Auth] ❌ Persona seed error:', err.message);
+            }
+          })());
+        }
+
         // Generate 30-day auth token
         const authToken = await generateAuthToken(authUserId, email, env.JWT_SECRET);
 
