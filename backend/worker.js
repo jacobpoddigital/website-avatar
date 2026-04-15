@@ -567,8 +567,9 @@ export default {
 
         const rawFirstName = profile?.name?.split(' ')[0];
         if (!rawFirstName) return json({ greeting: null }, 200, cors);
-        // Treat [User] as an uncaptured name — omit from the greeting rather than saying "User"
-        const firstName = rawFirstName === '[User]' ? null : rawFirstName;
+        // Treat placeholder names as uncaptured — omit from the greeting rather than saying "User"
+        const PLACEHOLDER_NAMES = ['user', '[user]', 'unknown', 'guest'];
+        const firstName = PLACEHOLDER_NAMES.includes(rawFirstName.toLowerCase()) ? null : rawFirstName;
 
         const countRow = await env.website_avatar_db.prepare(
           'SELECT COUNT(*) as n FROM conversations WHERE user_id = ? AND client_id = ?'
