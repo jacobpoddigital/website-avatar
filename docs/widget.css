@@ -1497,6 +1497,26 @@ span.wa-msg-text {
   margin: 0; font-size: 12px; line-height: 1.5; color: var(--wa-text-mid); font-weight: 300;
 }
 
+/* ── ECOM THINKING BUBBLE ───────────────────────────────────────────────────── */
+
+#wa-panel .wa-msg.wa-ecom-thinking .wa-msg-text {
+  opacity: 0.5;
+  font-style: italic;
+}
+#wa-panel .wa-msg.wa-ecom-thinking .wa-msg-text::after {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  animation: wa-ecom-dots 1.2s steps(4, end) infinite;
+}
+@keyframes wa-ecom-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+
 /* ── PRODUCT STRIP ─────────────────────────────────────────────────────────── */
 
 #wa-panel .wa-product-strip {

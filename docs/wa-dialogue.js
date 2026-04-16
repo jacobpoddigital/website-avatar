@@ -427,6 +427,28 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // Ecom tools are skipped automatically when ecom is disabled — the registry
   // entry simply won't exist, so the if (!handler) guard drops it silently.
 
+  // Retroactively convert the most recent agent bubble into a replaceable
+  // "thinking" bubble. Called the moment a client tool fires — the pre-tool
+  // speech has already landed in the DOM, so we mark it rather than intercept it.
+  function _markLastBubbleAsThinking() {
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+    const all = msgs.querySelectorAll('.wa-msg.wa-agent:not(.wa-ecom-thinking)');
+    const last = all[all.length - 1];
+    if (!last) return;
+    last.classList.add('wa-ecom-thinking');
+    WA._ecomThinkingBubble = last;
+    // Remove from session.messages so the thinking phrase is never saved to history
+    const session = WA.getSession?.();
+    if (session?.messages?.length) {
+      const lastMsg = session.messages[session.messages.length - 1];
+      if (lastMsg?.role === 'agent') {
+        session.messages.pop();
+        // No saveSession here — not worth a KV write for an ephemeral phrase
+      }
+    }
+  }
+
   function buildClientTools() {
     const tools = {};
 
@@ -447,16 +469,20 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       tools[type] = async (params) => {
         log(`Client tool called: ${type}`, params);
         // Reset inactivity — tool execution counts as live activity.
-        // Without this, the inactivity counter accumulates during the tool
-        // call window (no AI messages flow while the agent waits for the result).
         if (WA.inactivity) WA.inactivity.reset();
+        // Mark the last agent bubble as thinking and intercept further agent
+        // messages until the tool completes (see onAgentMessage in bridge.js).
+        WA._ecomToolActive = true;
+        _markLastBubbleAsThinking();
         try {
           const result = await handler.execute({ type, payload: params || {} });
           log(`Client tool result: ${type}`, result);
-          if (WA.inactivity) WA.inactivity.reset(); // reset again after result returns
+          if (WA.inactivity) WA.inactivity.reset();
+          WA._ecomToolActive = false;
           return result || {};
         } catch (err) {
           warn(`Client tool error: ${type}`, err.message);
+          WA._ecomToolActive = false;
           return { error: err.message };
         }
       };
