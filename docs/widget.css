@@ -1496,3 +1496,35 @@ span.wa-msg-text {
 #wa-panel .wa-advice-text {
   margin: 0; font-size: 12px; line-height: 1.5; color: var(--wa-text-mid); font-weight: 300;
 }
+
+/* ── PRODUCT STRIP ─────────────────────────────────────────────────────────── */
+
+#wa-panel .wa-product-strip {
+  display: flex; flex-direction: row; gap: 8px;
+  overflow-x: auto; padding: 6px 16px 8px;
+  scrollbar-width: none;
+}
+#wa-panel .wa-product-strip::-webkit-scrollbar { display: none; }
+
+#wa-panel .wa-product-chip {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; flex-shrink: 0; width: 64px;
+}
+
+#wa-panel .wa-product-chip img {
+  width: 50px; height: 50px; object-fit: cover;
+  border-radius: 8px; border: 1px solid var(--wa-glass-border);
+  background: var(--wa-glass-subtle);
+}
+
+#wa-panel .wa-product-chip-name {
+  font-size: 10px; color: var(--wa-text-mid); text-align: center;
+  line-height: 1.3; max-width: 64px;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
+#wa-panel .wa-product-chip-qty {
+  font-size: 10px; font-weight: 600; color: var(--wa-text-mid);
+  background: var(--wa-glass-subtle); border-radius: 4px; padding: 1px 5px;
+}

@@ -126,6 +126,11 @@
     const msgs = document.getElementById('wa-messages');
     if (msgs) {
       msgs.appendChild(el);
+      // If an ecom action queued product images, render the strip directly after this bubble
+      if (role === 'agent' && WA._pendingProductStrip?.length) {
+        _renderProductStrip(WA._pendingProductStrip, el);
+        WA._pendingProductStrip = null;
+      }
       scrollToBottom();
     }
 
@@ -386,6 +391,30 @@
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   }
 
+  // ─── PRODUCT STRIP ────────────────────────────────────────────────────────
+
+  function _renderProductStrip(items, afterEl) {
+    if (!items || !items.length) return;
+
+    const strip = document.createElement('div');
+    strip.className = 'wa-product-strip';
+
+    items.forEach(item => {
+      const chip = document.createElement('div');
+      chip.className = 'wa-product-chip';
+      chip.innerHTML = `
+        <img src="${item.imageUrl}" width="50" height="50" alt="${item.name || ''}" loading="lazy"
+             onerror="this.closest('.wa-product-chip').style.display='none'" />
+        <span class="wa-product-chip-name">${item.name || ''}</span>
+        ${item.qty ? `<span class="wa-product-chip-qty">×${item.qty}</span>` : ''}
+      `;
+      strip.appendChild(chip);
+    });
+
+    if (strip.children.length) {
+      afterEl.after(strip);
+    }
+  }
 
   // ─── BUTTONS ──────────────────────────────────────────────────────────────
 

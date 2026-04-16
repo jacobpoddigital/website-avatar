@@ -81,7 +81,7 @@
    * Returns a standardised error response if provider unavailable.
    */
   function _action(name, fn) {
-    return async function (payload) {
+    return async function (action) {
       const provider = _getProvider();
       if (!provider) {
         return { error: 'Ecommerce not available on this site', action: name };
@@ -90,7 +90,7 @@
         return { error: `${provider.platformName} API is not reachable`, action: name };
       }
       try {
-        return await fn(provider, payload);
+        return await fn(provider, action.payload || {});
       } catch (err) {
         _warn(`Action "${name}" threw:`, err.message);
         return { error: err.message, action: name };
@@ -117,6 +117,7 @@
         if (!query) return { error: 'query is required' };
         _log('Product search:', query, `(limit: ${limit})`);
         const products = await provider.searchProducts(query, { limit });
+        _queueProductStrip(products.map(p => ({ imageUrl: p.imageUrl, name: p.name, price: p.price })));
         return { products };
       })
     });
@@ -129,6 +130,7 @@
         _log('Add to cart:', product_id, `qty: ${quantity}`, variant_id ? `variant: ${variant_id}` : '');
         const cart = await provider.addToCart(product_id, quantity, variant_id);
         _updateCartContext(cart);
+        _queueProductStrip(cart.items.map(i => ({ imageUrl: i.imageUrl, name: i.name, qty: i.qty, price: i.price })));
         return { cart };
       })
     });
@@ -140,6 +142,7 @@
         _log('View cart');
         const cart = await provider.getCart();
         _updateCartContext(cart);
+        _queueProductStrip(cart.items.map(i => ({ imageUrl: i.imageUrl, name: i.name, qty: i.qty, price: i.price })));
         return { cart };
       })
     });
@@ -190,6 +193,18 @@
     });
 
     _log('All ecom_* actions registered');
+  }
+
+  // ── PRODUCT STRIP QUEUE ────────────────────────────────────────────────────
+
+  /**
+   * Stash product/cart items for ui.js to render after the next agent message.
+   * We can't render immediately because the agent text response hasn't arrived yet.
+   */
+  function _queueProductStrip(items) {
+    if (!items || !items.length) return;
+    WA._pendingProductStrip = items.filter(i => i.imageUrl);
+    _log('Product strip queued —', WA._pendingProductStrip.length, 'items');
   }
 
   // ── CART CONTEXT SYNC ──────────────────────────────────────────────────────
