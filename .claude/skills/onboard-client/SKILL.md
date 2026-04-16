@@ -64,35 +64,38 @@ Show the user the generated JSON and ask them to confirm before proceeding.
 Once confirmed, run the `POST /config` call using the Bash tool:
 
 ```bash
-curl -s -X POST https://backend.jacob-e87.workers.dev/config \
+curl -s -X POST "https://backend.jacob-e87.workers.dev/config?id=<accountId>" \
   -H "Authorization: Bearer $ADMIN_SECRET" \
   -H "Content-Type: application/json" \
   -d '<configJson>'
 ```
 
-> `$ADMIN_SECRET` is your Cloudflare Worker secret — set it in your shell with `export ADMIN_SECRET=your_secret` before running, or substitute it directly.
+> **Important:** The `?id=<accountId>` query parameter is required — the endpoint will return `{"error":"Missing id"}` without it, even if `accountId` is present in the JSON body.
 
-Check the response. If successful (`200`), confirm and continue. If it fails, show the error and stop.
+> `$ADMIN_SECRET` is a fixed Cloudflare Worker secret (not per-client). Add it permanently to `~/.zshrc` so it's always available:
+> ```bash
+> export ADMIN_SECRET=your_secret_here
+> ```
+> This means the Bash tool will always have it in scope without needing to set it each session.
+
+Check the response. If successful (`200`), the full config JSON is echoed back. If it fails, show the error and stop.
 
 ---
 
 ## Step 3 — Verify CORS registration
 
-After the POST, the `wa_cors_origins` KV entry should have been auto-updated. Verify it with:
+The `POST /config` handler automatically updates `wa_cors_origins` in KV whenever `allowedOrigin` is set — no manual wrangler step needed.
+
+Verify CORS is working by fetching the config with the client's Origin header:
 
 ```bash
-npx wrangler kv key get --remote \
-  --namespace-id=4c0d294800474fe28ba486a34b13c461 \
-  "wa_cors_origins"
+curl -s "https://backend.jacob-e87.workers.dev/config?id=<accountId>" \
+  -H "Origin: <clientDomain>"
 ```
 
-Confirm the client's domain appears in the output. If it does not, add it manually:
+A successful response (200 with config JSON) confirms CORS is registered. If you get a 503 or missing `Access-Control-Allow-Origin` header, the origin wasn't saved — re-run the POST from Step 2.
 
-```bash
-# Read current value first, then write with the new entry appended
-npx wrangler kv key get --remote --namespace-id=4c0d294800474fe28ba486a34b13c461 "wa_cors_origins"
-# Then PUT the updated JSON including the new entry
-```
+> **Note:** `npx wrangler kv key get` requires active Cloudflare CLI auth and is unreliable in Claude's shell context. Use the HTTP verification above instead.
 
 ---
 

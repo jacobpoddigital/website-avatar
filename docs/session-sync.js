@@ -11,14 +11,15 @@
   let saveTimeout = null;
 
   // ─── GET USER ID ──────────────────────────────────────────────────────────
-  // Returns authenticated user ID if signed in, otherwise falls back to wc_visitor.
+  // Returns authenticated user ID if signed in, otherwise falls back to wc_visitor (WhatConverts)
+  // or wa_visitor (our own generated UUID) — whichever is set.
 
   function getUserId() {
     if (WA.auth) {
       const user = WA.auth.getCurrentUser();
       return user.id;
     }
-    return localStorage.getItem('wc_visitor') || null;
+    return localStorage.getItem('wc_visitor') || localStorage.getItem('wa_visitor') || null;
   }
 
   // ─── GET CLIENT ID ────────────────────────────────────────────────────────

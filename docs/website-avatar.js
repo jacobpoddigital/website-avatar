@@ -307,7 +307,7 @@
       // Exposed globally so greeting.js can call it when the user clicks Chat/Speak.
       async function _recordConsent() {
         if (localStorage.getItem(CONSENT_KEY)) return; // already recorded
-        const visitorId = localStorage.getItem('wc_visitor') || '';
+        const visitorId = localStorage.getItem('wc_visitor') || localStorage.getItem('wa_visitor') || '';
         try {
           const res = await fetch(CONSENT_URL, {
             method: 'POST',
@@ -378,16 +378,24 @@
   // ── BOOT ────────────────────────────────────────────────────────────────
   async function boot() {
     // ── WAIT FOR VISITOR ID ──────────────────────────────────────────────
+    // Prefers wc_visitor (set by WhatConverts) if available within 5s.
+    // Falls back to wa_visitor — a stable UUID we generate and own.
+    // Downstream code always reads wa_visitor so it never needs to know the source.
     function waitForVisitorId(callback, attempts = 0) {
-      const visitorId = localStorage.getItem('wc_visitor');
-      
-      if (visitorId) {
-        console.log('[WA] ✅ Visitor ID found:', visitorId);
+      const wcVisitor = localStorage.getItem('wc_visitor');
+
+      if (wcVisitor) {
+        localStorage.setItem('wa_visitor', wcVisitor);
+        console.log('[WA] ✅ Visitor ID from wc_visitor:', wcVisitor);
         callback();
       } else if (attempts < 50) { // 5 seconds max (50 × 100ms)
         setTimeout(() => waitForVisitorId(callback, attempts + 1), 100);
       } else {
-        console.warn('[WA] ⚠️ Visitor ID not found after 5s — widget not loaded');
+        if (!localStorage.getItem('wa_visitor')) {
+          localStorage.setItem('wa_visitor', crypto.randomUUID());
+        }
+        console.log('[WA] ✅ Visitor ID (generated):', localStorage.getItem('wa_visitor'));
+        callback();
       }
     }
 

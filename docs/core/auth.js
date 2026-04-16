@@ -45,8 +45,8 @@
         isAuthenticated: true
       };
     }
-    // Anonymous visitor — fall back to wc_visitor
-    const visitorId = localStorage.getItem('wc_visitor') || null;
+    // Anonymous visitor — prefer wc_visitor (WhatConverts) if set, else use our own wa_visitor
+    const visitorId = localStorage.getItem('wc_visitor') || localStorage.getItem('wa_visitor') || null;
     return {
       id:              visitorId,
       email:           null,
