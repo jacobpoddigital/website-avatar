@@ -419,7 +419,7 @@ export default {
     }
 
     // Admin routes bypass client-origin CORS — they're secured by ADMIN_SECRET instead.
-    const isAdminRoute = url.pathname === '/dashboard' || url.pathname === '/dashboard/ask';
+    const isAdminRoute = url.pathname === '/dashboard' || url.pathname === '/dashboard/ask' || url.pathname === '/accounts';
 
     const cors = {
       'Access-Control-Allow-Origin':  isAdminRoute ? (requestOrigin || '*') : (allowedOrigin || 'null'),
@@ -509,6 +509,40 @@ export default {
       }
 
       return json(updated, 200, cors);
+    }
+
+    // ── GET /accounts ─────────────────────────────────────────────────────────
+    // Admin-only — lists all acct_* KV keys with their config summaries.
+    if (url.pathname === '/accounts' && request.method === 'GET') {
+      if (!env.ADMIN_SECRET) return json({ error: 'Server misconfiguration' }, 500, cors);
+      const acctAuth = request.headers.get('Authorization') || '';
+      if (acctAuth.slice(7) !== env.ADMIN_SECRET) return json({ error: 'Unauthorised' }, 401, cors);
+
+      const listed = await env.CONFIGS.list({ prefix: 'acct_' });
+      const accounts = await Promise.all(
+        listed.keys.map(async ({ name }) => {
+          const raw = await env.CONFIGS.get(name);
+          const cfg = raw ? JSON.parse(raw) : {};
+          return {
+            accountId:      name,
+            businessName:   cfg.businessName   || '',
+            agentName:      cfg.agentName      || '',
+            allowedOrigin:  cfg.allowedOrigin  || '',
+            primaryColor:   cfg.primaryColor   || '#3C82F6',
+            avatar_url:     cfg.avatar_url     || '',
+            dialogueAgentId: cfg.dialogueAgentId || '',
+            voiceAgentId:   cfg.voiceAgentId   || '',
+            notifyEmails:   cfg.notifyEmails   || [],
+            notifyPhone:    cfg.notifyPhone    || '',
+            suggestedPrompts: cfg.suggestedPrompts || [],
+            greetingBullets:  cfg.greetingBullets  || [],
+            ecomEnabled:    cfg.ecomEnabled    || false,
+            ecomPlatform:   cfg.ecomPlatform   || '',
+            debug:          cfg.debug          || false,
+          };
+        })
+      );
+      return json({ accounts }, 200, cors);
     }
 
     // ── POST /greeting ────────────────────────────────────────────────────────
