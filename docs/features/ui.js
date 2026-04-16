@@ -402,9 +402,13 @@
     items.forEach(item => {
       const chip = document.createElement('div');
       chip.className = 'wa-product-chip';
+      const imgHtml = item.imageUrl
+        ? `<img src="${item.imageUrl}" width="50" height="50" alt="${item.name || ''}" loading="lazy"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />`
+        : '';
       chip.innerHTML = `
-        <img src="${item.imageUrl}" width="50" height="50" alt="${item.name || ''}" loading="lazy"
-             onerror="this.closest('.wa-product-chip').style.display='none'" />
+        ${imgHtml}
+        <div class="wa-product-chip-img-placeholder"${item.imageUrl ? ' style="display:none"' : ''}></div>
         <span class="wa-product-chip-name">${item.name || ''}</span>
         ${item.qty ? `<span class="wa-product-chip-qty">×${item.qty}</span>` : ''}
       `;
