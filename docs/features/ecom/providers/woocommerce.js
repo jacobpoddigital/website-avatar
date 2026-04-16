@@ -58,8 +58,8 @@
       const url     = `${this._apiBase()}${path}`;
       const method  = options.method || 'GET';
       const headers = {
-        'Content-Type':    'application/json',
-        'X-WC-Store-API-Nonce': this._nonce(),
+        'Content-Type': 'application/json',
+        'Nonce':        this._nonce(),   // WooCommerce Store API nonce (Wordfence strips X-WC-Store-API-Nonce)
         ...(options.headers || {})
       };
 
