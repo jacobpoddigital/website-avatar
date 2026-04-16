@@ -415,6 +415,55 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     return null;
   }
 
+  // ─── CLIENT TOOLS ─────────────────────────────────────────────────────────
+  // Build ElevenLabs client tool handlers from the registered action registry.
+  // Called lazily at connect time so ecom/index.js has had time to register its
+  // actions (it loads after wa-dialogue.js in the script sequence).
+  //
+  // Each entry maps a tool name (must match the name defined in the ElevenLabs
+  // agent dashboard) to an async function that executes the corresponding
+  // registered action and returns a plain object result back to the agent.
+  //
+  // Ecom tools are skipped automatically when ecom is disabled — the registry
+  // entry simply won't exist, so the if (!handler) guard drops it silently.
+
+  function buildClientTools() {
+    const tools = {};
+
+    const toolTypes = [
+      'ecom_product_search',
+      'ecom_add_to_cart',
+      'ecom_view_cart',
+      'ecom_update_cart',
+      'ecom_remove_from_cart',
+      'ecom_apply_coupon',
+      'ecom_goto_checkout'
+    ];
+
+    toolTypes.forEach(type => {
+      const handler = WA.ActionRegistry?.[type];
+      if (!handler) return; // ecom disabled or provider not loaded for this client
+
+      tools[type] = async (params) => {
+        log(`Client tool called: ${type}`, params);
+        try {
+          const result = await handler.execute({ type, payload: params || {} });
+          log(`Client tool result: ${type}`, result);
+          return result || {};
+        } catch (err) {
+          warn(`Client tool error: ${type}`, err.message);
+          return { error: err.message };
+        }
+      };
+    });
+
+    if (Object.keys(tools).length > 0) {
+      log('Client tools wired:', Object.keys(tools).join(', '));
+    }
+
+    return tools;
+  }
+
   // ─── CONNECTION ───────────────────────────────────────────────────────────
 
   async function connect() {
@@ -499,6 +548,10 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             ecom_currency:   '',
           })
         },
+
+        // Wire registered ecom actions as callable tools for the agent.
+        // Only populated when ecom/index.js has loaded (ecomEnabled in config).
+        clientTools: buildClientTools(),
 
         onConnect: async function() {
           log('onConnect fired');
