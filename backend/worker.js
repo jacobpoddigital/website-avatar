@@ -1659,44 +1659,44 @@ export default {
         // Persona refresh above is intentionally separate and always runs.
         const hasValidData = (name !== 'Unknown') && (email !== 'Not provided' && email.includes('@'));
 
-        // ── Persist transcript_summary to the conversations row ──────────────
-        // Runs for every successful call. Merges into the existing row if the
-        // frontend has already saved it, or creates a placeholder if not yet.
+        // ── Persist call analysis to the conversations row ───────────────────
+        // Runs for every successful call regardless of whether a summary exists.
+        // Duration and credits are saved unconditionally; summary only if present.
         const summary = transcriptSummary || analysis.call_summary_title || null;
-        if (summary) {
-          ctx.waitUntil((async () => {
-            try {
-              const existing = await env.website_avatar_db.prepare(
-                'SELECT analysis FROM conversations WHERE conversation_id = ? LIMIT 1'
-              ).bind(convId).first();
+        ctx.waitUntil((async () => {
+          try {
+            const existing = await env.website_avatar_db.prepare(
+              'SELECT analysis FROM conversations WHERE conversation_id = ? LIMIT 1'
+            ).bind(convId).first();
 
-              if (existing) {
-                let analysisObj = {};
-                try { analysisObj = JSON.parse(existing.analysis || '{}'); } catch { /* ignore */ }
-                analysisObj.transcript_summary = summary;
-                if (analysis.call_summary_title) analysisObj.call_summary_title = analysis.call_summary_title;
-                await env.website_avatar_db.prepare(
-                  'UPDATE conversations SET analysis = ? WHERE conversation_id = ?'
-                ).bind(JSON.stringify(analysisObj), convId).run();
-                console.log('[Webhook] ✅ transcript_summary saved:', summary);
-              } else {
-                // Row not yet created by frontend — insert placeholder so summary isn't lost
-                const placeholderUserId = dynVars.authenticated_user_id || dynVars.user_id || 'unknown';
-                await env.website_avatar_db.prepare(`
-                  INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
-                  VALUES (?, ?, ?, ?, ?)
-                  ON CONFLICT(conversation_id) DO UPDATE SET analysis = excluded.analysis
-                `).bind(
-                  placeholderUserId, convId, resolvedClientId || '', '[]',
-                  JSON.stringify({ transcript_summary: summary, call_summary_title: analysis.call_summary_title || null })
-                ).run();
-                console.log('[Webhook] ✅ Placeholder row created with summary');
-              }
-            } catch (err) {
-              console.warn('[Webhook] ⚠️ Failed to save transcript_summary:', err.message);
+            if (existing) {
+              let analysisObj = {};
+              try { analysisObj = JSON.parse(existing.analysis || '{}'); } catch { /* ignore */ }
+              if (summary) analysisObj.transcript_summary = summary;
+              if (analysis.call_summary_title) analysisObj.call_summary_title = analysis.call_summary_title;
+              if (metadata?.call_duration_secs) analysisObj.call_duration_secs = metadata.call_duration_secs;
+              if (metadata?.cost) analysisObj.elevenlabs_cost_credits = metadata.cost;
+              await env.website_avatar_db.prepare(
+                'UPDATE conversations SET analysis = ? WHERE conversation_id = ?'
+              ).bind(JSON.stringify(analysisObj), convId).run();
+              console.log('[Webhook] ✅ Analysis saved | duration:', metadata?.call_duration_secs, 'credits:', metadata?.cost);
+            } else if (summary) {
+              // Row not yet created by frontend — insert placeholder so data isn't lost
+              const placeholderUserId = dynVars.authenticated_user_id || dynVars.user_id || 'unknown';
+              await env.website_avatar_db.prepare(`
+                INSERT INTO conversations (user_id, conversation_id, client_id, transcript, analysis)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(conversation_id) DO UPDATE SET analysis = excluded.analysis
+              `).bind(
+                placeholderUserId, convId, resolvedClientId || '', '[]',
+                JSON.stringify({ transcript_summary: summary, call_summary_title: analysis.call_summary_title || null, call_duration_secs: metadata?.call_duration_secs || null, elevenlabs_cost_credits: metadata?.cost || null })
+              ).run();
+              console.log('[Webhook] ✅ Placeholder row created with analysis');
             }
-          })());
-        }
+          } catch (err) {
+            console.warn('[Webhook] ⚠️ Failed to save call analysis:', err.message);
+          }
+        })());
 
         if (!hasValidData) {
           console.log('[Webhook] ℹ️ No contact data spoken — skipping lead notifications');
@@ -1987,7 +1987,8 @@ export default {
           openai_out_per_m_tokens: 0.60,
           avg_tokens_in:  { openai_greeting: 300, openai_anon_greeting: 150, openai_classify: 200, openai_persona: 1000 },
           avg_tokens_out: { openai_greeting:  50, openai_anon_greeting:  30, openai_classify:  20, openai_persona:  150 },
-          elevenlabs_per_min:      0.10,
+          elevenlabs_per_min:      0.10,   // fallback estimate for calls without credit data
+          elevenlabs_usd_per_1k_credits: 0.24,
           cf_workers_per_100k_req: 0.30,
           cf_kv_reads_per_m:       0.50,
           cf_kv_writes_per_m:      5.00,
@@ -2094,12 +2095,16 @@ export default {
             )
           `).bind(dashClientId, sinceEpoch).first(),
 
-          // Cost matrix — total voice call duration from webhook analysis
+          // Cost matrix — voice call duration and actual ElevenLabs credit spend
           env.website_avatar_db.prepare(`
-            SELECT COALESCE(SUM(CAST(json_extract(analysis, '$.call_duration_secs') AS REAL)), 0) AS total_call_secs
+            SELECT
+              COALESCE(SUM(CAST(json_extract(analysis, '$.call_duration_secs') AS REAL)), 0) AS total_call_secs,
+              COALESCE(SUM(CAST(json_extract(analysis, '$.elevenlabs_cost_credits') AS REAL)), 0) AS total_credits,
+              COUNT(CASE WHEN json_extract(analysis, '$.elevenlabs_cost_credits') IS NOT NULL THEN 1 END) AS calls_with_credits
             FROM conversations
             WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
-              AND json_extract(analysis, '$.call_duration_secs') IS NOT NULL
+              AND (json_extract(analysis, '$.call_duration_secs') IS NOT NULL
+                OR json_extract(analysis, '$.elevenlabs_cost_credits') IS NOT NULL)
           `).bind(dashClientId, sinceEpoch).first(),
         ]);
 
@@ -2139,7 +2144,12 @@ export default {
         const openaiUsd = (tokensIn / 1e6 * COST_RATES.openai_in_per_m_tokens) +
                           (tokensOut / 1e6 * COST_RATES.openai_out_per_m_tokens);
         const callMins = (callDurationResult?.total_call_secs || 0) / 60;
-        const elevenLabsUsd = callMins * COST_RATES.elevenlabs_per_min;
+        const totalCredits = callDurationResult?.total_credits || 0;
+        const callsWithCredits = callDurationResult?.calls_with_credits || 0;
+        // Use real credit spend when available; fall back to duration estimate for older calls
+        const elevenLabsUsd = totalCredits > 0
+          ? (totalCredits / 1000) * COST_RATES.elevenlabs_usd_per_1k_credits
+          : callMins * COST_RATES.elevenlabs_per_min;
         const totalSessions = sessionResult?.total_sessions || 0;
         const approxRequests = Object.values(summary).reduce((a, b) => a + b, 0) + totalSessions * 3;
         const cfWorkersUsd   = (approxRequests / 100_000) * COST_RATES.cf_workers_per_100k_req;
@@ -2149,11 +2159,11 @@ export default {
         const sendgridUsd   = emailCount * COST_RATES.sendgrid_per_email;
         const cost_summary = {
           openai:     { call_count: openaiTypes.reduce((a, t) => a + (summary[t] || 0), 0), tokens_in: Math.round(tokensIn), tokens_out: Math.round(tokensOut), estimated_usd: r2(openaiUsd) },
-          elevenlabs: { call_count: summary.webhook_call_complete || 0, call_minutes: r2(callMins), estimated_usd: r2(elevenLabsUsd), rate_per_min: COST_RATES.elevenlabs_per_min },
+          elevenlabs: { call_count: summary.webhook_call_complete || 0, call_minutes: r2(callMins), total_credits: Math.round(totalCredits), calls_with_credits: callsWithCredits, estimated_usd: r2(elevenLabsUsd), using_real_credits: totalCredits > 0 },
           cloudflare: { approx_requests: approxRequests, estimated_usd: r2(cfWorkersUsd + cfKvUsd) },
           sendgrid:   { email_count: emailCount, estimated_usd: r2(sendgridUsd) },
           total_estimated_usd: r2(openaiUsd + elevenLabsUsd + cfWorkersUsd + cfKvUsd + sendgridUsd),
-          note: 'Estimates only (GBP) — USD costs converted at ~0.79. Token counts use per-event averages; ElevenLabs assumes Starter plan rate; Cloudflare costs are proportional approximations.',
+          note: 'Costs in GBP (USD × 0.79). ElevenLabs uses real credit spend at $0.24/1k credits (Pro Plan) where available, otherwise estimates from call duration. OpenAI token counts use per-event averages. Cloudflare costs are proportional approximations.',
         };
 
         return json({

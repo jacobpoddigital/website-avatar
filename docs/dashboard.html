@@ -809,7 +809,9 @@
         },
         {
           service: 'ElevenLabs (voice)',
-          usage: `${fmt(cs.elevenlabs?.call_count)} calls · ${Number(cs.elevenlabs?.call_minutes || 0).toFixed(1)} min · $${cs.elevenlabs?.rate_per_min}/min`,
+          usage: cs.elevenlabs?.using_real_credits
+            ? `${fmt(cs.elevenlabs?.call_count)} calls · ${fmt(cs.elevenlabs?.total_credits)} credits · $0.24/1k`
+            : `${fmt(cs.elevenlabs?.call_count)} calls · ${Number(cs.elevenlabs?.call_minutes || 0).toFixed(1)} min (estimated)`,
           cost: cs.elevenlabs?.estimated_usd,
         },
         {

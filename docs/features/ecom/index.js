@@ -159,7 +159,7 @@
           }
         }
 
-        _queueProductStrip(products.map(p => ({ imageUrl: p.imageUrl, name: p.name, price: p.price })));
+        _queueProductStrip(products.map(p => ({ imageUrl: p.imageUrl, name: p.name, price: p.price, currency: p.currency, url: p.url })));
         return { products };
       })
     });
@@ -172,7 +172,7 @@
         _log('Add to cart:', product_id, `qty: ${quantity}`, variant_id ? `variant: ${variant_id}` : '');
         const cart = await provider.addToCart(product_id, quantity, variant_id);
         _updateCartContext(cart);
-        _queueProductStrip(cart.items.map(i => ({ imageUrl: i.imageUrl, name: i.name, qty: i.qty, price: i.price })));
+        _queueProductStrip(cart.items.map(i => ({ imageUrl: i.imageUrl, name: i.name, qty: i.qty, price: i.price, currency: i.currency, url: i.url })));
         return { cart };
       })
     });
@@ -184,7 +184,7 @@
         _log('View cart');
         const cart = await provider.getCart();
         _updateCartContext(cart);
-        _queueProductStrip(cart.items.map(i => ({ imageUrl: i.imageUrl, name: i.name, qty: i.qty, price: i.price })));
+        _queueProductStrip(cart.items.map(i => ({ imageUrl: i.imageUrl, name: i.name, qty: i.qty, price: i.price, currency: i.currency, url: i.url })));
         return { cart };
       })
     });
