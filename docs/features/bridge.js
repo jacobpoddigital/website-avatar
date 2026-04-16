@@ -171,8 +171,12 @@
       // text instead of stacking a new message — and don't save to session.
       if (WA._ecomToolActive) {
         if (WA._ecomThinkingBubble) {
+          // Update existing bubble in-place
           const textEl = WA._ecomThinkingBubble.querySelector('.wa-msg-text');
           if (textEl) textEl.textContent = text;
+        } else if (typeof WA.showEcomThinkingBubble === 'function') {
+          // First intermediate phrase — create the thinking bubble
+          WA.showEcomThinkingBubble(text);
         }
         return;
       }

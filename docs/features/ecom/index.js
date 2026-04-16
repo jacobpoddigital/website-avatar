@@ -116,7 +116,49 @@
       execute: _action('ecom_product_search', async (provider, { query, limit = 5 }) => {
         if (!query) return { error: 'query is required' };
         _log('Product search:', query, `(limit: ${limit})`);
-        const products = await provider.searchProducts(query, { limit });
+
+        // First attempt: full query as-is
+        let products = await provider.searchProducts(query, { limit });
+
+        // Fallback: if no results and query has multiple words, retry with significant words only
+        if (!products.length && query.trim().includes(' ')) {
+          const STOP_WORDS = new Set([
+            'a','an','the','and','or','for','in','on','at','to','of','is','it',
+            'with','that','this','be','as','are','was','were','have','has','had',
+            'do','does','did','will','would','could','should','may','might','can',
+            'not','but','from','by','so','if','about','into','up','out','i','me',
+            'my','we','you','your','can','get','what','some','any','give','show',
+            'find','look','search','want','need','looking','something','anything'
+          ]);
+          const words = query.trim().toLowerCase()
+            .split(/\s+/)
+            .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+
+          if (words.length) {
+            // Try the top 3 significant words together
+            const shortQuery = words.slice(0, 3).join(' ');
+            _log('Search fallback (3 words):', shortQuery);
+            products = await provider.searchProducts(shortQuery, { limit });
+          }
+
+          // Still nothing — try each significant word individually and merge
+          if (!products.length && words.length) {
+            const seen = new Set();
+            for (const word of words.slice(0, 3)) {
+              _log('Search fallback (single word):', word);
+              const hits = await provider.searchProducts(word, { limit });
+              for (const p of hits) {
+                if (!seen.has(p.id)) {
+                  seen.add(p.id);
+                  products.push(p);
+                }
+              }
+              if (products.length >= limit) break;
+            }
+            products = products.slice(0, limit);
+          }
+        }
+
         _queueProductStrip(products.map(p => ({ imageUrl: p.imageUrl, name: p.name, price: p.price })));
         return { products };
       })
