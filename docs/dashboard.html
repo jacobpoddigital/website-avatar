@@ -233,6 +233,18 @@
     .conv-item .conv-summary { font-size: .8rem; color: var(--wa-text-mid); line-height: 1.5; }
     .conv-item .conv-msgs { font-size: .7rem; color: var(--wa-text-light); margin-top: .2rem; }
 
+    /* ── Cost matrix ── */
+    .cost-panel { padding: 1.5rem 1.75rem; margin-bottom: 1rem; }
+    .cost-panel h2 { font-size: .95rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
+    .cost-panel .cost-note { font-size: .72rem; color: var(--wa-text-light); margin-bottom: 1rem; font-style: italic; }
+    .cost-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .cost-table th { text-align: left; padding: .4rem .75rem; font-size: .68rem; font-weight: 600; color: var(--wa-text-mid); letter-spacing: .07em; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.10); white-space: nowrap; }
+    .cost-table td { padding: .5rem .75rem; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--wa-text); }
+    .cost-table tr:last-child td { border-bottom: none; }
+    .cost-table .cost-total td { border-top: 1px solid rgba(255,255,255,0.15); font-weight: 700; color: #fff; }
+    .cost-table .cost-usd { font-variant-numeric: tabular-nums; }
+    .cost-highlight { color: #60a5fa; }
+
     /* ── Ask section ── */
     .ask-panel { padding: 1.5rem 1.75rem; margin-top: 1rem; }
     .ask-panel h2 { font-size: .95rem; font-weight: 600; color: #fff; margin-bottom: .35rem; }
@@ -379,6 +391,22 @@
         </div>
       </div>
 
+      <!-- Cost Matrix panel -->
+      <div class="glass cost-panel" id="costPanel" style="display:none">
+        <h2>Cost Estimate</h2>
+        <p class="cost-note" id="costNote"></p>
+        <table class="cost-table">
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Usage</th>
+              <th>Est. Cost (GBP)</th>
+            </tr>
+          </thead>
+          <tbody id="costBody"></tbody>
+        </table>
+      </div>
+
       <div class="glass ask-panel" id="askSection" style="display:none">
         <h2>Ask about your data</h2>
         <p class="ask-hint">Powered by gpt-4o-mini · up to 50 profiles + 30 conversations + engagement metrics · Ctrl+Enter to submit</p>
@@ -427,11 +455,13 @@
         renderReturning(data.returning || {}, days);
         renderRecentConvs(data.recent_convs || []);
         renderLeads(data.leads || []);
+        renderCosts(data.cost_summary, days);
         document.getElementById('status').style.display = 'none';
         document.getElementById('metricsSection').style.display = 'block';
         document.getElementById('panelGridTop').style.display = 'grid';
         document.getElementById('recentConvsPanel').style.display = 'block';
         document.getElementById('leadsPanel').style.display = 'block';
+        document.getElementById('costPanel').style.display = 'block';
         document.getElementById('askSection').style.display = 'block';
 
       } catch (err) {
@@ -593,6 +623,48 @@
           <td class="date">${lastSeen}</td>
         </tr>`;
       }).join('');
+    }
+
+    function renderCosts(cs, days) {
+      const body = document.getElementById('costBody');
+      const note = document.getElementById('costNote');
+      if (!body || !cs) return;
+      if (note) note.textContent = cs.note || '';
+
+      const usd = n => `£${Number(n || 0).toFixed(2)}`;
+      const rows = [
+        {
+          service: 'OpenAI (gpt-4o-mini)',
+          usage: `${fmt(cs.openai?.call_count)} calls · ~${fmt(cs.openai?.tokens_in)} in / ${fmt(cs.openai?.tokens_out)} out tokens`,
+          cost: cs.openai?.estimated_usd,
+        },
+        {
+          service: 'ElevenLabs (voice)',
+          usage: `${fmt(cs.elevenlabs?.call_count)} calls · ${Number(cs.elevenlabs?.call_minutes || 0).toFixed(1)} min · $${cs.elevenlabs?.rate_per_min}/min`,
+          cost: cs.elevenlabs?.estimated_usd,
+        },
+        {
+          service: 'Cloudflare (Workers + KV)',
+          usage: `~${fmt(cs.cloudflare?.approx_requests)} requests (approx.)`,
+          cost: cs.cloudflare?.estimated_usd,
+        },
+        {
+          service: 'SendGrid',
+          usage: `${fmt(cs.sendgrid?.email_count)} emails`,
+          cost: cs.sendgrid?.estimated_usd,
+        },
+      ];
+
+      body.innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.service}</td>
+          <td style="color:var(--wa-text-mid);font-size:.8rem">${r.usage}</td>
+          <td class="cost-usd">${usd(r.cost)}</td>
+        </tr>`).join('') + `
+        <tr class="cost-total">
+          <td colspan="2">Total (${days}d estimate)</td>
+          <td class="cost-usd cost-highlight">${usd(cs.total_estimated_usd)}</td>
+        </tr>`;
     }
 
     function esc(str) {
