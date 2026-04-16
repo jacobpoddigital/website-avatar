@@ -446,9 +446,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
       tools[type] = async (params) => {
         log(`Client tool called: ${type}`, params);
+        // Reset inactivity — tool execution counts as live activity.
+        // Without this, the inactivity counter accumulates during the tool
+        // call window (no AI messages flow while the agent waits for the result).
+        if (WA.inactivity) WA.inactivity.reset();
         try {
           const result = await handler.execute({ type, payload: params || {} });
           log(`Client tool result: ${type}`, result);
+          if (WA.inactivity) WA.inactivity.reset(); // reset again after result returns
           return result || {};
         } catch (err) {
           warn(`Client tool error: ${type}`, err.message);
