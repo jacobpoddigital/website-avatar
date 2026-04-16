@@ -166,6 +166,21 @@
     };
 
     WA.onAgentMessage = (text, knowledgeContext) => {
+      // While a client tool (e.g. ecom_product_search) is executing, the agent
+      // may send intermediate "searching..." messages. Replace the thinking bubble
+      // text instead of stacking a new message — and don't save to session.
+      if (WA._ecomToolActive) {
+        if (WA._ecomThinkingBubble) {
+          const textEl = WA._ecomThinkingBubble.querySelector('.wa-msg-text');
+          if (textEl) textEl.textContent = text;
+        }
+        return;
+      }
+      // Tool just completed — remove thinking bubble before the real answer lands
+      if (WA._ecomThinkingBubble) {
+        WA._ecomThinkingBubble.remove();
+        WA._ecomThinkingBubble = null;
+      }
       if (typeof WA.agentSay === 'function') WA.agentSay(text);
       if (typeof WA.handleAgentMessage === 'function') {
         WA.handleAgentMessage(WA._lastUserMessage || '', text, knowledgeContext);
