@@ -1947,6 +1947,19 @@ export default {
       const sinceEpoch = Math.floor(Date.now() / 1000) - (days * 86400);
 
       try {
+        const COST_RATES = {
+          usd_to_gbp:              0.79,
+          openai_in_per_m_tokens:  0.15,
+          openai_out_per_m_tokens: 0.60,
+          avg_tokens_in:  { openai_greeting: 300, openai_anon_greeting: 150, openai_classify: 200, openai_persona: 1000 },
+          avg_tokens_out: { openai_greeting:  50, openai_anon_greeting:  30, openai_classify:  20, openai_persona:  150 },
+          elevenlabs_per_min:      0.10,
+          cf_workers_per_100k_req: 0.30,
+          cf_kv_reads_per_m:       0.50,
+          cf_kv_writes_per_m:      5.00,
+          sendgrid_per_email:      0.001,
+        };
+
         const [
           summaryResult,
           dailyResult,
@@ -1956,6 +1969,7 @@ export default {
           recentConvsResult,
           leadQualityResult,
           returningResult,
+          callDurationResult,
         ] = await Promise.all([
           // Event totals from usage_events
           env.website_avatar_db.prepare(`
@@ -2045,6 +2059,14 @@ export default {
               GROUP BY user_id
             )
           `).bind(dashClientId, sinceEpoch).first(),
+
+          // Cost matrix — total voice call duration from webhook analysis
+          env.website_avatar_db.prepare(`
+            SELECT COALESCE(SUM(CAST(json_extract(analysis, '$.call_duration_secs') AS REAL)), 0) AS total_call_secs
+            FROM conversations
+            WHERE client_id = ? AND created_at >= datetime(?, 'unixepoch')
+              AND json_extract(analysis, '$.call_duration_secs') IS NOT NULL
+          `).bind(dashClientId, sinceEpoch).first(),
         ]);
 
         const summary = {};
@@ -2072,6 +2094,34 @@ export default {
           };
         });
 
+        const r2 = n => Math.round(n * COST_RATES.usd_to_gbp * 100) / 100;
+        const openaiTypes = ['openai_greeting', 'openai_anon_greeting', 'openai_classify', 'openai_persona'];
+        let tokensIn = 0, tokensOut = 0;
+        for (const t of openaiTypes) {
+          const n = summary[t] || 0;
+          tokensIn  += n * (COST_RATES.avg_tokens_in[t]  || 0);
+          tokensOut += n * (COST_RATES.avg_tokens_out[t] || 0);
+        }
+        const openaiUsd = (tokensIn / 1e6 * COST_RATES.openai_in_per_m_tokens) +
+                          (tokensOut / 1e6 * COST_RATES.openai_out_per_m_tokens);
+        const callMins = (callDurationResult?.total_call_secs || 0) / 60;
+        const elevenLabsUsd = callMins * COST_RATES.elevenlabs_per_min;
+        const totalSessions = sessionResult?.total_sessions || 0;
+        const approxRequests = Object.values(summary).reduce((a, b) => a + b, 0) + totalSessions * 3;
+        const cfWorkersUsd   = (approxRequests / 100_000) * COST_RATES.cf_workers_per_100k_req;
+        const cfKvUsd = ((totalSessions * 4) / 1e6 * COST_RATES.cf_kv_reads_per_m) +
+                        ((totalSessions * 2) / 1e6 * COST_RATES.cf_kv_writes_per_m);
+        const emailCount    = (summary.auth_magic_link || 0) + (summary.webhook_call_complete || 0);
+        const sendgridUsd   = emailCount * COST_RATES.sendgrid_per_email;
+        const cost_summary = {
+          openai:     { call_count: openaiTypes.reduce((a, t) => a + (summary[t] || 0), 0), tokens_in: Math.round(tokensIn), tokens_out: Math.round(tokensOut), estimated_usd: r2(openaiUsd) },
+          elevenlabs: { call_count: summary.webhook_call_complete || 0, call_minutes: r2(callMins), estimated_usd: r2(elevenLabsUsd), rate_per_min: COST_RATES.elevenlabs_per_min },
+          cloudflare: { approx_requests: approxRequests, estimated_usd: r2(cfWorkersUsd + cfKvUsd) },
+          sendgrid:   { email_count: emailCount, estimated_usd: r2(sendgridUsd) },
+          total_estimated_usd: r2(openaiUsd + elevenLabsUsd + cfWorkersUsd + cfKvUsd + sendgridUsd),
+          note: 'Estimates only (GBP) — USD costs converted at ~0.79. Token counts use per-event averages; ElevenLabs assumes Starter plan rate; Cloudflare costs are proportional approximations.',
+        };
+
         return json({
           client_id:      dashClientId,
           days,
@@ -2090,6 +2140,7 @@ export default {
             returning: returningResult?.returning_visitors || 0,
             new:       returningResult?.new_visitors       || 0,
           },
+          cost_summary,
         }, 200, cors);
 
       } catch (err) {
