@@ -400,24 +400,80 @@
     strip.className = 'wa-product-strip';
 
     items.forEach(item => {
-      const chip = document.createElement('div');
-      chip.className = 'wa-product-chip';
-      const imgHtml = item.imageUrl
-        ? `<img src="${item.imageUrl}" width="50" height="50" alt="${item.name || ''}" loading="lazy"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />`
-        : '';
-      chip.innerHTML = `
-        ${imgHtml}
-        <div class="wa-product-chip-img-placeholder"${item.imageUrl ? ' style="display:none"' : ''}></div>
-        <span class="wa-product-chip-name">${item.name || ''}</span>
-        ${item.qty ? `<span class="wa-product-chip-qty">×${item.qty}</span>` : ''}
+      const card = document.createElement('div');
+      card.className = 'wa-product-card';
+
+      const hasImg = !!item.imageUrl;
+      const priceStr = item.price ? `${item.currency || ''}${item.price}` : '';
+
+      card.innerHTML = `
+        <div class="wa-product-card-img-wrap">
+          ${hasImg
+            ? `<img src="${item.imageUrl}" alt="${item.name || ''}" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />`
+            : ''}
+          <div class="wa-product-card-img-placeholder"${hasImg ? ' style="display:none"' : ''}></div>
+          <button class="wa-product-card-expand" aria-label="Expand product">&#x2197;</button>
+        </div>
+        <div class="wa-product-card-body">
+          <span class="wa-product-card-name">${item.name || ''}</span>
+          <div class="wa-product-card-footer">
+            ${priceStr ? `<span class="wa-product-card-price">${priceStr}</span>` : ''}
+            ${item.qty ? `<span class="wa-product-card-qty">×${item.qty}</span>` : ''}
+          </div>
+        </div>
       `;
-      strip.appendChild(chip);
+
+      card.querySelector('.wa-product-card-expand').addEventListener('click', (e) => {
+        e.stopPropagation();
+        _openProductLightbox(item);
+      });
+      card.querySelector('.wa-product-card-img-wrap').addEventListener('click', () => {
+        _openProductLightbox(item);
+      });
+
+      strip.appendChild(card);
     });
 
     if (strip.children.length) {
       afterEl.after(strip);
     }
+  }
+
+  function _openProductLightbox(item) {
+    const existing = document.getElementById('wa-product-lightbox');
+    if (existing) existing.remove();
+
+    const priceStr = item.price ? `${item.currency || ''}${item.price}` : '';
+    const hasImg = !!item.imageUrl;
+
+    const lb = document.createElement('div');
+    lb.id = 'wa-product-lightbox';
+    lb.className = 'wa-product-lightbox';
+    lb.innerHTML = `
+      <div class="wa-product-lightbox-card">
+        <button class="wa-product-lightbox-close" aria-label="Close">×</button>
+        <div class="wa-product-lightbox-img-wrap">
+          ${hasImg
+            ? `<img src="${item.imageUrl}" alt="${item.name || ''}" />`
+            : `<div class="wa-product-lightbox-img-placeholder"></div>`}
+        </div>
+        <div class="wa-product-lightbox-body">
+          <p class="wa-product-lightbox-name">${item.name || ''}</p>
+          <div class="wa-product-lightbox-meta">
+            ${priceStr ? `<span class="wa-product-lightbox-price">${priceStr}</span>` : ''}
+            ${item.qty ? `<span class="wa-product-lightbox-qty">Qty: ${item.qty}</span>` : ''}
+          </div>
+          ${item.url ? `<a class="wa-product-lightbox-link" href="${item.url}" target="_blank" rel="noopener">View product ↗</a>` : ''}
+        </div>
+      </div>
+    `;
+
+    lb.addEventListener('click', (e) => { if (e.target === lb) lb.remove(); });
+    lb.querySelector('.wa-product-lightbox-close').addEventListener('click', () => lb.remove());
+
+    const panel = document.getElementById('wa-panel');
+    if (panel) panel.appendChild(lb);
   }
 
   // ─── ECOM THINKING BUBBLE ────────────────────────────────────────────────
