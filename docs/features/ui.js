@@ -420,6 +420,33 @@
     }
   }
 
+  // ─── ECOM THINKING BUBBLE ────────────────────────────────────────────────
+  // Ephemeral agent-style bubble shown while a client tool executes.
+  // Created on the first intermediate agent phrase, updated in-place for
+  // subsequent phrases, and removed before the real answer lands.
+
+  function showEcomThinkingBubble(text) {
+    // Remove any stale bubble first (safety guard)
+    if (WA._ecomThinkingBubble) {
+      WA._ecomThinkingBubble.remove();
+      WA._ecomThinkingBubble = null;
+    }
+    const msgs = document.getElementById('wa-messages');
+    if (!msgs) return;
+
+    const el = document.createElement('div');
+    el.className = 'wa-msg wa-agent wa-ecom-thinking';
+
+    const textEl = document.createElement('span');
+    textEl.className = 'wa-msg-text';
+    textEl.textContent = text;
+    el.appendChild(textEl);
+
+    msgs.appendChild(el);
+    WA._ecomThinkingBubble = el;
+    scrollToBottom();
+  }
+
   // ─── BUTTONS ──────────────────────────────────────────────────────────────
 
   function updateAbortButton(hasActive) {
@@ -1019,5 +1046,6 @@
   WA.showMagicLinkPrompt    = showMagicLinkPrompt;
   WA.detectEmailInMessage   = detectEmailInMessage;
   WA.renderHistoryAuth      = renderHistoryAuth;
+  WA.showEcomThinkingBubble = showEcomThinkingBubble;
 
 })();
