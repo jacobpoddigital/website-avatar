@@ -203,7 +203,7 @@
    */
   function _queueProductStrip(items) {
     if (!items || !items.length) return;
-    WA._pendingProductStrip = items.filter(i => i.imageUrl);
+    WA._pendingProductStrip = items; // include products with no image — UI handles placeholder
     _log('Product strip queued —', WA._pendingProductStrip.length, 'items');
   }
 
