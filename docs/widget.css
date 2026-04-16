@@ -1521,8 +1521,8 @@ span.wa-msg-text {
 
 #wa-panel .wa-product-strip {
   display: flex; flex-direction: row; gap: 10px;
-  overflow-x: auto; padding: 8px 16px 12px;
-  scrollbar-width: none; align-items: flex-start;
+  overflow-x: auto; padding: 8px 0;
+  scrollbar-width: none; align-items: flex-start; min-height: 220px;
 }
 #wa-panel .wa-product-strip::-webkit-scrollbar { display: none; }
 
@@ -1536,7 +1536,6 @@ span.wa-msg-text {
 }
 #wa-panel .wa-product-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
 }
 
 #wa-panel .wa-product-card-img-wrap {
