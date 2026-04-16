@@ -577,6 +577,15 @@
           loadScript(BASE_URL + '/features/mic.js')
         ]);
 
+        // ── Ecommerce (config-driven) ──
+        // Must load BEFORE wa-agent.js so ecom actions are registered in
+        // WA.ActionRegistry before auto-connect fires and buildClientTools() runs.
+        const _cfg = window.WA_CONFIG || {};
+        if (_cfg.ecomEnabled && _cfg.ecomPlatform) {
+          await loadScript(BASE_URL + '/features/ecom/index.js');
+          await loadScript(BASE_URL + `/features/ecom/providers/${_cfg.ecomPlatform}.js`);
+        }
+
         // ── Discover + agent scripts ──
         await Promise.all([
           loadScript(BASE_URL + '/wa-discover.js'),
@@ -590,16 +599,6 @@
 
         // ── Re-engagement (inactivity + exit intent) ──
         await loadScript(BASE_URL + '/features/re-engagement.js');
-
-        // ── Ecommerce (config-driven, WooCommerce first) ──
-        // Only loads if ecomEnabled in client config
-        const _cfg = window.WA_CONFIG || {};
-        if (_cfg.ecomEnabled && _cfg.ecomPlatform) {
-          // Load EcomFactory + action registration first
-          await loadScript(BASE_URL + '/features/ecom/index.js');
-          // Then load the matching provider (self-registers with EcomFactory)
-          await loadScript(BASE_URL + `/features/ecom/providers/${_cfg.ecomPlatform}.js`);
-        }
 
         // Initialize greeting after all scripts loaded
         if (window.WebsiteAvatarGreeting) {
