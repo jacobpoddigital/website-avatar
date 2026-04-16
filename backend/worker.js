@@ -3,7 +3,7 @@ import * as jose from 'jose';
 import { generateMagicToken, generateAuthToken, verifyJWT } from './src/auth.js';
 
 // ── HELPER FUNCTIONS ─────────────────────────────
-function generateAdminEmail({ name, phone, email, company, callSummary, callDuration }) {
+function generateAdminEmail({ name, phone, email, company, callSummary, callDuration, businessName }) {
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -26,7 +26,7 @@ function generateAdminEmail({ name, phone, email, company, callSummary, callDura
 <body>
   <div class="container">
     <div class="header">
-      <h1>Website Avatar</h1>
+      <h1>${businessName || 'Website Avatar'}</h1>
       <p style="color: #e0e0e0; margin: 8px 0 0;">New Lead Received</p>
     </div>
     <div class="content">
@@ -1680,11 +1680,11 @@ export default {
         }
 
         try {
-          const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration });
+          const adminEmailHtml = generateAdminEmail({ name, phone, email, company, callSummary, callDuration, businessName });
           await sendEmail({
             from: env.FROM_EMAIL || 'mail@websiteavatar.co.uk',
             to: notifyEmails,
-            subject: `New Website Avatar Lead: ${name}`,
+            subject: `New Lead via ${businessName || 'Website Avatar'}: ${name}`,
             html: adminEmailHtml
           }, env);
           console.log('[Webhook] ✅ Admin email sent to:', notifyEmails);
@@ -1693,7 +1693,7 @@ export default {
         }
 
         try {
-          const smsBody = `New Website Avatar Lead!\nName: ${name}\nCompany: ${company}\nPhone: ${phone}\nEmail: ${email}\nSummary: ${callSummary}`;
+          const smsBody = `New lead via ${businessName || 'Website Avatar'}!\nName: ${name}\nCompany: ${company}\nPhone: ${phone}\nEmail: ${email}\nSummary: ${callSummary}`;
           if (env.ADMIN_PHONE_NUMBER) await sendSMS({ to: env.ADMIN_PHONE_NUMBER, body: smsBody }, env);
           await sendSMS({ to: notifyPhone, body: smsBody }, env);
           console.log('[Webhook] ✅ Admin SMS sent');

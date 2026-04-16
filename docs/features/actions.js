@@ -262,6 +262,27 @@
     }
   });
 
+  // AUTHENTICATE
+  registerAction({
+    type:            'authenticate',
+    label:           'Sign in',
+    permissionLevel: 'auto',
+
+    execute: async () => {
+      if (WA.auth && WA.auth.getCurrentUser()) {
+        return { already_authenticated: true };
+      }
+      if (typeof WA.showMagicLinkPrompt === 'function') WA.showMagicLinkPrompt();
+      return { prompted: true };
+    },
+
+    onError: async () => {
+      if (WA.agentSay) WA.agentSay("I couldn't open the sign-in prompt. You can try refreshing the page.");
+    },
+
+    onComplete: async () => {}
+  });
+
   // ─── FORM FILL ────────────────────────────────────────────────────────────
 
   let _completeFormFillAttempts = 0;

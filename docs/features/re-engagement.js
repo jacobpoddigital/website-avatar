@@ -72,6 +72,11 @@
       _log('Gate blocked — bridge is connected (active session)');
       return false;
     }
+    const greetingEl = document.getElementById('wa-greeting');
+    if (greetingEl && greetingEl.classList.contains('wa-greeting-visible')) {
+      _log('Gate blocked — greeting card is visible');
+      return false;
+    }
     return true;
   }
 
