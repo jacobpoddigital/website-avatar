@@ -446,21 +446,29 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
 
       tools[type] = async (params) => {
         log(`Client tool called: ${type}`, params);
-        // Reset inactivity — tool execution counts as live activity.
         if (WA.inactivity) WA.inactivity.reset();
-        // Flag active tool execution so onAgentMessage (bridge.js) routes
-        // intermediate agent phrases into the ephemeral thinking bubble
-        // instead of saving them as permanent messages.
         WA._ecomToolActive = true;
+
+        const session = WA.getSession ? WA.getSession() : {};
+        if (!session.actions) session.actions = [];
+        const action = { id: `${type}_${Date.now()}`, type, payload: params || {}, status: 'active', startedAt: Date.now() };
+        session.actions.push(action);
+
         try {
           const result = await handler.execute({ type, payload: params || {} });
           log(`Client tool result: ${type}`, result);
-          if (WA.inactivity) WA.inactivity.reset();
+          action.status = 'complete';
+          action.completedAt = Date.now();
           WA._ecomToolActive = false;
+          if (WA.saveSession) WA.saveSession(session);
+          if (WA.inactivity) WA.inactivity.reset();
           return result || {};
         } catch (err) {
           warn(`Client tool error: ${type}`, err.message);
+          action.status = 'failed';
+          action.completedAt = Date.now();
           WA._ecomToolActive = false;
+          if (WA.saveSession) WA.saveSession(session);
           return { error: err.message };
         }
       };
