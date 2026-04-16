@@ -920,7 +920,7 @@
           <div class="ac-id">${esc(a.accountId)}</div>
           <div class="ac-domain">${esc(a.allowedOrigin)}</div>
           <div class="ac-actions">
-            <button class="btn-sm btn-ghost" onclick="openAccountModal(${JSON.stringify(a.accountId)})">Edit</button>
+            <button class="btn-sm btn-ghost" onclick="openAccountModal('${esc(a.accountId)}')">Edit</button>
           </div>
         </div>`).join('');
     }
