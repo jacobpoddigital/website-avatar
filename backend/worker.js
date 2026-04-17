@@ -419,7 +419,9 @@ export default {
     }
 
     // Admin routes bypass client-origin CORS — they're secured by ADMIN_SECRET instead.
-    const isAdminRoute = url.pathname === '/dashboard' || url.pathname === '/dashboard/ask' || url.pathname === '/accounts';
+    const requestedMethod = request.headers.get('Access-Control-Request-Method');
+    const isAdminRoute = url.pathname === '/dashboard' || url.pathname === '/dashboard/ask' || url.pathname === '/accounts'
+      || (url.pathname === '/config' && (request.method === 'POST' || requestedMethod === 'POST'));
 
     const cors = {
       'Access-Control-Allow-Origin':  isAdminRoute ? (requestOrigin || '*') : (allowedOrigin || 'null'),
