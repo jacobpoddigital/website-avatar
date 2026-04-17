@@ -430,6 +430,25 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   function buildClientTools() {
     const tools = {};
 
+    // ── authenticate ──────────────────────────────────────────────────────────
+    // Shown when the agent decides to prompt the user to sign in. Directly
+    // renders the magic link card in the chat rather than going through the
+    // action registry (which relies on page context / section filtering).
+    tools['authenticate'] = async () => {
+      log('Client tool called: authenticate');
+      const isAuthed = WA.auth && WA.auth.getCurrentUser() && WA.auth.getCurrentUser().isAuthenticated;
+      if (isAuthed) {
+        log('authenticate tool: user already authenticated');
+        return { already_authenticated: true };
+      }
+      if (typeof WA.showMagicLinkPrompt === 'function') {
+        WA.showMagicLinkPrompt();
+        return { prompted: true };
+      }
+      warn('authenticate tool: showMagicLinkPrompt not available');
+      return { error: 'prompt_unavailable' };
+    };
+
     const toolTypes = [
       'ecom_product_search',
       'ecom_add_to_cart',
