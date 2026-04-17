@@ -95,9 +95,14 @@
     // Prompt unauthenticated users to save their conversation at user message 3, 6, and 15
     const userMsgCount = session.messages.filter(m => m.role === 'user').length;
     const AUTH_NUDGE_AT = [3, 6, 15];
-    if (AUTH_NUDGE_AT.includes(userMsgCount) && !(WA.auth && WA.auth.getCurrentUser())) {
+    const isAuthed = WA.auth && WA.auth.getCurrentUser() && WA.auth.getCurrentUser().isAuthenticated;
+    console.log('[WA:AuthNudge] agentSay fired | userMsgCount:', userMsgCount, '| isAuthed:', isAuthed, '| nudgeAt:', AUTH_NUDGE_AT, '| showMagicLinkPrompt available:', typeof WA.showMagicLinkPrompt === 'function');
+    if (AUTH_NUDGE_AT.includes(userMsgCount) && !isAuthed) {
+      console.log('[WA:AuthNudge] Threshold hit at userMsgCount:', userMsgCount, '— showing magic link prompt');
       if (typeof WA.showMagicLinkPrompt === 'function') {
         WA.showMagicLinkPrompt();
+      } else {
+        console.warn('[WA:AuthNudge] showMagicLinkPrompt not available on WA');
       }
     }
   }
