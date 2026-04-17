@@ -92,9 +92,10 @@
     WA.saveSession(session);
     WA.appendMessage('agent', text);
 
-    // After 3 messages, prompt unauthenticated users to save their conversation (fires once)
-    const msgCount = session.messages.length;
-    if (msgCount === 3 && !(WA.auth && WA.auth.getCurrentUser())) {
+    // Prompt unauthenticated users to save their conversation at user message 3, 6, and 15
+    const userMsgCount = session.messages.filter(m => m.role === 'user').length;
+    const AUTH_NUDGE_AT = [3, 6, 15];
+    if (AUTH_NUDGE_AT.includes(userMsgCount) && !(WA.auth && WA.auth.getCurrentUser())) {
       if (typeof WA.showMagicLinkPrompt === 'function') {
         WA.showMagicLinkPrompt();
       }
