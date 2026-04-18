@@ -101,11 +101,10 @@
 The following pages were found on the site:
 ${list}
 
-Select the 5 most relevant results for this visitor's question, ordered from most to least relevant.
+Rank these results by relevance to the visitor's question, most relevant first.
+Include all results. Return at most 5.
 Reply with JSON only — no explanation:
-{ "top": [<index>, <index>, <index>, <index>, <index>] }
-
-If fewer than 5 are relevant, return only the relevant ones. Return at most 5.`;
+{ "top": [<index>, <index>, ...] }`;
 
     try {
       const res = await fetch(CLASSIFY_URL, {
