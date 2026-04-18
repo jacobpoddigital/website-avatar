@@ -129,6 +129,7 @@
      * searches pages and posts in parallel, returns the first match.
      */
     async resolve(title) {
+      // Strip punctuation so WP doesn't choke on colons, apostrophes, etc.
       const q = title.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
       if (!q) return null;
 
@@ -144,23 +145,10 @@
       const pages = pageRes.status === 'fulfilled' && Array.isArray(pageRes.value) ? pageRes.value : [];
       const posts  = postRes.status === 'fulfilled' && Array.isArray(postRes.value)  ? postRes.value  : [];
 
-      const all = [...pages, ...posts];
-      if (!all.length) return null;
-
-      // Pick the result whose title most closely matches — prefer pages over posts on a tie
-      const _score = (r) => {
-        const rTitle = this._decodeEntities(r.title?.rendered || r.title || '').toLowerCase();
-        const needle = q.toLowerCase();
-        if (rTitle === needle) return 100;
-        if (rTitle.includes(needle)) return 80;
-        const words = needle.split(/\s+/);
-        const matched = words.filter(w => rTitle.includes(w)).length;
-        return (matched / words.length) * 60 + (r.type === 'page' ? 5 : 0);
-      };
-
-      const hit = all.reduce((best, r) => _score(r) >= _score(best) ? r : best, all[0]);
-      _log('resolve best match:', this._decodeEntities(hit.title?.rendered || hit.title || ''), '(score', _score(hit), ')');
-      return this._normalisePost(hit);
+      // Pages take priority — trust WP's own relevance ranking
+      const hit = pages[0] || posts[0] || null;
+      if (hit) _log('resolve hit:', this._decodeEntities(hit.title?.rendered || hit.title || ''));
+      return hit ? this._normalisePost(hit) : null;
     }
 
     /**
