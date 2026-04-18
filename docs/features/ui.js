@@ -486,22 +486,15 @@
   function _renderContentResultsCard(results) {
     if (!results || !results.length) return;
 
-    // Remove any previous content results card so repeated tool calls replace, not duplicate
+    // Remove any previous content results card — safety guard for repeated tool calls
     document.querySelectorAll('.wa-action-card[data-action-id="content-results"]').forEach(el => el.remove());
 
-    const hasRecommended = results.some(r => r.recommended);
-
-    const buttons = results.map(result => {
-      const typeLabel = result.recommended
-        ? '★ Best match'
-        : (result.type || 'Page');
-      return {
-        text:   result.title || result.url,
-        label:  typeLabel,
-        style:  result.recommended ? 'confirm' : 'confirm',
-        action: () => { window.location.href = result.url; }
-      };
-    });
+    const buttons = results.map(result => ({
+      text:   result.title || result.url,
+      label:  result.type || 'Page',
+      style:  'confirm',
+      action: () => { window.location.href = result.url; }
+    }));
 
     buttons.push({
       text:   'No thanks',
@@ -510,10 +503,9 @@
     });
 
     WA.renderCard({
-      label:   'Pages I found',
-      message: hasRecommended
-        ? 'Here\'s the best match — or choose another option below:'
-        : 'Here are the most relevant pages — click one to go there:',
+      actionId: 'content-results',
+      label:    'Pages I found',
+      message:  'Here are the most relevant pages — click one to go straight there:',
       buttons
     });
   }
@@ -1116,13 +1108,6 @@
   WA.hideWaitingHint        = hideWaitingHint;
   WA.appendMessage          = appendMessage;
   WA.renderCard             = renderCard;
-  WA.renderPendingContentCard = function () {
-    if (WA._pendingContentResults?.length) {
-      document.querySelectorAll('.wa-action-card[data-action-id="content-results"]').forEach(el => el.remove());
-      _renderContentResultsCard(WA._pendingContentResults);
-      WA._pendingContentResults = null;
-    }
-  };
   WA.updateActionCardStatus = updateActionCardStatus;
   WA.renderOptionsCard      = renderOptionsCard;
   WA.renderActionCard       = renderActionCard;
