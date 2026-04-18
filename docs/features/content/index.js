@@ -4,6 +4,10 @@
  * Platform-agnostic site content search for Website Avatar.
  * Detects the active CMS from WA_CONFIG and loads the appropriate provider.
  *
+ * After fetching results from the CMS, an AI call to /classify picks the most
+ * relevant result for the visitor's query. All results are shown in the card,
+ * with the AI-recommended one badged as "Best match" and pinned first.
+ *
  * Config-driven — never auto-detects from window globals.
  * Client KV config must include: { "cmsPlatform": "wordpress" }
  *
@@ -18,6 +22,9 @@
   const WA   = window.WebsiteAvatar || (window.WebsiteAvatar = {});
   const _log  = (...a) => WA.DEBUG && console.log('[WA:Content]', ...a);
   const _warn = (...a) => console.warn('[WA:Content]', ...a);
+
+  const CLASSIFY_URL = 'https://backend.jacob-e87.workers.dev/classify';
+  const SEARCH_LIMIT = 10;
 
   // ── PROVIDER REGISTRY ──────────────────────────────────────────────────────
 
@@ -57,7 +64,7 @@
     return _provider;
   }
 
-  // ── STOP WORDS (shared with ecom search fallback logic) ───────────────────
+  // ── STOP WORDS ─────────────────────────────────────────────────────────────
 
   const STOP_WORDS = new Set([
     'a','an','the','and','or','for','in','on','at','to','of','is','it',
@@ -75,6 +82,51 @@
       .filter(w => w.length > 2 && !STOP_WORDS.has(w));
   }
 
+  // ── AI RANKING ─────────────────────────────────────────────────────────────
+
+  /**
+   * Ask OpenAI (via /classify proxy) which result best matches the visitor's query.
+   * Returns the index of the recommended result, or null on failure.
+   * Fire-and-forget safe — caller always shows all results regardless.
+   */
+  async function _aiRecommend(query, results) {
+    if (!results.length) return null;
+
+    const list = results.map((r, i) =>
+      `${i}. ${r.title} (${r.type})${r.excerpt ? ' — ' + r.excerpt.slice(0, 100) : ''}`
+    ).join('\n');
+
+    const prompt = `A website visitor asked: "${query}"
+
+The following pages were found on the site:
+${list}
+
+Which single result is most relevant to the visitor's question? Reply with JSON only:
+{ "recommended": <index number>, "reason": "<one short sentence explaining why>" }
+
+If none are clearly relevant, set recommended to 0.`;
+
+    try {
+      const res = await fetch(CLASSIFY_URL, {
+        method:  'POST',
+        signal:  AbortSignal.timeout(8000),
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt, maxTokens: 80 })
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      const raw  = (data.content || '').replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(raw);
+      const idx = parseInt(parsed.recommended, 10);
+      if (isNaN(idx) || idx < 0 || idx >= results.length) return null;
+      _log(`AI recommended index ${idx}: "${results[idx].title}" — ${parsed.reason}`);
+      return idx;
+    } catch (err) {
+      _warn('AI ranking failed:', err.message);
+      return null;
+    }
+  }
+
   // ── ACTION REGISTRATION ────────────────────────────────────────────────────
 
   function _registerActions() {
@@ -90,47 +142,59 @@
         if (!provider) return { error: 'Content search not available on this site' };
         if (!provider.isAvailable()) return { error: `${provider.platformName} REST API is not reachable` };
 
-        const { query, limit = 5 } = action.payload || {};
+        const { query } = action.payload || {};
         if (!query) return { error: 'query is required' };
 
-        _log('Content search:', query, `(limit: ${limit})`);
+        _log('Content search:', query, `(limit: ${SEARCH_LIMIT})`);
 
         try {
           // Primary: full query
-          let results = await provider.search(query, { limit });
+          let results = await provider.search(query, { limit: SEARCH_LIMIT });
 
-          // Fallback chain mirrors ecom_product_search
+          // Fallback chain: stop-word stripped → top 3 words → individual words
           if (!results.length && query.trim().includes(' ')) {
             const words = _significantWords(query);
 
             if (words.length) {
               const shortQuery = words.slice(0, 3).join(' ');
               _log('Search fallback (3 words):', shortQuery);
-              results = await provider.search(shortQuery, { limit });
+              results = await provider.search(shortQuery, { limit: SEARCH_LIMIT });
             }
 
             if (!results.length && words.length) {
               const seen = new Set();
               for (const word of words.slice(0, 3)) {
                 _log('Search fallback (single word):', word);
-                const hits = await provider.search(word, { limit });
+                const hits = await provider.search(word, { limit: SEARCH_LIMIT });
                 for (const r of hits) {
                   if (!seen.has(r.url)) {
                     seen.add(r.url);
                     results.push(r);
                   }
                 }
-                if (results.length >= limit) break;
+                if (results.length >= SEARCH_LIMIT) break;
               }
-              results = results.slice(0, limit);
+              results = results.slice(0, SEARCH_LIMIT);
             }
           }
 
-          if (results.length) {
-            _queueContentResults(results);
+          if (!results.length) {
+            return { results: [] };
           }
 
+          // AI ranking: runs in parallel with nothing blocking — result applied before queue
+          const recommendedIdx = await _aiRecommend(query, results);
+
+          // Flag the recommended result and pin it first
+          if (recommendedIdx !== null) {
+            results[recommendedIdx].recommended = true;
+            const [rec] = results.splice(recommendedIdx, 1);
+            results.unshift(rec);
+          }
+
+          _queueContentResults(results);
           return { results };
+
         } catch (err) {
           _warn('content_search threw:', err.message);
           return { error: err.message };

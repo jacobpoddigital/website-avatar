@@ -486,12 +486,19 @@
   function _renderContentResultsCard(results) {
     if (!results || !results.length) return;
 
-    const buttons = results.map(result => ({
-      text:   result.title || result.url,
-      label:  result.type  || 'Page',
-      style:  'confirm',
-      action: () => { window.location.href = result.url; }
-    }));
+    const hasRecommended = results.some(r => r.recommended);
+
+    const buttons = results.map(result => {
+      const typeLabel = result.recommended
+        ? '★ Best match'
+        : (result.type || 'Page');
+      return {
+        text:   result.title || result.url,
+        label:  typeLabel,
+        style:  result.recommended ? 'confirm' : 'confirm',
+        action: () => { window.location.href = result.url; }
+      };
+    });
 
     buttons.push({
       text:   'No thanks',
@@ -501,7 +508,9 @@
 
     WA.renderCard({
       label:   'Pages I found',
-      message: 'Here are the most relevant pages — click one to go there:',
+      message: hasRecommended
+        ? 'Here\'s the best match — or choose another option below:'
+        : 'Here are the most relevant pages — click one to go there:',
       buttons
     });
   }
