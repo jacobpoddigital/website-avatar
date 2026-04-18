@@ -1235,6 +1235,148 @@ input.wa-magic-email[type=email] {
   }
 }
 
+/* ── TYPING CURSOR ─────────────────────────────────────────────────────────── */
+.wa-typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  background: currentColor;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  opacity: 0.75;
+  animation: waTypingBlink 0.65s step-end infinite;
+}
+@keyframes waTypingBlink {
+  0%, 100% { opacity: 0.75; }
+  50%       { opacity: 0; }
+}
+
+/* ── GREETING VARIANT: v2 — Alive ──────────────────────────────────────────
+   Same left-aligned layout as control. Key diffs: Chat is primary-coloured,
+   orb has a soft pulse-glow ring to draw the eye. Typing + staggered entry
+   via JS. */
+#wa-greeting.wa-variant-v2 .wa-greeting-btn--chat {
+  background: var(--wa-user-bubble);
+  border-color: transparent;
+  order: -1;
+}
+#wa-greeting.wa-variant-v2 .wa-greeting-btn--chat .wa-greeting-btn-label,
+#wa-greeting.wa-variant-v2 .wa-greeting-btn--chat .wa-greeting-btn-icon {
+  color: var(--wa-primary-text);
+}
+#wa-greeting.wa-variant-v2 .wa-greeting-orb .wa-orb {
+  animation: waOrbV2Pulse 2.4s ease-out 1s infinite;
+}
+@keyframes waOrbV2Pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(255,255,255,0.30); }
+  65%  { box-shadow: 0 0 0 26px rgba(255,255,255,0);   }
+  100% { box-shadow: 0 0 0 26px rgba(255,255,255,0);   }
+}
+
+/* ── GREETING VARIANT: v3 — Spotlight ──────────────────────────────────────
+   Card centred in viewport. Dark radial overlay creates a stage effect.
+   Orb is larger and emerges from a scale-up. Typing + staggered entry via JS.
+   Chat is primary-coloured. */
+#wa-greeting.wa-variant-v3 {
+  align-items: center;
+  justify-content: center;
+}
+#wa-greeting.wa-variant-v3 .wa-greeting-overlay {
+  background: radial-gradient(ellipse at 28% 50%, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.88) 100%);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+#wa-greeting.wa-variant-v3 .wa-greeting-container {
+  animation: waV3Emerge 0.65s cubic-bezier(0.34, 1.15, 0.64, 1);
+}
+@keyframes waV3Emerge {
+  from { opacity: 0; transform: scale(0.88) translateY(22px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+#wa-greeting.wa-variant-v3 .wa-greeting-orb .wa-orb {
+  width: 200px;
+  height: 200px;
+}
+#wa-greeting.wa-variant-v3 .wa-greeting-orb .wa-orb-blob {
+  animation-duration: 1.2s;
+}
+#wa-greeting.wa-variant-v3 .wa-greeting-btn--chat {
+  background: var(--wa-user-bubble);
+  border-color: transparent;
+  order: -1;
+}
+#wa-greeting.wa-variant-v3 .wa-greeting-btn--chat .wa-greeting-btn-label,
+#wa-greeting.wa-variant-v3 .wa-greeting-btn--chat .wa-greeting-btn-icon {
+  color: var(--wa-primary-text);
+}
+
+/* ── GREETING VARIANT: v4 — Side-by-side ────────────────────────────────────
+   CSS Grid splits the container: orb in the left column, all content
+   (bubble, name, bullets, CTAs) in the right. Messenger-style feel.
+   Mobile (≤ 480px) reverts to single-column. Typing + staggered entry via JS. */
+#wa-greeting.wa-variant-v4 .wa-greeting-container {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  column-gap: 20px;
+  row-gap: 6px;
+  max-width: 520px;
+  padding: 0 24px 0 0;
+  align-items: start;
+}
+#wa-greeting.wa-variant-v4 .wa-greeting-orb {
+  grid-column: 1;
+  grid-row: 1 / span 7;
+  align-self: center;
+  margin-bottom: 0;
+}
+#wa-greeting.wa-variant-v4 .wa-greeting-orb .wa-orb {
+  width: 90px;
+  height: 90px;
+}
+#wa-greeting.wa-variant-v4 .wa-greeting-bubble { grid-column: 2; width: auto; margin-bottom: 4px; }
+#wa-greeting.wa-variant-v4 .wa-greeting-bubble::after { display: none; }
+#wa-greeting.wa-variant-v4 .wa-greeting-bubble p { text-align: left; }
+#wa-greeting.wa-variant-v4 .wa-greeting-name   { grid-column: 2; text-align: left; margin-bottom: 6px; }
+#wa-greeting.wa-variant-v4 .wa-greeting-fade   { grid-column: 2; }
+#wa-greeting.wa-variant-v4 .wa-greeting-consent-block { grid-column: 2; }
+#wa-greeting.wa-variant-v4 .wa-greeting-actions {
+  grid-column: 2;
+  justify-content: flex-start;
+  margin-bottom: 0;
+}
+#wa-greeting.wa-variant-v4 .wa-greeting-bullets { grid-column: 2; padding: 0; }
+#wa-greeting.wa-variant-v4 .wa-greeting-btn--chat {
+  background: var(--wa-user-bubble);
+  border-color: transparent;
+  order: -1;
+}
+#wa-greeting.wa-variant-v4 .wa-greeting-btn--chat .wa-greeting-btn-label,
+#wa-greeting.wa-variant-v4 .wa-greeting-btn--chat .wa-greeting-btn-icon {
+  color: var(--wa-primary-text);
+}
+@media (max-width: 480px) {
+  #wa-greeting.wa-variant-v4 .wa-greeting-container {
+    grid-template-columns: 1fr;
+    padding: 0 16px;
+  }
+  #wa-greeting.wa-variant-v4 .wa-greeting-orb {
+    grid-column: 1;
+    grid-row: auto;
+    align-self: auto;
+  }
+  #wa-greeting.wa-variant-v4 .wa-greeting-orb .wa-orb { width: 130px; height: 130px; }
+  #wa-greeting.wa-variant-v4 .wa-greeting-bubble,
+  #wa-greeting.wa-variant-v4 .wa-greeting-name,
+  #wa-greeting.wa-variant-v4 .wa-greeting-fade,
+  #wa-greeting.wa-variant-v4 .wa-greeting-consent-block,
+  #wa-greeting.wa-variant-v4 .wa-greeting-actions,
+  #wa-greeting.wa-variant-v4 .wa-greeting-bullets { grid-column: 1; }
+  #wa-greeting.wa-variant-v4 .wa-greeting-bubble::after { display: block; }
+  #wa-greeting.wa-variant-v4 .wa-greeting-bubble p { text-align: center; }
+  #wa-greeting.wa-variant-v4 .wa-greeting-name { text-align: center; }
+  #wa-greeting.wa-variant-v4 .wa-greeting-actions { justify-content: center; }
+}
+
 /* Action button label styling */
 .wa-btn-label {
   display: block;
