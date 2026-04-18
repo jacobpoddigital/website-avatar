@@ -456,7 +456,8 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       'ecom_update_cart',
       'ecom_remove_from_cart',
       'ecom_apply_coupon',
-      'ecom_goto_checkout'
+      'ecom_goto_checkout',
+      'content_search'
     ];
 
     toolTypes.forEach(type => {
