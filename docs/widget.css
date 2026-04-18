@@ -1468,9 +1468,9 @@ input.wa-magic-email[type=email] {
    greetingHeadline config field for headline; fallback "I'm here to help!". */
 
 #wa-greeting.wa-variant-v6 {
-  align-items: center;
-  justify-content: flex-end;
-  padding: 40px;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
   box-sizing: border-box;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-overlay {
@@ -1495,6 +1495,19 @@ input.wa-magic-email[type=email] {
   padding: 0;
   overflow: visible;
   animation: waV6Rise 0.55s cubic-bezier(0.34, 1.10, 0.64, 1);
+  padding: 40px 40px 0;
+}
+/* Gradient fade: brand → transparent, bottom 35% of avatar fades to background */
+.wa-v6-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 75%;
+  background: linear-gradient(to top, var(--wa-user-bubble) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.8;
+  width: 100%;
 }
 @keyframes waV6Rise {
   from { opacity: 0; transform: translateY(32px); }
@@ -1516,17 +1529,6 @@ input.wa-magic-email[type=email] {
   max-width: 475px;
   object-fit: cover;
   object-position: top center;
-}
-/* Gradient fade: brand → transparent, bottom 35% of avatar fades to background */
-.wa-v6-avatar-col::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 75%;
-  background: linear-gradient(to top, var(--wa-user-bubble) 0%, transparent 100%);
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0.8;
 }
 
 /* Speech bubble: original white + downward triangle, centred above avatar */
