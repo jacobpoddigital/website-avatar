@@ -24,7 +24,7 @@
   const _warn = (...a) => console.warn('[WA:Content]', ...a);
 
   const CLASSIFY_URL = 'https://backend.jacob-e87.workers.dev/classify';
-  const SEARCH_LIMIT = 10;
+  const SEARCH_LIMIT = 50; // per-type fetch cap — AI sees the full pool before any trimming
 
   // ── PROVIDER REGISTRY ──────────────────────────────────────────────────────
 

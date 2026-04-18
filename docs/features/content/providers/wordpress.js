@@ -169,7 +169,7 @@
         .filter(r => r.type !== 'Post' && r.type !== 'Page'); // custom types only
       const posts       = merge(postsRes, r => this._normaliseSearchResult(r));
 
-      const results = [...pages, ...anyResults, ...posts].slice(0, limit);
+      const results = [...pages, ...anyResults, ...posts];
 
       _log(`search results: ${results.length} (${pages.length} pages, ${anyResults.length} custom, ${posts.length} posts)`);
       return results;
