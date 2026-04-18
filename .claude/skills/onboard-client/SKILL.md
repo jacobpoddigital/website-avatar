@@ -27,6 +27,7 @@ Ask the user for the following, one block at a time. Do not proceed until each r
 - `notifyPhone` — SMS lead notification number in E.164 format, e.g. `+447468621246`
 - `suggestedPrompts` — up to 3 suggested chat starters (comma-separated)
 - `greetingBullets` — up to 3 value-prop bullets for the greeting card (comma-separated)
+- `greetingHeadline` — large bold headline shown in the v6 greeting variant, e.g. `"I'm here to help!"` (falls back to that string if omitted)
 - `ecomEnabled` — `true` if this is an ecommerce client
 - `ecomPlatform` — `woocommerce` or `shopify` (only if ecomEnabled)
 
@@ -55,7 +56,8 @@ Example shape:
   "loadingStyle": "dots",
   "debug": false,
   "suggestedPrompts": ["What chauffeur services do you offer?"],
-  "greetingBullets": ["Expert knowledge beyond the website."]
+  "greetingBullets": ["Expert knowledge beyond the website."],
+  "greetingHeadline": "I'm here to help!"
 }
 ```
 

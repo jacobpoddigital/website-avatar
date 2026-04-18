@@ -131,6 +131,11 @@
         _renderProductStrip(WA._pendingProductStrip, el);
         WA._pendingProductStrip = null;
       }
+      // If a content_search action queued page results, render the results card after this bubble
+      if (role === 'agent' && WA._pendingContentResults?.length) {
+        _renderContentResultsCard(WA._pendingContentResults);
+        WA._pendingContentResults = null;
+      }
       scrollToBottom();
     }
 
@@ -474,6 +479,31 @@
 
     const panel = document.getElementById('wa-panel');
     if (panel) panel.appendChild(lb);
+  }
+
+  // ─── CONTENT RESULTS CARD ────────────────────────────────────────────────
+
+  function _renderContentResultsCard(results) {
+    if (!results || !results.length) return;
+
+    const buttons = results.map(result => ({
+      text:   result.title || result.url,
+      label:  result.type  || 'Page',
+      style:  'confirm',
+      action: () => { window.location.href = result.url; }
+    }));
+
+    buttons.push({
+      text:   'No thanks',
+      style:  'deny',
+      action: () => {}
+    });
+
+    WA.renderCard({
+      label:   'Pages I found',
+      message: 'Here are the most relevant pages — click one to go there:',
+      buttons
+    });
   }
 
   // ─── ECOM THINKING BUBBLE ────────────────────────────────────────────────

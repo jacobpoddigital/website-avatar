@@ -465,6 +465,8 @@ export default {
         'ecomEnabled', 'ecomPlatform',
         // Shopify only — public Storefront API token (never Admin API keys)
         'shopifyToken', 'shopifyStoreDomain',
+        // Content search — opt-in; platform determines which provider loads
+        'cmsPlatform',
       ];
       const raw_config = JSON.parse(raw);
       const config = Object.fromEntries(
