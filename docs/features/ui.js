@@ -198,7 +198,7 @@
     card.querySelectorAll('button[data-btn-idx]').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.btnIdx);
-        buttons[idx].action();
+        buttons[idx].action(btn);
       });
     });
 
@@ -499,7 +499,7 @@
     buttons.push({
       text:   'No thanks',
       style:  'deny',
-      action: () => {}
+      action: (btn) => { btn.closest('.wa-action-card')?.remove(); }
     });
 
     WA.renderCard({
