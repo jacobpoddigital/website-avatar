@@ -101,8 +101,8 @@
 The following pages were found on the site:
 ${list}
 
-Rank these results by relevance to the visitor's question, most relevant first.
-Include all results. Return at most 5.
+Return the index of every result, ordered from most to least relevant to the visitor's question.
+Do not filter any out — just sort them. Return at most 5.
 Reply with JSON only — no explanation:
 { "top": [<index>, <index>, ...] }`;
 
