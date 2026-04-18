@@ -52,7 +52,9 @@
         const errText = await resp.text().catch(() => resp.statusText);
         throw new Error(`WP REST ${path} → ${resp.status}: ${errText}`);
       }
-      return resp.json();
+      const data = await resp.json();
+      _log(`← ${path.split('?')[0]} returned`, Array.isArray(data) ? `${data.length} results` : typeof data, data);
+      return data;
     }
 
     // ── NORMALISATION ────────────────────────────────────────────────────────
