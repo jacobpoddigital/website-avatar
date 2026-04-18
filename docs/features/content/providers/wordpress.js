@@ -121,47 +121,45 @@
     // ── INTERFACE ────────────────────────────────────────────────────────────
 
     /**
-     * Multi-strategy search — runs all queries in parallel and merges results.
+     * Two-pass parallel search — significant words AND full phrase, pages first.
      *
-     * WP REST search treats the query as a phrase (LIKE '%word1 word2%'), so a
-     * post titled "How to choose the best WordPress..." won't match a search for
-     * "choose best wordpress" unless all words appear adjacent in that order.
+     * WP_Query with `s` does AND logic: a post must contain ALL searched words
+     * somewhere in title or content (not necessarily adjacent). Stripping stop
+     * words client-side before sending gives WP a clean set of meaningful terms
+     * to AND-match, which finds "How To Choose The Best WordPress Theme" when
+     * the query is "how to choose the best wordpress theme".
      *
-     * To fix this we always run individual significant-word searches alongside
-     * the full phrase query. Everything is merged and deduplicated before being
-     * sent to the AI ranking layer.
-     *
-     * Merge order (pages before posts so service pages aren't buried):
-     *   full-phrase pages → full-phrase custom types → individual-word pages
-     *   → individual-word posts → full-phrase posts
+     * We also run the original full query in parallel as a safety net for cases
+     * where the exact phrase IS in the content. Pages are always merged before
+     * posts so service pages aren't buried by blog volume.
      */
     async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
 
-      const per   = String(limit);
-      const qEnc  = encodeURIComponent(query);
-      const words = this._significantWords(query).slice(0, 4); // up to 4 individual words
+      const per      = String(limit);
+      const sigWords = this._significantWords(query);
+      // Significant-words query: WP AND-matches each word anywhere in title/content
+      const sigQuery = sigWords.join(' ') || query;
 
-      const searchUrl = (q, subtype) => {
+      const makeUrl = (q, subtype) => {
         const p = new URLSearchParams({ search: q, subtype, per_page: per, _fields: 'id,title,url,type,subtype' });
         return `/wp/v2/search?${p}`;
       };
 
-      // Build all parallel fetches: full query (pages + custom + posts) + per-word (pages + posts)
-      const fetches = [
-        this._fetch(searchUrl(query, 'page')),              // full phrase — pages
-        this._fetch(`/wp/v2/search?search=${qEnc}&type=post&per_page=${per}&_fields=id,title,url,type,subtype`), // full phrase — all post types
-        this._fetch(searchUrl(query, 'post')),              // full phrase — posts
-        ...words.map(w => this._fetch(searchUrl(w, 'page'))),  // individual words — pages
-        ...words.map(w => this._fetch(searchUrl(w, 'post'))),  // individual words — posts
-      ];
-
-      const settled = await Promise.allSettled(fetches);
+      // Parallel: significant-words search (pages + posts) + full-phrase search (pages + posts)
+      // + significant-words on all post types to catch custom types
+      const [sigPages, sigPosts, sigAny, phrasePages, phrasePosts] = await Promise.allSettled([
+        this._fetch(makeUrl(sigQuery, 'page')),
+        this._fetch(makeUrl(sigQuery, 'post')),
+        this._fetch(`/wp/v2/search?${new URLSearchParams({ search: sigQuery, type: 'post', per_page: per, _fields: 'id,title,url,type,subtype' })}`),
+        sigQuery !== query ? this._fetch(makeUrl(query, 'page'))  : Promise.resolve([]),
+        sigQuery !== query ? this._fetch(makeUrl(query, 'post'))  : Promise.resolve([]),
+      ]);
 
       const seen   = new Set();
       const addAll = (res) => {
-        if (res.status !== 'fulfilled') return [];
-        return res.value
+        const arr = res.status === 'fulfilled' ? res.value : (Array.isArray(res.value) ? res.value : []);
+        return arr
           .map(r => this._normaliseSearchResult(r))
           .filter(r => {
             if (!r.url || seen.has(r.url)) return false;
@@ -170,17 +168,16 @@
           });
       };
 
-      // Unpack in priority order
-      const nWords      = words.length;
-      const phrasePages = addAll(settled[0]);
-      const phraseAny   = addAll(settled[1]).filter(r => r.type !== 'Post' && r.type !== 'Page');
-      const wordPages   = settled.slice(3, 3 + nWords).flatMap(s => addAll(s));
-      const wordPosts   = settled.slice(3 + nWords).flatMap(s => addAll(s));
-      const phrasePosts = addAll(settled[2]);
+      const sp  = addAll(sigPages);
+      const sc  = addAll(sigAny).filter(r => r.type !== 'Post' && r.type !== 'Page');
+      const spo = addAll(sigPosts);
+      const pp  = addAll(phrasePages);
+      const ppo = addAll(phrasePosts);
 
-      const results = [...phrasePages, ...phraseAny, ...wordPages, ...wordPosts, ...phrasePosts];
+      // Pages before posts; significant-word matches before exact-phrase matches
+      const results = [...sp, ...sc, ...pp, ...spo, ...ppo];
 
-      _log(`search results: ${results.length} (phrase pages: ${phrasePages.length}, word pages: ${wordPages.length}, posts: ${phrasePosts.length + wordPosts.length})`);
+      _log(`search results: ${results.length} (sig pages: ${sp.length}, sig posts: ${spo.length}, phrase pages: ${pp.length}, phrase posts: ${ppo.length})`);
       return results;
     }
 
