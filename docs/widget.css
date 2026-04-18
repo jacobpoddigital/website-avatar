@@ -1460,42 +1460,44 @@ input.wa-magic-email[type=email] {
   #wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-actions { justify-content: center; }
 }
 
-/* ── GREETING VARIANT: v6 — Full-width Stage Bar ────────────────────────────
-   JS builds a completely different DOM structure: avatar col (image extends
-   above bar + floating speech bubble) | content col (headline, signature,
-   CTAs) | bullets col. Anchored to the bottom of the viewport, full-width.
-   greetingHeadline config field used for headline; falls back to
-   "I'm here to help!". Dynamic via _buildV6Layout in greeting.js. */
+/* ── GREETING VARIANT: v6 — Full-screen Stage ───────────────────────────────
+   Full-screen, brand-colour background, all content centred.
+   Avatar at 65vh with a bottom-up gradient fade (brand → transparent).
+   Speech bubble restored to original white+triangle style, centred above avatar.
+   Speak + Chat = light brand colour. Close = transparent. Padding: 40px.
+   greetingHeadline config field for headline; fallback "I'm here to help!". */
 
 #wa-greeting.wa-variant-v6 {
-  align-items: flex-end;
-  justify-content: stretch;
-  padding: 0;
+  align-items: center;
+  justify-content: center;
+  background: var(--wa-user-bubble);
+  padding: 40px;
+  box-sizing: border-box;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-overlay {
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
-/* ── Bar ── */
+/* ── Bar: full-screen centred row container ── */
 .wa-v6-bar {
   position: relative;
-  width: 100%;
   display: flex;
   flex-direction: row;
-  align-items: flex-end;
-  min-height: 220px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 1300px;
+  gap: 60px;
+  background: transparent;
+  border: none;
+  padding: 0;
   overflow: visible;
-  background: rgba(255,255,255,0.12);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border-top: 1px solid rgba(255,255,255,0.22);
-  padding: 0 48px 0 0;
   animation: waV6Rise 0.55s cubic-bezier(0.34, 1.10, 0.64, 1);
 }
 @keyframes waV6Rise {
-  from { opacity: 0; transform: translateY(48px); }
+  from { opacity: 0; transform: translateY(32px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -1503,37 +1505,58 @@ input.wa-magic-email[type=email] {
 .wa-v6-avatar-col {
   position: relative;
   flex: 0 0 auto;
-  align-self: flex-end;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding-left: 32px;
+  align-items: center;
+  justify-content: center;
 }
 .wa-v6-avatar-img {
   display: block;
-  height: 300px;
+  height: 65vh;
   width: auto;
-  max-width: 220px;
+  max-width: 400px;
   object-fit: cover;
   object-position: top center;
-  border-radius: 4px 4px 0 0;
 }
+/* Gradient fade: brand → transparent, bottom 35% of avatar fades to background */
+.wa-v6-avatar-col::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 45%;
+  background: linear-gradient(to top, var(--wa-user-bubble) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Speech bubble: original white + downward triangle, centred above avatar */
 .wa-v6-speech {
   position: absolute;
-  top: -8px;
-  left: 56px;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
   background: #fff;
-  border-radius: 14px 14px 14px 4px;
-  padding: 11px 14px;
-  max-width: 200px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  border-radius: 18px;
+  padding: 10px 14px;
+  width: 220px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.20), 0 2px 8px rgba(0,0,0,0.12);
   z-index: 2;
+}
+.wa-v6-speech::after {
+  content: '';
+  position: absolute;
+  bottom: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 12px 10px 0 10px;
+  border-style: solid;
+  border-color: #fff transparent transparent transparent;
 }
 .wa-v6-speech p {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: rgba(20,20,18,0.88);
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(20,20,18,0.90);
+  text-align: center;
 }
 
 /* ── Content column ── */
@@ -1541,14 +1564,15 @@ input.wa-magic-email[type=email] {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding: 32px 40px 28px 36px;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0;
 }
 .wa-v6-headline {
   margin: 0 0 6px;
-  font-size: clamp(32px, 3.5vw, 52px);
+  font-size: clamp(32px, 3.5vw, 54px);
   font-weight: 800;
-  line-height: 1.08;
+  line-height: 1.06;
   letter-spacing: -0.025em;
   color: #fff;
 }
@@ -1557,7 +1581,7 @@ input.wa-magic-email[type=email] {
   font-style: italic;
   font-size: clamp(18px, 1.8vw, 26px);
   color: rgba(255,255,255,0.65);
-  margin-bottom: 22px;
+  margin-bottom: 24px;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-actions {
   justify-content: flex-start;
@@ -1565,84 +1589,85 @@ input.wa-magic-email[type=email] {
   gap: 10px;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-btn {
-  background: rgba(255,255,255,0.14);
-  border: 1px solid rgba(255,255,255,0.35);
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.40);
   color: #fff;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   font-size: 12px;
   min-height: 46px;
-  padding: 10px 20px;
+  padding: 10px 22px;
   border-radius: 10px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   flex: none;
   width: auto;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-btn-label,
 #wa-greeting.wa-variant-v6 .wa-greeting-btn-icon { color: #fff; }
-#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak {
-  background: var(--wa-user-bubble);
+/* Speak + Chat: both light brand colour */
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak,
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--chat {
+  background: var(--wa-user-bubble-light);
   border-color: transparent;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-btn--speak .wa-greeting-btn-label,
-#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak .wa-greeting-btn-icon {
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak .wa-greeting-btn-icon,
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--chat .wa-greeting-btn-label,
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--chat .wa-greeting-btn-icon {
   color: var(--wa-primary-text);
 }
-#wa-greeting.wa-variant-v6 .wa-greeting-btn:hover {
-  background: rgba(255,255,255,0.22);
-  transform: translateY(-2px);
+/* Close: transparent, white border */
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--close {
+  background: transparent;
+  border-color: rgba(255,255,255,0.35);
 }
-#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak:hover {
-  background: var(--wa-user-bubble-dark);
-}
+#wa-greeting.wa-variant-v6 .wa-greeting-btn:hover { opacity: 0.85; transform: translateY(-2px); }
 #wa-greeting.wa-variant-v6 .wa-greeting-consent-block {
-  background: rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.12);
   border-color: rgba(255,255,255,0.25);
   margin-bottom: 0;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-consent-text { color: rgba(255,255,255,0.75); }
-#wa-greeting.wa-variant-v6 .wa-greeting-consent-text a { color: rgba(255,255,255,0.9); }
+#wa-greeting.wa-variant-v6 .wa-greeting-consent-text a { color: rgba(255,255,255,0.92); }
 
 /* ── Bullets column ── */
 .wa-v6-bullets-col {
-  flex: 0 0 260px;
+  flex: 0 0 280px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding: 28px 0 28px 0;
+  justify-content: center;
+  padding: 0;
 }
 .wa-v6-bullets-col .wa-greeting-bullets { padding: 0; }
 .wa-v6-bullets-col .wa-greeting-bullets-list li {
-  font-size: 12px;
-  color: rgba(255,255,255,0.80);
-  padding: 7px 0 7px 14px;
+  font-size: 14px;
+  color: rgba(255,255,255,0.85);
+  padding: 9px 0 9px 16px;
 }
 .wa-v6-bullets-col .wa-greeting-bullets-list li::before {
-  background: rgba(255,255,255,0.55);
-  width: 5px; height: 5px;
+  background: rgba(255,255,255,0.60);
+  width: 6px; height: 6px;
 }
 .wa-v6-bullets-col .wa-greeting-bullets-list li + li {
-  border-top-color: rgba(255,255,255,0.10);
+  border-top-color: rgba(255,255,255,0.12);
 }
 
 /* ── Credit badge ── */
 .wa-v6-credit {
   position: absolute;
-  bottom: 10px;
-  right: 16px;
+  bottom: -36px;
+  right: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: rgba(255,255,255,0.50);
+  gap: 7px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
 }
 .wa-v6-ai-badge {
   background: var(--wa-user-bubble-light);
   color: var(--wa-primary-text);
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1650,21 +1675,22 @@ input.wa-magic-email[type=email] {
 
 /* ── Mobile: stack vertically ── */
 @media (max-width: 640px) {
-  .wa-v6-bar {
-    flex-direction: column;
-    align-items: center;
-    padding: 0 20px 24px;
-    min-height: 0;
+  #wa-greeting.wa-variant-v6 { padding: 24px; }
+  .wa-v6-bar { flex-direction: column; gap: 24px; }
+  .wa-v6-avatar-col { width: 100%; justify-content: center; }
+  .wa-v6-avatar-img { height: 42vh; }
+  .wa-v6-speech {
+    position: static;
+    transform: none;
+    margin: 0 auto 16px;
+    width: auto;
+    max-width: 280px;
   }
-  .wa-v6-avatar-col { padding-left: 0; align-items: center; }
-  .wa-v6-avatar-img { height: 180px; }
-  .wa-v6-speech { position: static; margin-bottom: 12px; max-width: 100%; }
-  .wa-v6-content-col { padding: 20px 0 16px; align-items: center; text-align: center; }
-  .wa-v6-headline { text-align: center; }
-  .wa-v6-signature { text-align: center; }
+  .wa-v6-content-col { align-items: center; }
+  .wa-v6-headline, .wa-v6-signature { text-align: center; }
   #wa-greeting.wa-variant-v6 .wa-greeting-actions { justify-content: center; }
-  .wa-v6-bullets-col { flex: none; width: 100%; padding: 0 0 16px; }
-  .wa-v6-credit { position: static; margin-top: 8px; }
+  .wa-v6-bullets-col { flex: none; width: 100%; }
+  .wa-v6-credit { position: static; margin-top: 12px; }
 }
 
 /* Action button label styling */
