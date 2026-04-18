@@ -1378,22 +1378,20 @@ input.wa-magic-email[type=email] {
 }
 
 /* ── GREETING VARIANT: v5 — Centred Stage ───────────────────────────────────
-   Merges v3 (centred viewport, emerge animation) and v4 (two-column).
-   CSS Grid puts bubble + orb together in the left column without touching
-   the DOM. Name / bullets / CTAs stack in the right column.
-   Default gradient overlay (no overlay override). White buttons. 200px orb.
-   Max-width 720px. Typing + staggered entry via JS. */
+   JS builds .wa-greeting-left (bubble + orb + name) and .wa-greeting-right
+   (fade + consent + actions + bullets) inside .wa-greeting-container.
+   Container becomes flex-row. Centred in viewport. Default gradient overlay.
+   Large 200px orb. White buttons. Max-width 720px. Typing + stagger via JS. */
 #wa-greeting.wa-variant-v5 {
   align-items: center;
   justify-content: center;
 }
 #wa-greeting.wa-variant-v5 .wa-greeting-container {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  column-gap: 36px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 36px;
   max-width: 720px;
-  padding: 0 24px;
-  align-items: start;
+  padding: 24px 32px;
   animation: waV5Emerge 0.65s cubic-bezier(0.34, 1.15, 0.64, 1);
 }
 @keyframes waV5Emerge {
@@ -1401,49 +1399,64 @@ input.wa-magic-email[type=email] {
   to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 
-/* Left column: bubble on top, orb below (triangle naturally points down to orb) */
-#wa-greeting.wa-variant-v5 .wa-greeting-bubble {
-  grid-column: 1;
-  grid-row: 1;
-  width: auto;
+/* Left column — bubble sits above orb, triangle points naturally down */
+#wa-greeting.wa-variant-v5 .wa-greeting-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 220px;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-bubble {
+  width: 100%;
   margin-bottom: 12px;
 }
-#wa-greeting.wa-variant-v5 .wa-greeting-orb {
-  grid-column: 1;
-  grid-row: 2;
-  margin-bottom: 0;
+#wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-orb {
+  margin-bottom: 10px;
 }
-#wa-greeting.wa-variant-v5 .wa-greeting-orb .wa-orb {
+#wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-orb .wa-orb {
   width: 200px;
   height: 200px;
 }
+#wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-name {
+  text-align: center;
+  margin-bottom: 0;
+}
 
-/* Right column: everything else stacks naturally */
-#wa-greeting.wa-variant-v5 .wa-greeting-name          { grid-column: 2; text-align: left; }
-#wa-greeting.wa-variant-v5 .wa-greeting-fade          { grid-column: 2; }
-#wa-greeting.wa-variant-v5 .wa-greeting-consent-block { grid-column: 2; }
-#wa-greeting.wa-variant-v5 .wa-greeting-actions       { grid-column: 2; justify-content: flex-start; margin-bottom: 0; }
-#wa-greeting.wa-variant-v5 .wa-greeting-bullets       { grid-column: 2; padding: 0; }
+/* Right column — content stacks top-down */
+#wa-greeting.wa-variant-v5 .wa-greeting-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  padding-top: 8px;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-actions {
+  justify-content: flex-start;
+  margin-bottom: 0;
+  width: 100%;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-bullets {
+  padding: 0;
+  width: 100%;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-consent-block {
+  width: 100%;
+}
 
-/* Mobile: revert to single column */
+/* Mobile: stack columns vertically */
 @media (max-width: 640px) {
   #wa-greeting.wa-variant-v5 .wa-greeting-container {
-    grid-template-columns: 1fr;
-    padding: 0 16px;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
   }
-  #wa-greeting.wa-variant-v5 .wa-greeting-bubble,
-  #wa-greeting.wa-variant-v5 .wa-greeting-orb,
-  #wa-greeting.wa-variant-v5 .wa-greeting-name,
-  #wa-greeting.wa-variant-v5 .wa-greeting-fade,
-  #wa-greeting.wa-variant-v5 .wa-greeting-consent-block,
-  #wa-greeting.wa-variant-v5 .wa-greeting-actions,
-  #wa-greeting.wa-variant-v5 .wa-greeting-bullets {
-    grid-column: 1;
-    grid-row: auto;
+  #wa-greeting.wa-variant-v5 .wa-greeting-left  { flex: none; width: 100%; }
+  #wa-greeting.wa-variant-v5 .wa-greeting-right { align-items: center; width: 100%; }
+  #wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-orb .wa-orb {
+    width: 160px;
+    height: 160px;
   }
-  #wa-greeting.wa-variant-v5 .wa-greeting-orb .wa-orb { width: 160px; height: 160px; }
-  #wa-greeting.wa-variant-v5 .wa-greeting-name    { text-align: center; }
-  #wa-greeting.wa-variant-v5 .wa-greeting-actions { justify-content: center; }
+  #wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-actions { justify-content: center; }
 }
 
 /* Action button label styling */

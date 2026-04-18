@@ -64,6 +64,10 @@
 
         greeting.classList.add(`wa-variant-${variant}`);
 
+        if (variant === 'v5') {
+          this._buildV5Columns(greeting);
+        }
+
         setTimeout(() => {
           greeting.classList.add('wa-greeting-visible');
           if (bubble) bubble.classList.add('wa-hidden');
@@ -165,6 +169,26 @@
         this.show();
       },
   
+      _buildV5Columns(greeting) {
+        const container = greeting.querySelector('.wa-greeting-container');
+        if (!container) return;
+
+        const left  = document.createElement('div');
+        left.className  = 'wa-greeting-left';
+        const right = document.createElement('div');
+        right.className = 'wa-greeting-right';
+
+        ['wa-greeting-bubble', 'wa-greeting-orb', 'wa-greeting-name'].forEach(cls => {
+          const el = container.querySelector('.' + cls);
+          if (el) left.appendChild(el);
+        });
+
+        Array.from(container.children).forEach(el => right.appendChild(el));
+
+        container.appendChild(left);
+        container.appendChild(right);
+      },
+
       _typeText(el, onComplete) {
         const text = el.textContent.trim();
         el.textContent = '';
