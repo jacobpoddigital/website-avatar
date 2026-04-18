@@ -189,17 +189,22 @@ Reply with JSON only — no explanation:
 
           let finalResults;
           if (topIndices) {
-            // Flag the top result as recommended, use AI-ordered top 5
             finalResults = topIndices.map((i, rank) => ({
               ...results[i],
               recommended: rank === 0
             }));
           } else {
-            // AI failed — fall back to first 5 results (pages-first order already applied)
             finalResults = results.slice(0, 5);
           }
 
           _queueContentResults(finalResults);
+
+          // Agent answers first then calls this tool — render the card immediately
+          // rather than waiting for a subsequent agent message to trigger it.
+          if (typeof WA.renderPendingContentCard === 'function') {
+            WA.renderPendingContentCard();
+          }
+
           return { results };
 
         } catch (err) {
