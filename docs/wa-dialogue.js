@@ -742,14 +742,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
             cleanText = cleanText.replace(/^JSON:\s*/i, '').trim();
             
             if (!cleanText) return;
-            
+
             if (DEBUG) {
               log(`Agent: "${cleanText.slice(0, 80)}"`);
               if (knowledgeContext) {
                 log('Knowledge context:', knowledgeContext);
               }
             }
-            
+
             if (typeof WA.onAgentMessage === 'function') {
               WA.onAgentMessage(cleanText, knowledgeContext);
             }
