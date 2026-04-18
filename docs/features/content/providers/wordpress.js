@@ -158,8 +158,11 @@
 
       const seen   = new Set();
       const addAll = (res) => {
-        const arr = res.status === 'fulfilled' ? res.value : (Array.isArray(res.value) ? res.value : []);
-        return arr
+        if (res.status === 'rejected') {
+          _warn('Search fetch failed:', res.reason?.message || res.reason);
+          return [];
+        }
+        return res.value
           .map(r => this._normaliseSearchResult(r))
           .filter(r => {
             if (!r.url || seen.has(r.url)) return false;
