@@ -47,7 +47,7 @@
   
       getVariant() {
         const param = new URLSearchParams(window.location.search).get('wa_greeting');
-        if (param === 'v2' || param === 'v3' || param === 'v4') return param;
+        if (param === 'v2' || param === 'v3' || param === 'v4' || param === 'v5') return param;
         return 'control';
       },
 

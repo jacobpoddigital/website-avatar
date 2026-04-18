@@ -1377,6 +1377,75 @@ input.wa-magic-email[type=email] {
   #wa-greeting.wa-variant-v4 .wa-greeting-actions { justify-content: center; }
 }
 
+/* ── GREETING VARIANT: v5 — Centred Stage ───────────────────────────────────
+   Merges v3 (centred viewport, emerge animation) and v4 (two-column).
+   CSS Grid puts bubble + orb together in the left column without touching
+   the DOM. Name / bullets / CTAs stack in the right column.
+   Default gradient overlay (no overlay override). White buttons. 200px orb.
+   Max-width 720px. Typing + staggered entry via JS. */
+#wa-greeting.wa-variant-v5 {
+  align-items: center;
+  justify-content: center;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-container {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  column-gap: 36px;
+  max-width: 720px;
+  padding: 0 24px;
+  align-items: start;
+  animation: waV5Emerge 0.65s cubic-bezier(0.34, 1.15, 0.64, 1);
+}
+@keyframes waV5Emerge {
+  from { opacity: 0; transform: scale(0.88) translateY(22px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* Left column: bubble on top, orb below (triangle naturally points down to orb) */
+#wa-greeting.wa-variant-v5 .wa-greeting-bubble {
+  grid-column: 1;
+  grid-row: 1;
+  width: auto;
+  margin-bottom: 12px;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-orb {
+  grid-column: 1;
+  grid-row: 2;
+  margin-bottom: 0;
+}
+#wa-greeting.wa-variant-v5 .wa-greeting-orb .wa-orb {
+  width: 200px;
+  height: 200px;
+}
+
+/* Right column: everything else stacks naturally */
+#wa-greeting.wa-variant-v5 .wa-greeting-name          { grid-column: 2; text-align: left; }
+#wa-greeting.wa-variant-v5 .wa-greeting-fade          { grid-column: 2; }
+#wa-greeting.wa-variant-v5 .wa-greeting-consent-block { grid-column: 2; }
+#wa-greeting.wa-variant-v5 .wa-greeting-actions       { grid-column: 2; justify-content: flex-start; margin-bottom: 0; }
+#wa-greeting.wa-variant-v5 .wa-greeting-bullets       { grid-column: 2; padding: 0; }
+
+/* Mobile: revert to single column */
+@media (max-width: 640px) {
+  #wa-greeting.wa-variant-v5 .wa-greeting-container {
+    grid-template-columns: 1fr;
+    padding: 0 16px;
+  }
+  #wa-greeting.wa-variant-v5 .wa-greeting-bubble,
+  #wa-greeting.wa-variant-v5 .wa-greeting-orb,
+  #wa-greeting.wa-variant-v5 .wa-greeting-name,
+  #wa-greeting.wa-variant-v5 .wa-greeting-fade,
+  #wa-greeting.wa-variant-v5 .wa-greeting-consent-block,
+  #wa-greeting.wa-variant-v5 .wa-greeting-actions,
+  #wa-greeting.wa-variant-v5 .wa-greeting-bullets {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  #wa-greeting.wa-variant-v5 .wa-greeting-orb .wa-orb { width: 160px; height: 160px; }
+  #wa-greeting.wa-variant-v5 .wa-greeting-name    { text-align: center; }
+  #wa-greeting.wa-variant-v5 .wa-greeting-actions { justify-content: center; }
+}
+
 /* Action button label styling */
 .wa-btn-label {
   display: block;
