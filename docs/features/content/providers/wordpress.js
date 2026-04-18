@@ -132,7 +132,7 @@
      * Supplementary: if primary returns < limit results, also query /wp/v2/posts
      * and /wp/v2/pages for any additional matches not caught by the search index.
      */
-    async search(query, { limit = 5 } = {}) {
+    async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
 
       const params = new URLSearchParams({
@@ -157,7 +157,7 @@
       // or content types not registered as searchable).
       if (results.length < limit) {
         try {
-          const remaining = limit - results.length;
+          const remaining = Math.min(limit - results.length, limit);
           const postParams = new URLSearchParams({
             search:   query,
             per_page: String(remaining),
