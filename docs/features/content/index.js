@@ -24,7 +24,7 @@
   const _warn = (...a) => console.warn('[WA:Content]', ...a);
 
   const CLASSIFY_URL = 'https://backend.jacob-e87.workers.dev/classify';
-  const SEARCH_LIMIT = 50; // per-type fetch cap — AI sees the full pool before any trimming
+  const SEARCH_LIMIT = 100; // per-type fetch cap — AI sees the full pool before any trimming
 
   // ── PROVIDER REGISTRY ──────────────────────────────────────────────────────
 
@@ -85,15 +85,15 @@
   // ── AI RANKING ─────────────────────────────────────────────────────────────
 
   /**
-   * Ask OpenAI (via /classify proxy) which result best matches the visitor's query.
-   * Returns the index of the recommended result, or null on failure.
-   * Fire-and-forget safe — caller always shows all results regardless.
+   * Ask OpenAI (via /classify proxy) to pick the top 5 most relevant results
+   * for the visitor's query, ordered by relevance.
+   * Returns an ordered array of indices, or null on failure.
    */
-  async function _aiRecommend(query, results) {
+  async function _aiRankTop5(query, results) {
     if (!results.length) return null;
 
     const list = results.map((r, i) =>
-      `${i}. ${r.title} (${r.type})${r.excerpt ? ' — ' + r.excerpt.slice(0, 100) : ''}`
+      `${i}. ${r.title} (${r.type})${r.excerpt ? ' — ' + r.excerpt.slice(0, 120) : ''}`
     ).join('\n');
 
     const prompt = `A website visitor asked: "${query}"
@@ -101,26 +101,29 @@
 The following pages were found on the site:
 ${list}
 
-Which single result is most relevant to the visitor's question? Reply with JSON only:
-{ "recommended": <index number>, "reason": "<one short sentence explaining why>" }
+Select the 5 most relevant results for this visitor's question, ordered from most to least relevant.
+Reply with JSON only — no explanation:
+{ "top": [<index>, <index>, <index>, <index>, <index>] }
 
-If none are clearly relevant, set recommended to 0.`;
+If fewer than 5 are relevant, return only the relevant ones. Return at most 5.`;
 
     try {
       const res = await fetch(CLASSIFY_URL, {
         method:  'POST',
         signal:  AbortSignal.timeout(8000),
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt, maxTokens: 80 })
+        body:    JSON.stringify({ prompt, maxTokens: 60 })
       });
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       const raw  = (data.content || '').replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(raw);
-      const idx = parseInt(parsed.recommended, 10);
-      if (isNaN(idx) || idx < 0 || idx >= results.length) return null;
-      _log(`AI recommended index ${idx}: "${results[idx].title}" — ${parsed.reason}`);
-      return idx;
+      const top = (parsed.top || [])
+        .map(i => parseInt(i, 10))
+        .filter(i => !isNaN(i) && i >= 0 && i < results.length)
+        .slice(0, 5);
+      _log(`AI top ${top.length}:`, top.map(i => `"${results[i].title}"`).join(', '));
+      return top.length ? top : null;
     } catch (err) {
       _warn('AI ranking failed:', err.message);
       return null;
@@ -182,17 +185,22 @@ If none are clearly relevant, set recommended to 0.`;
             return { results: [] };
           }
 
-          // AI ranking: runs in parallel with nothing blocking — result applied before queue
-          const recommendedIdx = await _aiRecommend(query, results);
+          // AI ranking: picks top 5 from the full pool, ordered by relevance
+          const topIndices = await _aiRankTop5(query, results);
 
-          // Flag the recommended result and pin it first
-          if (recommendedIdx !== null) {
-            results[recommendedIdx].recommended = true;
-            const [rec] = results.splice(recommendedIdx, 1);
-            results.unshift(rec);
+          let finalResults;
+          if (topIndices) {
+            // Flag the top result as recommended, use AI-ordered top 5
+            finalResults = topIndices.map((i, rank) => ({
+              ...results[i],
+              recommended: rank === 0
+            }));
+          } else {
+            // AI failed — fall back to first 5 results (pages-first order already applied)
+            finalResults = results.slice(0, 5);
           }
 
-          _queueContentResults(results);
+          _queueContentResults(finalResults);
           return { results };
 
         } catch (err) {
