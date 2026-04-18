@@ -486,6 +486,9 @@
   function _renderContentResultsCard(results) {
     if (!results || !results.length) return;
 
+    // Remove any previous content results card so repeated tool calls replace, not duplicate
+    document.querySelectorAll('.wa-action-card[data-action-id="content-results"]').forEach(el => el.remove());
+
     const hasRecommended = results.some(r => r.recommended);
 
     const buttons = results.map(result => {
@@ -1113,6 +1116,13 @@
   WA.hideWaitingHint        = hideWaitingHint;
   WA.appendMessage          = appendMessage;
   WA.renderCard             = renderCard;
+  WA.renderPendingContentCard = function () {
+    if (WA._pendingContentResults?.length) {
+      document.querySelectorAll('.wa-action-card[data-action-id="content-results"]').forEach(el => el.remove());
+      _renderContentResultsCard(WA._pendingContentResults);
+      WA._pendingContentResults = null;
+    }
+  };
   WA.updateActionCardStatus = updateActionCardStatus;
   WA.renderOptionsCard      = renderOptionsCard;
   WA.renderActionCard       = renderActionCard;
