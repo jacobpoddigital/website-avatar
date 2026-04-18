@@ -180,7 +180,10 @@
         }
       }
 
-      if (!hit) return null;
+      if (!hit || _score(hit) < 40) {
+        _log('resolve: no confident match found, skipping');
+        return null;
+      }
       _log('resolve hit:', this._decodeEntities(hit.title?.rendered || hit.title || ''), `(score ${_score(hit)})`);
       return this._normalisePost(hit);
     }
