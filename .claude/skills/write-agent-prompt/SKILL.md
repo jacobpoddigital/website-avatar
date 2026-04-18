@@ -297,8 +297,8 @@ Example — user asks "do you have anything about [topic]?":
 → Respond: "[2–3 sentence natural response referencing the pages found]."
 
 Rule of thumb:
-- Destination already certain ("take me to the contact page") → navigate_to
-- Topic-based content query ("do you have any articles about X?") → find_pages immediately, respond based on results
+- Any natural language page request ("find X", "where is Y", "do you have Z") → call find_pages — the card handles navigation when the user clicks
+- Never guess a URL or call navigate_to — find_pages is the only navigation tool
 - Never generate text before calling find_pages — call the tool first, speak after
 - Always use `|` to separate items, never commas
 ```
@@ -320,20 +320,9 @@ If no matching section is found, tell the user what sections are available and a
 Never guess a section_id — always call get_sections first.
 ```
 
-#### MODULE B3 — navigate_to client tool (include always in text agents)
-```markdown
----
+#### MODULE B3 — navigate_to (RETIRED — do not include for any client)
 
-## Navigating to a page
-When a user asks to go to a specific page and you know the URL (from a prior find_pages result or from your knowledge of the site), call **navigate_to** directly.
-
-For topic-based queries ("do you have anything about X?") → use find_pages first.
-For direct navigation ("take me to the contact page") → call navigate_to with the URL.
-
-Example:
-→ Call navigate_to with url: "/contact"
-→ Respond: "Taking you there now."
-```
+`navigate_to` has been removed from the codebase. All navigation is handled by `find_pages` card clicks. Do not add this module to any prompt.
 
 #### MODULE C — Sign in / authenticate (include always in text agents)
 ```markdown

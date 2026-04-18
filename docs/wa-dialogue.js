@@ -429,20 +429,6 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       };
     };
 
-    // ── navigate_to ───────────────────────────────────────────────────────────
-    // Direct page navigation. Agent uses this when it knows the exact URL
-    // (e.g. from a prior find_pages result). find_pages handles topic-based
-    // discovery; navigate_to handles the actual navigation step.
-    tools['navigate_to'] = async ({ url } = {}) => {
-      log('Client tool called: navigate_to', url);
-      if (!url) return { error: 'url_required' };
-      const targetClean  = url.replace(/\/$/, '');
-      const currentClean = window.location.href.replace(/\/$/, '');
-      if (targetClean === currentClean) return { already_here: true };
-      window.location.href = url;
-      return { navigating: true, url };
-    };
-
     // ── scroll_to ─────────────────────────────────────────────────────────────
     // Scrolls to a section by ID. Agent should call get_sections first to
     // obtain valid section IDs, then pass the chosen id here.

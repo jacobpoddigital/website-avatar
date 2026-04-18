@@ -330,7 +330,8 @@
   background: var(--wa-accent); border-radius: 50%;
   animation: waOnlinePulse 1.5s ease-in-out infinite;
 }
-.wa-action-card p, .wa-card p { color: var(--wa-text); margin-bottom: 10px; line-height: 1.5; font-size: 13px; }
+.wa-messages .wa-action-card p, 
+.wa-messages .wa-card p { color: var(--wa-text); margin-bottom: 10px; line-height: 1.5; font-size: 13px; }
 .wa-card-btns { display: flex; gap: 7px; flex-wrap: wrap; }
 .wa-card-btns button {
   flex: 1; padding: 7px; border: none; border-radius: 8px;
@@ -1129,7 +1130,7 @@ input.wa-magic-email[type=email] {
   padding: 10px 13px;
   width: 100%;
 }
-.wa-re-engage-bubble p {
+.wa-re-engage-bubble.wa-re-engage-bubble p {
   margin: 0;
   font-size: 13px; line-height: 1.45;
   color: #fff;
