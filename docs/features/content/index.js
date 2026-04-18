@@ -1,18 +1,16 @@
 /**
- * content/index.js — Content search action layer
+ * content/index.js — find_pages action layer
  *
- * Platform-agnostic site content search for Website Avatar.
- * Detects the active CMS from WA_CONFIG and loads the appropriate provider.
- *
- * The agent calls content_search immediately when the user asks about content,
- * guides, or pages — same pattern as ecom_product_search. The provider handles
- * all search strategy (incremental keyword reduction, long-tail detection, etc.).
- * This layer stays thin: call provider, queue results, return titles to agent.
+ * Registers the find_pages client tool for Website Avatar.
+ * The agent answers from knowledge first, then calls find_pages with a
+ * comma-separated list of the specific page/post titles it just mentioned.
+ * This layer resolves each item to a confirmed URL via the CMS provider
+ * and renders a clickable card below the agent's message.
  *
  * Config-driven — never auto-detects from window globals.
  * Client KV config must include: { "cmsPlatform": "wordpress" }
  *
- * Self-registers content_search action via WA.registerAction() — actions.js is never edited.
+ * Self-registers find_pages action via WA.registerAction() — actions.js is never edited.
  *
  * Load order: after actions.js, before wa-agent.js
  */
@@ -20,7 +18,7 @@
 (function () {
   'use strict';
 
-  const WA   = window.WebsiteAvatar || (window.WebsiteAvatar = {});
+  const WA    = window.WebsiteAvatar || (window.WebsiteAvatar = {});
   const _log  = (...a) => WA.DEBUG && console.log('[WA:Content]', ...a);
   const _warn = (...a) => console.warn('[WA:Content]', ...a);
 
@@ -38,7 +36,7 @@
       const config   = window.WA_CONFIG || {};
       const platform = config.cmsPlatform;
       if (!platform) {
-        _log('cmsPlatform not set in config — content search disabled');
+        _log('cmsPlatform not set in config — find_pages disabled');
         return null;
       }
       const ProviderClass = _providers[platform];
@@ -71,42 +69,55 @@
     }
 
     WA.registerAction({
-      type: 'content_search',
+      type: 'find_pages',
       execute: async function (action) {
         const provider = _getProvider();
         if (!provider) return { error: 'Content search not available on this site' };
         if (!provider.isAvailable()) return { error: `${provider.platformName} REST API is not reachable` };
 
-        const { query } = action.payload || {};
-        if (!query) return { error: 'query is required' };
+        // ElevenLabs passes a comma-separated string — parse into individual items
+        const raw   = action.payload?.items || '';
+        const items = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 5);
+        if (!items.length) return { error: 'items is required' };
 
-        _log('Content search:', query);
+        _log('find_pages:', items);
 
         try {
-          const results = await provider.search(query);
+          const seen    = new Set();
+          const results = [];
+
+          for (const item of items) {
+            const hits = await provider.search(item, { limit: 5 });
+            if (hits.length && !seen.has(hits[0].url)) {
+              seen.add(hits[0].url);
+              results.push(hits[0]);
+            }
+          }
 
           if (!results.length) {
             return { results: [], shown: 0 };
           }
 
-          const top = results.slice(0, 5);
-          _queueContentResults(top);
+          _queueContentResults(results);
 
-          // Return titles + types so the agent can reference what was found,
-          // but no URLs or excerpts that would invite verbatim narration.
+          // Agent answers first then calls this tool — render card immediately
+          if (typeof WA.renderPendingContentCard === 'function') {
+            WA.renderPendingContentCard();
+          }
+
           return {
-            results: top.map(r => ({ title: r.title, type: r.type })),
-            shown:   top.length
+            results: results.map(r => ({ title: r.title, type: r.type })),
+            shown:   results.length
           };
 
         } catch (err) {
-          _warn('content_search threw:', err.message);
+          _warn('find_pages threw:', err.message);
           return { error: err.message };
         }
       }
     });
 
-    _log('content_search action registered');
+    _log('find_pages action registered');
   }
 
   // ── RESULTS QUEUE ──────────────────────────────────────────────────────────

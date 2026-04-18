@@ -131,7 +131,7 @@
         _renderProductStrip(WA._pendingProductStrip, el);
         WA._pendingProductStrip = null;
       }
-      // If a content_search action queued page results, render the results card after this bubble
+      // If find_pages queued results while agent was answering, render card after this bubble
       if (role === 'agent' && WA._pendingContentResults?.length) {
         _renderContentResultsCard(WA._pendingContentResults);
         WA._pendingContentResults = null;
@@ -1108,6 +1108,13 @@
   WA.hideWaitingHint        = hideWaitingHint;
   WA.appendMessage          = appendMessage;
   WA.renderCard             = renderCard;
+  WA.renderPendingContentCard = function () {
+    if (WA._pendingContentResults?.length) {
+      document.querySelectorAll('.wa-action-card[data-action-id="content-results"]').forEach(el => el.remove());
+      _renderContentResultsCard(WA._pendingContentResults);
+      WA._pendingContentResults = null;
+    }
+  };
   WA.updateActionCardStatus = updateActionCardStatus;
   WA.renderOptionsCard      = renderOptionsCard;
   WA.renderActionCard       = renderActionCard;
