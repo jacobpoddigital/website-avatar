@@ -586,6 +586,13 @@
           await loadScript(BASE_URL + `/features/ecom/providers/${_cfg.ecomPlatform}.js`);
         }
 
+        // ── Content search (config-driven) ──
+        // Same load-order rule as ecom: must be before wa-agent.js.
+        if (_cfg.cmsPlatform) {
+          await loadScript(BASE_URL + '/features/content/index.js');
+          await loadScript(BASE_URL + `/features/content/providers/${_cfg.cmsPlatform}.js`);
+        }
+
         // ── Discover + agent scripts ──
         await Promise.all([
           loadScript(BASE_URL + '/wa-discover.js'),
