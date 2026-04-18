@@ -224,7 +224,7 @@
       const q = query.toLowerCase();
       if (/\b(how|why|what|when|which|where|who)\b/.test(q)) return true;
       if (sigWords.length >= 4) return true;
-      if (/\b(guide|tips|tutorial|advice|ideas|examples|best|vs|versus|comparison|review|help|learn|understand|difference|pros|cons)\b/.test(q)) return true;
+      if (/\b(guide|guides|article|articles|blog|blogs|post|posts|news|resource|resources|tips|tutorial|tutorials|advice|ideas|examples|best|vs|versus|comparison|review|reviews|help|learn|understand|difference|pros|cons)\b/.test(q)) return true;
       return false;
     }
 
