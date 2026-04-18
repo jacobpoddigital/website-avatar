@@ -121,40 +121,48 @@
     // ── INTERFACE ────────────────────────────────────────────────────────────
 
     /**
-     * Search pages and posts separately, merging pages first.
+     * Multi-strategy search — runs all queries in parallel and merges results.
      *
-     * Pages (service/landing pages) are queried independently so they are
-     * never crowded out by a high volume of blog posts on the same topic.
-     * Results are merged: pages → custom post types → posts.
-     * The AI ranking layer in content/index.js then picks the best match.
+     * WP REST search treats the query as a phrase (LIKE '%word1 word2%'), so a
+     * post titled "How to choose the best WordPress..." won't match a search for
+     * "choose best wordpress" unless all words appear adjacent in that order.
      *
-     * Each subtype search runs in parallel for speed.
+     * To fix this we always run individual significant-word searches alongside
+     * the full phrase query. Everything is merged and deduplicated before being
+     * sent to the AI ranking layer.
+     *
+     * Merge order (pages before posts so service pages aren't buried):
+     *   full-phrase pages → full-phrase custom types → individual-word pages
+     *   → individual-word posts → full-phrase posts
      */
     async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
 
-      const perType = limit; // fetch up to limit from each type; dedupe trims the pool
+      const per   = String(limit);
+      const qEnc  = encodeURIComponent(query);
+      const words = this._significantWords(query).slice(0, 4); // up to 4 individual words
 
-      const makeParams = (subtype) => new URLSearchParams({
-        search:   query,
-        subtype,
-        per_page: String(perType),
-        _fields:  'id,title,url,type,subtype',
-      }).toString();
+      const searchUrl = (q, subtype) => {
+        const p = new URLSearchParams({ search: q, subtype, per_page: per, _fields: 'id,title,url,type,subtype' });
+        return `/wp/v2/search?${p}`;
+      };
 
-      // Run pages and posts searches in parallel
-      const [pagesRes, postsRes, anyRes] = await Promise.allSettled([
-        this._fetch(`/wp/v2/search?${makeParams('page')}`),
-        this._fetch(`/wp/v2/search?${makeParams('post')}`),
-        // Also catch custom post types registered as searchable (services, case studies, etc.)
-        this._fetch(`/wp/v2/search?search=${encodeURIComponent(query)}&type=post&per_page=${perType}&_fields=id,title,url,type,subtype`),
-      ]);
+      // Build all parallel fetches: full query (pages + custom + posts) + per-word (pages + posts)
+      const fetches = [
+        this._fetch(searchUrl(query, 'page')),              // full phrase — pages
+        this._fetch(`/wp/v2/search?search=${qEnc}&type=post&per_page=${per}&_fields=id,title,url,type,subtype`), // full phrase — all post types
+        this._fetch(searchUrl(query, 'post')),              // full phrase — posts
+        ...words.map(w => this._fetch(searchUrl(w, 'page'))),  // individual words — pages
+        ...words.map(w => this._fetch(searchUrl(w, 'post'))),  // individual words — posts
+      ];
 
-      const seen  = new Set();
-      const merge = (settled, transformer) => {
-        if (settled.status !== 'fulfilled') return [];
-        return settled.value
-          .map(transformer)
+      const settled = await Promise.allSettled(fetches);
+
+      const seen   = new Set();
+      const addAll = (res) => {
+        if (res.status !== 'fulfilled') return [];
+        return res.value
+          .map(r => this._normaliseSearchResult(r))
           .filter(r => {
             if (!r.url || seen.has(r.url)) return false;
             seen.add(r.url);
@@ -162,17 +170,30 @@
           });
       };
 
-      // Pages first, then custom post types (from anyRes, excluding page/post),
-      // then blog posts last
-      const pages       = merge(pagesRes, r => this._normaliseSearchResult(r));
-      const anyResults  = merge(anyRes,   r => this._normaliseSearchResult(r))
-        .filter(r => r.type !== 'Post' && r.type !== 'Page'); // custom types only
-      const posts       = merge(postsRes, r => this._normaliseSearchResult(r));
+      // Unpack in priority order
+      const nWords      = words.length;
+      const phrasePages = addAll(settled[0]);
+      const phraseAny   = addAll(settled[1]).filter(r => r.type !== 'Post' && r.type !== 'Page');
+      const wordPages   = settled.slice(3, 3 + nWords).flatMap(s => addAll(s));
+      const wordPosts   = settled.slice(3 + nWords).flatMap(s => addAll(s));
+      const phrasePosts = addAll(settled[2]);
 
-      const results = [...pages, ...anyResults, ...posts];
+      const results = [...phrasePages, ...phraseAny, ...wordPages, ...wordPosts, ...phrasePosts];
 
-      _log(`search results: ${results.length} (${pages.length} pages, ${anyResults.length} custom, ${posts.length} posts)`);
+      _log(`search results: ${results.length} (phrase pages: ${phrasePages.length}, word pages: ${wordPages.length}, posts: ${phrasePosts.length + wordPosts.length})`);
       return results;
+    }
+
+    _significantWords(query) {
+      const STOP = new Set([
+        'a','an','the','and','or','for','in','on','at','to','of','is','it',
+        'with','that','this','be','as','are','was','were','have','has','had',
+        'do','does','did','will','would','could','should','may','might','can',
+        'not','but','from','by','so','if','about','into','up','out','i','me',
+        'my','we','you','your','get','what','some','any','find','look','search',
+        'want','need','where','how','tell','page','info','information','more'
+      ]);
+      return query.trim().toLowerCase().split(/\s+/).filter(w => w.length > 2 && !STOP.has(w));
     }
   }
 
