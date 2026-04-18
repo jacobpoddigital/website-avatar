@@ -1469,15 +1469,15 @@ input.wa-magic-email[type=email] {
 
 #wa-greeting.wa-variant-v6 {
   align-items: center;
-  justify-content: center;
-  background: var(--wa-user-bubble);
+  justify-content: flex-end;
   padding: 40px;
   box-sizing: border-box;
 }
 #wa-greeting.wa-variant-v6 .wa-greeting-overlay {
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  inset: 0;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  background: linear-gradient(to right, var(--wa-user-bubble), transparent);
 }
 
 /* ── Bar: full-screen centred row container ── */
@@ -1488,8 +1488,8 @@ input.wa-magic-email[type=email] {
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: 1300px;
-  gap: 60px;
+  max-width: 1700px;
+  gap: 70px;
   background: transparent;
   border: none;
   padding: 0;
@@ -1511,9 +1511,9 @@ input.wa-magic-email[type=email] {
 }
 .wa-v6-avatar-img {
   display: block;
-  height: 65vh;
+  height: 80vh;
   width: auto;
-  max-width: 400px;
+  max-width: 475px;
   object-fit: cover;
   object-position: top center;
 }
@@ -1522,10 +1522,11 @@ input.wa-magic-email[type=email] {
   content: '';
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  height: 45%;
+  height: 75%;
   background: linear-gradient(to top, var(--wa-user-bubble) 0%, transparent 100%);
   pointer-events: none;
   z-index: 1;
+  opacity: 0.8;
 }
 
 /* Speech bubble: original white + downward triangle, centred above avatar */
@@ -1537,7 +1538,7 @@ input.wa-magic-email[type=email] {
   background: #fff;
   border-radius: 18px;
   padding: 10px 14px;
-  width: 220px;
+  width: 255px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.20), 0 2px 8px rgba(0,0,0,0.12);
   z-index: 2;
 }
@@ -1553,15 +1554,15 @@ input.wa-magic-email[type=email] {
 }
 .wa-v6-speech p {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.3;
   color: rgba(20,20,18,0.90);
   text-align: center;
 }
 
 /* ── Content column ── */
 .wa-v6-content-col {
-  flex: 1;
+  flex: 0 0 300px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1570,7 +1571,7 @@ input.wa-magic-email[type=email] {
 }
 .wa-v6-headline {
   margin: 0 0 6px;
-  font-size: clamp(32px, 3.5vw, 54px);
+  font-size: clamp(32px, 4.5vw, 80px);
   font-weight: 800;
   line-height: 1.06;
   letter-spacing: -0.025em;
@@ -1596,7 +1597,7 @@ input.wa-magic-email[type=email] {
   letter-spacing: 0.07em;
   font-size: 12px;
   min-height: 46px;
-  padding: 10px 22px;
+  padding: 20px 32px;
   border-radius: 10px;
   flex: none;
   width: auto;
@@ -1631,7 +1632,7 @@ input.wa-magic-email[type=email] {
 
 /* ── Bullets column ── */
 .wa-v6-bullets-col {
-  flex: 0 0 280px;
+  flex: 0 0 300px;
   display: flex;
   flex-direction: column;
   justify-content: center;
