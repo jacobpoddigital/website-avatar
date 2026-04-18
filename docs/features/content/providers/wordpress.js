@@ -196,8 +196,12 @@
         'with','that','this','be','as','are','was','were','have','has','had',
         'do','does','did','will','would','could','should','may','might','can',
         'not','but','from','by','so','if','about','into','up','out','i','me',
-        'my','we','you','your','get','what','some','any','find','look','search',
-        'want','need','where','how','tell','page','info','information','more'
+        'my','we','you','your','our','get','what','some','any','find','look',
+        'search','want','need','where','how','tell','page','pages','info',
+        'information','more','main','top','best','great','good','latest',
+        'new','show','have','got','got','give','see','know','like','just',
+        'also','even','still','well','back','could','would','should','use',
+        'using','used','us','let','yes','no','hey','hi','hello','ok','okay'
       ]);
       return query.trim().toLowerCase().split(/\s+/).filter(w => w.length > 2 && !STOP.has(w));
     }
