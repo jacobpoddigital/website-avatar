@@ -123,53 +123,62 @@
     // ── INTERFACE ────────────────────────────────────────────────────────────
 
     /**
-     * Two-pass parallel search — significant words AND full phrase, pages first.
+     * Parallel search using /wp/v2/pages and /wp/v2/posts directly.
      *
-     * WP_Query with `s` does AND logic: a post must contain ALL searched words
-     * somewhere in title or content (not necessarily adjacent). Stripping stop
-     * words client-side before sending gives WP a clean set of meaningful terms
-     * to AND-match, which finds "How To Choose The Best WordPress Theme" when
-     * the query is "how to choose the best wordpress theme".
+     * The /wp/v2/search endpoint is unreliable for pages in widget context.
+     * Using /wp/v2/pages and /wp/v2/posts directly is consistent and returns
+     * the same results as browser console tests. /wp/v2/search is kept only
+     * for custom post types (type=post excludes page subtype).
      *
-     * We also run the original full query in parallel as a safety net for cases
-     * where the exact phrase IS in the content. Pages are always merged before
-     * posts so service pages aren't buried by blog volume.
+     * Stop words are stripped client-side before sending so WP AND-matches
+     * meaningful terms anywhere in title/content.
+     *
+     * Merge order: pages → custom post types → posts
      */
     async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
 
       const per      = String(limit);
       const sigWords = this._significantWords(query);
-      // Significant-words query: WP AND-matches each word anywhere in title/content
       const sigQuery = sigWords.join(' ') || query;
 
-      const makeUrl = (q, subtype) => {
-        const p = new URLSearchParams({ search: q, subtype, per_page: per, _fields: 'id,title,url,type,subtype' });
+      const pageFields = 'id,title,link,type,excerpt';
+      const postFields = 'id,title,link,type,excerpt';
+
+      const makePageUrl = (q) => {
+        const p = new URLSearchParams({ search: q, per_page: per, _fields: pageFields, status: 'publish' });
+        return `/wp/v2/pages?${p}`;
+      };
+      const makePostUrl = (q) => {
+        const p = new URLSearchParams({ search: q, per_page: per, _fields: postFields, status: 'publish' });
+        return `/wp/v2/posts?${p}`;
+      };
+      const makeCustomUrl = (q) => {
+        const p = new URLSearchParams({ search: q, type: 'post', per_page: per, _fields: 'id,title,url,type,subtype' });
         return `/wp/v2/search?${p}`;
       };
 
-      // Parallel: significant-words search (pages + posts) + full-phrase search (pages + posts)
-      // + significant-words on all post types to catch custom types
-      const [sigPages, sigPosts, sigAny, phrasePages, phrasePosts] = await Promise.allSettled([
-        this._fetch(makeUrl(sigQuery, 'page')),
-        this._fetch(makeUrl(sigQuery, 'post')),
-        this._fetch(`/wp/v2/search?${new URLSearchParams({ search: sigQuery, type: 'post', per_page: per, _fields: 'id,title,url,type,subtype' })}`),
-        sigQuery !== query ? this._fetch(makeUrl(query, 'page'))  : Promise.resolve([]),
-        sigQuery !== query ? this._fetch(makeUrl(query, 'post'))  : Promise.resolve([]),
-      ]);
+      const fetches = [
+        this._fetch(makePageUrl(sigQuery)),                                          // sig words — pages
+        this._fetch(makePostUrl(sigQuery)),                                          // sig words — posts
+        this._fetch(makeCustomUrl(sigQuery)),                                        // sig words — custom types
+        sigQuery !== query ? this._fetch(makePageUrl(query)) : Promise.resolve([]), // full phrase — pages
+        sigQuery !== query ? this._fetch(makePostUrl(query)) : Promise.resolve([]), // full phrase — posts
+      ];
+
+      const settled = await Promise.allSettled(fetches);
 
       const seen   = new Set();
-      const addAll = (res, typeFilter = null) => {
+      const addAll = (res, normalise, typeFilter = null) => {
         if (res.status === 'rejected') {
           _warn('Search fetch failed:', res.reason?.message || res.reason);
           return [];
         }
-        return res.value
-          .map(r => this._normaliseSearchResult(r))
+        const arr = Array.isArray(res.value) ? res.value : [];
+        return arr
+          .map(r => normalise(r))
           .filter(r => {
             if (!r.url) return false;
-            // Apply type filter BEFORE seen check so filtered-out URLs
-            // don't block the same URL from appearing in other result sets
             if (typeFilter && !typeFilter(r)) return false;
             if (seen.has(r.url)) return false;
             seen.add(r.url);
@@ -177,16 +186,18 @@
           });
       };
 
-      const sp  = addAll(sigPages);
-      const sc  = addAll(sigAny, r => r.type !== 'Post' && r.type !== 'Page');
-      const spo = addAll(sigPosts);
-      const pp  = addAll(phrasePages);
-      const ppo = addAll(phrasePosts);
+      const norm  = (r) => this._normalisePost(r);
+      const normS = (r) => this._normaliseSearchResult(r);
 
-      // Pages before posts; significant-word matches before exact-phrase matches
-      const results = [...sp, ...sc, ...pp, ...spo, ...ppo];
+      const pages      = addAll(settled[0], norm);
+      const customTypes= addAll(settled[2], normS, r => r.type !== 'Post' && r.type !== 'Page');
+      const phrasePages= addAll(settled[3], norm);
+      const posts      = addAll(settled[1], norm);
+      const phrasePosts= addAll(settled[4], norm);
 
-      _log(`search results: ${results.length} (sig pages: ${sp.length}, sig posts: ${spo.length}, phrase pages: ${pp.length}, phrase posts: ${ppo.length})`);
+      const results = [...pages, ...customTypes, ...phrasePages, ...posts, ...phrasePosts];
+
+      _log(`search results: ${results.length} (pages: ${pages.length}, phrase pages: ${phrasePages.length}, posts: ${posts.length}, custom: ${customTypes.length})`);
       return results;
     }
 
