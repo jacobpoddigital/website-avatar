@@ -121,74 +121,57 @@
     // ── INTERFACE ────────────────────────────────────────────────────────────
 
     /**
-     * Search all public post types via the WP REST Search endpoint.
+     * Search pages and posts separately, merging pages first.
      *
-     * Primary: /wp/v2/search?search=<q>&subtype=any&per_page=<n>
-     *   - Searches post_title + post_content across all registered searchable post types
-     *   - Gutenberg: post_content is HTML → text indexed by MySQL LIKE
-     *   - Elementor: post_content contains readable text embedded in JSON
-     *   - WPBakery / Divi: similar — text is in post_content alongside shortcodes
+     * Pages (service/landing pages) are queried independently so they are
+     * never crowded out by a high volume of blog posts on the same topic.
+     * Results are merged: pages → custom post types → posts.
+     * The AI ranking layer in content/index.js then picks the best match.
      *
-     * Supplementary: if primary returns < limit results, also query /wp/v2/posts
-     * and /wp/v2/pages for any additional matches not caught by the search index.
+     * Each subtype search runs in parallel for speed.
      */
     async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
 
-      const params = new URLSearchParams({
+      const perType = limit; // fetch up to limit from each type; dedupe trims the pool
+
+      const makeParams = (subtype) => new URLSearchParams({
         search:   query,
-        subtype:  'any',
-        per_page: String(limit),
+        subtype,
+        per_page: String(perType),
         _fields:  'id,title,url,type,subtype',
-      });
+      }).toString();
 
-      let results = [];
+      // Run pages and posts searches in parallel
+      const [pagesRes, postsRes, anyRes] = await Promise.allSettled([
+        this._fetch(`/wp/v2/search?${makeParams('page')}`),
+        this._fetch(`/wp/v2/search?${makeParams('post')}`),
+        // Also catch custom post types registered as searchable (services, case studies, etc.)
+        this._fetch(`/wp/v2/search?search=${encodeURIComponent(query)}&type=post&per_page=${perType}&_fields=id,title,url,type,subtype`),
+      ]);
 
-      try {
-        const data = await this._fetch(`/wp/v2/search?${params}`);
-        results = data.map(r => this._normaliseSearchResult(r));
-      } catch (err) {
-        _warn('Search endpoint failed:', err.message);
-        // Fall through to supplementary fetch below
-      }
-
-      // Supplementary: query posts + pages directly for richer excerpt data
-      // and to catch content the search endpoint may miss (e.g. password-protected
-      // or content types not registered as searchable).
-      if (results.length < limit) {
-        try {
-          const remaining = Math.min(limit - results.length, limit);
-          const postParams = new URLSearchParams({
-            search:   query,
-            per_page: String(remaining),
-            _fields:  'id,title,link,excerpt,type',
+      const seen  = new Set();
+      const merge = (settled, transformer) => {
+        if (settled.status !== 'fulfilled') return [];
+        return settled.value
+          .map(transformer)
+          .filter(r => {
+            if (!r.url || seen.has(r.url)) return false;
+            seen.add(r.url);
+            return true;
           });
+      };
 
-          const existingUrls = new Set(results.map(r => r.url));
+      // Pages first, then custom post types (from anyRes, excluding page/post),
+      // then blog posts last
+      const pages       = merge(pagesRes, r => this._normaliseSearchResult(r));
+      const anyResults  = merge(anyRes,   r => this._normaliseSearchResult(r))
+        .filter(r => r.type !== 'Post' && r.type !== 'Page'); // custom types only
+      const posts       = merge(postsRes, r => this._normaliseSearchResult(r));
 
-          const [posts, pages] = await Promise.allSettled([
-            this._fetch(`/wp/v2/posts?${postParams}`),
-            this._fetch(`/wp/v2/pages?${postParams}`),
-          ]);
+      const results = [...pages, ...anyResults, ...posts].slice(0, limit);
 
-          for (const settled of [posts, pages]) {
-            if (settled.status !== 'fulfilled') continue;
-            for (const p of settled.value) {
-              const url = p.link || '';
-              if (!existingUrls.has(url)) {
-                existingUrls.add(url);
-                results.push(this._normalisePost(p));
-                if (results.length >= limit) break;
-              }
-            }
-            if (results.length >= limit) break;
-          }
-        } catch (err) {
-          _warn('Supplementary post fetch failed:', err.message);
-        }
-      }
-
-      _log('search results:', results.length);
+      _log(`search results: ${results.length} (${pages.length} pages, ${anyResults.length} custom, ${posts.length} posts)`);
       return results;
     }
   }
