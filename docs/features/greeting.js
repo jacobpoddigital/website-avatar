@@ -47,7 +47,7 @@
   
       getVariant() {
         const param = new URLSearchParams(window.location.search).get('wa_greeting');
-        if (param === 'v2' || param === 'v3' || param === 'v4' || param === 'v5') return param;
+        if (param === 'v2' || param === 'v3' || param === 'v4' || param === 'v5' || param === 'v6') return param;
         return 'control';
       },
 
@@ -64,9 +64,8 @@
 
         greeting.classList.add(`wa-variant-${variant}`);
 
-        if (variant === 'v5') {
-          this._buildV5Columns(greeting);
-        }
+        if (variant === 'v5') this._buildV5Columns(greeting);
+        if (variant === 'v6') this._buildV6Layout(greeting);
 
         setTimeout(() => {
           greeting.classList.add('wa-greeting-visible');
@@ -169,6 +168,81 @@
         this.show();
       },
   
+      _buildV6Layout(greeting) {
+        const container = greeting.querySelector('.wa-greeting-container');
+        if (!container) return;
+
+        const cfg         = window.WA_CONFIG || {};
+        const avatarSrc   = cfg.avatar_url || container.querySelector('.wa-greeting-orb img')?.src || '';
+        const agentName   = cfg.agentName   || 'Your Assistant';
+        const headline    = cfg.greetingHeadline || "I'm here to help!";
+        const bubbleText  = container.querySelector('.wa-greeting-bubble p')?.textContent || '';
+        const bulletsEl   = container.querySelector('.wa-greeting-bullets');
+        const actionsEl   = container.querySelector('.wa-greeting-actions');
+        const consentEl   = container.querySelector('.wa-greeting-consent-block');
+
+        // ── Avatar column ──────────────────────────────────────────────────
+        const avatarCol = document.createElement('div');
+        avatarCol.className = 'wa-v6-avatar-col';
+
+        const speech = document.createElement('div');
+        speech.className = 'wa-v6-speech';
+        const speechP = document.createElement('p');
+        speechP.textContent = bubbleText;
+        speech.appendChild(speechP);
+
+        if (avatarSrc) {
+          const img = document.createElement('img');
+          img.className = 'wa-v6-avatar-img';
+          img.src = avatarSrc;
+          img.alt = agentName;
+          avatarCol.appendChild(speech);
+          avatarCol.appendChild(img);
+        } else {
+          const orbEl = container.querySelector('.wa-greeting-orb');
+          if (orbEl) avatarCol.appendChild(orbEl);
+          avatarCol.appendChild(speech);
+        }
+
+        // ── Content column ─────────────────────────────────────────────────
+        const contentCol = document.createElement('div');
+        contentCol.className = 'wa-v6-content-col';
+
+        const headlineEl = document.createElement('h2');
+        headlineEl.className = 'wa-v6-headline';
+        headlineEl.textContent = headline;
+
+        const sigEl = document.createElement('div');
+        sigEl.className = 'wa-v6-signature';
+        sigEl.textContent = agentName;
+
+        contentCol.appendChild(headlineEl);
+        contentCol.appendChild(sigEl);
+        if (consentEl) contentCol.appendChild(consentEl);
+        if (actionsEl) contentCol.appendChild(actionsEl);
+
+        // ── Bullets column ─────────────────────────────────────────────────
+        const bulletsCol = document.createElement('div');
+        bulletsCol.className = 'wa-v6-bullets-col';
+        if (bulletsEl) bulletsCol.appendChild(bulletsEl);
+
+        // ── Credit badge ───────────────────────────────────────────────────
+        const credit = document.createElement('div');
+        credit.className = 'wa-v6-credit';
+        credit.innerHTML = `<span>${agentName}</span><span class="wa-v6-ai-badge">AI</span>`;
+
+        // ── Assemble bar ───────────────────────────────────────────────────
+        const bar = document.createElement('div');
+        bar.className = 'wa-v6-bar';
+        bar.appendChild(avatarCol);
+        bar.appendChild(contentCol);
+        bar.appendChild(bulletsCol);
+        bar.appendChild(credit);
+
+        container.remove();
+        greeting.appendChild(bar);
+      },
+
       _buildV5Columns(greeting) {
         const container = greeting.querySelector('.wa-greeting-container');
         if (!container) return;
@@ -214,7 +288,7 @@
       },
 
       _animateVariantEntry(greeting) {
-        const bubbleP = greeting.querySelector('.wa-greeting-bubble p');
+        const bubbleP = greeting.querySelector('.wa-greeting-bubble p') || greeting.querySelector('.wa-v6-speech p');
         const bullets = greeting.querySelectorAll('.wa-greeting-bullets-list li');
         const actionsEl = document.getElementById('wa-greeting-actions');
         const consentGiven = !!localStorage.getItem('wa_gdpr_consent');
