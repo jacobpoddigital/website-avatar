@@ -1388,7 +1388,7 @@ input.wa-magic-email[type=email] {
 }
 #wa-greeting.wa-variant-v5 .wa-greeting-container {
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 36px;
   max-width: 720px;
   padding: 24px 32px;
@@ -1404,7 +1404,7 @@ input.wa-magic-email[type=email] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 0 0 220px;
+  flex: 0 0 250px;
 }
 #wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-bubble {
   width: 100%;
@@ -1414,8 +1414,8 @@ input.wa-magic-email[type=email] {
   margin-bottom: 10px;
 }
 #wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-orb .wa-orb {
-  width: 200px;
-  height: 200px;
+  width: 250px;
+  height: 250px;
 }
 #wa-greeting.wa-variant-v5 .wa-greeting-left .wa-greeting-name {
   text-align: center;
@@ -1438,6 +1438,7 @@ input.wa-magic-email[type=email] {
 #wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-bullets {
   padding: 0;
   width: 100%;
+  margin-top: 20px;
 }
 #wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-consent-block {
   width: 100%;
@@ -1457,6 +1458,213 @@ input.wa-magic-email[type=email] {
     height: 160px;
   }
   #wa-greeting.wa-variant-v5 .wa-greeting-right .wa-greeting-actions { justify-content: center; }
+}
+
+/* ── GREETING VARIANT: v6 — Full-width Stage Bar ────────────────────────────
+   JS builds a completely different DOM structure: avatar col (image extends
+   above bar + floating speech bubble) | content col (headline, signature,
+   CTAs) | bullets col. Anchored to the bottom of the viewport, full-width.
+   greetingHeadline config field used for headline; falls back to
+   "I'm here to help!". Dynamic via _buildV6Layout in greeting.js. */
+
+#wa-greeting.wa-variant-v6 {
+  align-items: flex-end;
+  justify-content: stretch;
+  padding: 0;
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-overlay {
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ── Bar ── */
+.wa-v6-bar {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  min-height: 220px;
+  overflow: visible;
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border-top: 1px solid rgba(255,255,255,0.22);
+  padding: 0 48px 0 0;
+  animation: waV6Rise 0.55s cubic-bezier(0.34, 1.10, 0.64, 1);
+}
+@keyframes waV6Rise {
+  from { opacity: 0; transform: translateY(48px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Avatar column ── */
+.wa-v6-avatar-col {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-left: 32px;
+}
+.wa-v6-avatar-img {
+  display: block;
+  height: 300px;
+  width: auto;
+  max-width: 220px;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 4px 4px 0 0;
+}
+.wa-v6-speech {
+  position: absolute;
+  top: -8px;
+  left: 56px;
+  background: #fff;
+  border-radius: 14px 14px 14px 4px;
+  padding: 11px 14px;
+  max-width: 200px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  z-index: 2;
+}
+.wa-v6-speech p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(20,20,18,0.88);
+}
+
+/* ── Content column ── */
+.wa-v6-content-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 32px 40px 28px 36px;
+}
+.wa-v6-headline {
+  margin: 0 0 6px;
+  font-size: clamp(32px, 3.5vw, 52px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  color: #fff;
+}
+.wa-v6-signature {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-size: clamp(18px, 1.8vw, 26px);
+  color: rgba(255,255,255,0.65);
+  margin-bottom: 22px;
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-actions {
+  justify-content: flex-start;
+  margin-bottom: 0;
+  gap: 10px;
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-btn {
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: 12px;
+  min-height: 46px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  flex: none;
+  width: auto;
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-btn-label,
+#wa-greeting.wa-variant-v6 .wa-greeting-btn-icon { color: #fff; }
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak {
+  background: var(--wa-user-bubble);
+  border-color: transparent;
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak .wa-greeting-btn-label,
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak .wa-greeting-btn-icon {
+  color: var(--wa-primary-text);
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-btn:hover {
+  background: rgba(255,255,255,0.22);
+  transform: translateY(-2px);
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-btn--speak:hover {
+  background: var(--wa-user-bubble-dark);
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-consent-block {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.25);
+  margin-bottom: 0;
+}
+#wa-greeting.wa-variant-v6 .wa-greeting-consent-text { color: rgba(255,255,255,0.75); }
+#wa-greeting.wa-variant-v6 .wa-greeting-consent-text a { color: rgba(255,255,255,0.9); }
+
+/* ── Bullets column ── */
+.wa-v6-bullets-col {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 28px 0 28px 0;
+}
+.wa-v6-bullets-col .wa-greeting-bullets { padding: 0; }
+.wa-v6-bullets-col .wa-greeting-bullets-list li {
+  font-size: 12px;
+  color: rgba(255,255,255,0.80);
+  padding: 7px 0 7px 14px;
+}
+.wa-v6-bullets-col .wa-greeting-bullets-list li::before {
+  background: rgba(255,255,255,0.55);
+  width: 5px; height: 5px;
+}
+.wa-v6-bullets-col .wa-greeting-bullets-list li + li {
+  border-top-color: rgba(255,255,255,0.10);
+}
+
+/* ── Credit badge ── */
+.wa-v6-credit {
+  position: absolute;
+  bottom: 10px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.50);
+}
+.wa-v6-ai-badge {
+  background: var(--wa-user-bubble-light);
+  color: var(--wa-primary-text);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Mobile: stack vertically ── */
+@media (max-width: 640px) {
+  .wa-v6-bar {
+    flex-direction: column;
+    align-items: center;
+    padding: 0 20px 24px;
+    min-height: 0;
+  }
+  .wa-v6-avatar-col { padding-left: 0; align-items: center; }
+  .wa-v6-avatar-img { height: 180px; }
+  .wa-v6-speech { position: static; margin-bottom: 12px; max-width: 100%; }
+  .wa-v6-content-col { padding: 20px 0 16px; align-items: center; text-align: center; }
+  .wa-v6-headline { text-align: center; }
+  .wa-v6-signature { text-align: center; }
+  #wa-greeting.wa-variant-v6 .wa-greeting-actions { justify-content: center; }
+  .wa-v6-bullets-col { flex: none; width: 100%; padding: 0 0 16px; }
+  .wa-v6-credit { position: static; margin-top: 8px; }
 }
 
 /* Action button label styling */
