@@ -165,17 +165,15 @@
       }
     };
 
-    WA.onAgentMessage = (text, knowledgeContext) => {
+    WA.onAgentMessage = (text) => {
       // While a client tool (e.g. ecom_product_search) is executing, the agent
       // may send intermediate "searching..." messages. Replace the thinking bubble
       // text instead of stacking a new message — and don't save to session.
       if (WA._ecomToolActive) {
         if (WA._ecomThinkingBubble) {
-          // Update existing bubble in-place
           const textEl = WA._ecomThinkingBubble.querySelector('.wa-msg-text');
           if (textEl) textEl.textContent = text;
         } else if (typeof WA.showEcomThinkingBubble === 'function') {
-          // First intermediate phrase — create the thinking bubble
           WA.showEcomThinkingBubble(text);
         }
         return;
@@ -186,9 +184,6 @@
         WA._ecomThinkingBubble = null;
       }
       if (typeof WA.agentSay === 'function') WA.agentSay(text);
-      if (typeof WA.handleAgentMessage === 'function') {
-        WA.handleAgentMessage(WA._lastUserMessage || '', text, knowledgeContext);
-      }
     };
 
     WA.onUserMessage = (text) => {

@@ -1,6 +1,6 @@
 /**
  * core/ai.js — OpenAI Integration
- * Form fill AI conversation + action decision engine
+ * Form fill AI conversation
  * Pure async functions - return data, don't mutate global state directly
  */
 
@@ -10,9 +10,7 @@
   const CONFIG = window.WA_CONFIG || {};
   const OPENAI_PROXY = CONFIG.openaiProxyUrl || 'https://backend.jacob-e87.workers.dev/classify';
 
-  // Module-level controllers for cancellation
   let formAIController = null;
-  let decideController = null;
 
   // ─── CIRCUIT BREAKER ──────────────────────────────────────────────────────
   // After 3 consecutive OpenAI failures, disable AI actions for the rest of
@@ -31,11 +29,6 @@
   }
 
   // ─── FORM AI ──────────────────────────────────────────────────────────────
-
-  const SKIP_PHRASES = [
-    'are you still there', 'still there', "you're not responding",
-    'gotten distracted', 'stepped away', 'seems like you'
-  ];
 
   async function handleFormInputAI(userText, fields, recentMessages) {
     if (_aiDisabled) return { error: 'network', message: "I'm not able to process that right now — could you try again later?" };
@@ -140,270 +133,9 @@ Rules:
     }
   }
 
-  // ─── KNOWLEDGE CONTEXT PARSER ─────────────────────────────────────────────
-
-  function parseKnowledgeIntent(knowledgeContext, pageMap) {
-    if (!knowledgeContext) return null;
-    
-    const { intent, target_page, section, confidence, keywords } = knowledgeContext;
-    
-    // ──────────────────────────────────────────────────────────────────────
-    // GATE 1: Must have at least one of intent, target_page, or section
-    // ──────────────────────────────────────────────────────────────────────
-    if (!intent && !target_page && !section) {
-      if (WA.DEBUG) console.log('[WA] No intent, target_page, or section — skipping OpenAI');
-      return { actions: [] };
-    }
-    
-    // ──────────────────────────────────────────────────────────────────────
-    // GATE 2: Confidence must be high enough
-    // ──────────────────────────────────────────────────────────────────────
-    if ((confidence || 0) < 0.8) {
-      if (WA.DEBUG) console.log('[WA] Knowledge context confidence too low:', confidence, '— skipping OpenAI');
-      return { actions: [] };
-    }
-    
-    // ──────────────────────────────────────────────────────────────────────
-    // GATE 3: Must have navigation context (target_page or section)
-    // ──────────────────────────────────────────────────────────────────────
-    if (!target_page && !section) {
-      if (WA.DEBUG) console.log('[WA] No target_page or section — skipping OpenAI');
-      return { actions: [] };
-    }
-    
-    // ──────────────────────────────────────────────────────────────────────
-    // ALL GATES PASSED: Proceed to OpenAI with knowledge context
-    // ──────────────────────────────────────────────────────────────────────
-    if (WA.DEBUG) {
-      console.log('[WA] Actionable knowledge context — proceeding to OpenAI');
-      console.log('[WA] Intent:', intent, '| Page:', target_page, '| Section:', section, '| Keywords:', keywords);
-    }
-    
-    return null; // Signal: call OpenAI
-  }
-
-  // ─── TRANSFORM PAGE CONTEXT FOR OPENAI ────────────────────────────────────
-  
-  function transformPageContextForAI(pageContext) {
-    // Transform WA.PAGE_CONTEXT.page.sections into a compact format for OpenAI.
-    // Keep only what the model needs: id, title, sectionType, a short summary, and
-    // subsection ids/titles for targeting. Strip keywords and long subsection summaries
-    // to keep prompt size manageable.
-    const elements = [];
-
-    if (pageContext?.page?.sections) {
-      pageContext.page.sections.forEach((section, idx) => {
-        const el = {
-          id: section.id || `wa_section_${idx}`,
-          sectionType: section.type,
-          title: section.title,
-          summary: (section.summary || '').slice(0, 120),
-          actions: ['scroll_to']
-        };
-
-        // Include subsections for targeting — id and title only
-        if (section.subsections && section.subsections.length > 0) {
-          el.subsections = section.subsections.map(sub => ({
-            id: sub.id,
-            title: sub.title
-          }));
-        }
-
-        elements.push(el);
-      });
-    }
-
-    return elements;
-  }
-
-  // ─── ACTION DECISION ENGINE ───────────────────────────────────────────────
-
-  async function decideActions(userMessage, agentMessage, knowledgeContext, pageContext, recentMessages, actions) {
-
-    // ──────────────────────────────────────────────────────────────────────
-    // GUARD: Circuit breaker — AI disabled for this session
-    // ──────────────────────────────────────────────────────────────────────
-    if (_aiDisabled) return null;
-
-    // ──────────────────────────────────────────────────────────────────────
-    // GUARD: Action already pending/active
-    // ──────────────────────────────────────────────────────────────────────
-    if (actions.some(a => ['pending','active'].includes(a.status))) {
-      if (WA.DEBUG) console.log('[WA] Action decision skipped — action already active');
-      return null;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // GUARD: Generic conversational phrases
-    // ──────────────────────────────────────────────────────────────────────
-    if (SKIP_PHRASES.some(p => agentMessage.toLowerCase().includes(p))) {
-      if (WA.DEBUG) console.log('[WA] Action decision skipped — generic phrase');
-      return null;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // CHECK: Knowledge context decision
-    // ──────────────────────────────────────────────────────────────────────
-    if (knowledgeContext) {
-      const pageMap = WA.getPageMap ? WA.getPageMap() : [];
-      const knowledgeResult = parseKnowledgeIntent(knowledgeContext, pageMap);
-      
-      // If result is { actions: [] }, skip OpenAI
-      if (knowledgeResult !== null) {
-        return knowledgeResult;
-      }
-      
-      // Result is null → proceed to OpenAI call below
-    } else {
-      // No knowledge context at all → skip OpenAI
-      if (WA.DEBUG) console.log('[WA] No knowledge context — skipping OpenAI');
-      return null;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // CALL OPENAI: High-confidence actionable intent exists
-    // ──────────────────────────────────────────────────────────────────────
-    
-    // Cancel any in-flight request
-    if (decideController) decideController.abort();
-    decideController = new AbortController();
-
-    const domain = window.location.origin;
-    const pageMap = WA.getPageMap ? WA.getPageMap() : [];
-    const pages = pageMap.map(p => {
-      const path = p.file.replace(domain, '');
-      return `${p.label}|${path}`;
-    }).join('\n');
-
-    const currentUrl = window.location.pathname;
-
-    // Transform page context sections into elements format
-    const elements = transformPageContextForAI(pageContext);
-    const pageEls = elements.length > 0
-      ? JSON.stringify(elements, null, 2)
-      : '[]';
-
-    const recentMsgs = (Array.isArray(recentMessages) ? recentMessages : []).map(m =>
-      `${m.role === 'user' ? 'U' : 'M'}: ${m.text}`
-    ).join('\n');
-
-    // Add knowledge context to OpenAI prompt
-    const knowledgeSection = knowledgeContext ? `
-KNOWLEDGE CONTEXT:
-Intent: ${knowledgeContext.intent || 'unknown'}
-Target page: ${knowledgeContext.target_page || 'none'}
-Section: ${knowledgeContext.section || 'none'}
-Confidence: ${knowledgeContext.confidence}
-Keywords (from speech): ${knowledgeContext.keywords?.join(', ') || 'none'}
-Matched text: "${knowledgeContext.matched_text?.slice(0, 100) || ''}..."
-` : '';
-
-    const prompt = `You are deciding what actions a website chat widget should take after the agent spoke.
-
-CURRENT PAGE: ${document.title}
-URL: ${currentUrl}
-
-AVAILABLE PAGES (label|url):
-${pages}
-
-PAGE SECTIONS (JSON array):
-${pageEls}
-
-RECENT CONVERSATION:
-${recentMsgs}
-
-AGENT JUST SAID: "${agentMessage}"
-
-${knowledgeSection}
-
-Reply with JSON only:
-{
-  "actions": [
-    {
-      "type": "scroll_to"|"navigate"|"fill_form"|"navigate_then_fill"|"none",
-      "auto": true|false,
-      "section_id": "id from sections array or null",
-      "subsection_id": "id of specific subsection or null",
-      "target_url": "exact url from pages list or null",
-      "target_label": "human-readable page/section name",
-      "reason": "brief user-friendly message for why this is relevant to the intent",
-      "confidence": 0.0-1.0 (how confident you are this matches user intent)
-    }
-  ]
-}
-
-RULES:
-- Empty [] if no action needed
-- Return multiple actions when there are several valid options (e.g., multiple relevant sections)
-- Order actions by confidence score (highest first)
-- auto:true = execute now (scroll_to automatically)
-- auto:false = confirm first (navigate, fill_form)
-- target_label REQUIRED for all navigate/scroll actions - use the exact section title or page name
-- reason must be user-friendly
-- section_id should match the "id" field from the sections array
-- When the user is asking about a specific subsection (e.g. a specific article, service, or feature), set subsection_id to that subsection's id and section_id to its parent section's id; target_label should be the subsection title
-- When the user is asking about a parent section generally, leave subsection_id null
-- When keywords from speech are provided, prioritize sections and pages that match those keywords
-- summary field helps verify relevance before suggesting scroll
-- sectionType helps identify the purpose (hero=intro, pricing=costs, contact=forms, etc.)
-- If target page matches current URL (both are paths), use scroll_to. If different, use navigate.
-- Use scroll_to only when already on the target page
-- confidence: 1.0 = perfect match, 0.8 = strong match, 0.6 = possible match, <0.5 = weak/uncertain
-- Boost confidence when section keywords align with keywords from user speech
-- Max 4 actions (prioritize quality over quantity)`;
-
-    const t0 = Date.now();
-    if (WA.DEBUG) console.log('[WA] → Action decision request sent to OpenAI');
-
-    try {
-      const res = await fetch(OPENAI_PROXY, {
-        method:  'POST',
-        signal:  AbortSignal.any([decideController.signal, AbortSignal.timeout(10000)]),
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt, maxTokens: 300 })
-      });
-
-      if (!res.ok) {
-        console.warn('[WA] Action decision error:', res.status);
-        return null;
-      }
-
-      const data = await res.json();
-      const raw  = data.content || '';
-      if (WA.DEBUG) console.log(`[WA] ← Action decision ${Date.now() - t0}ms:`, raw.trim());
-
-      let parsed;
-      try {
-        parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-      } catch(e) {
-        console.warn('[WA] Bad JSON from action decision:', raw);
-        return null;
-      }
-
-      _recordAISuccess();
-
-      // Emit wa:action-confirmed when OpenAI returns at least one actionable result.
-      // ui.js (and any other listener) can use this to react after the decision is made.
-      const hasActions = parsed?.actions?.some(a => a.type && a.type !== 'none');
-      if (hasActions && WA.bus) WA.bus.emit('wa:action-confirmed', parsed);
-
-      return parsed;
-
-    } catch(e) {
-      if (e.name === 'AbortError') {
-        if (WA.DEBUG) console.log('[WA] Action decision cancelled — superseded');
-      } else {
-        console.warn('[WA] Action decision failed:', e.message);
-        _recordAIFailure();
-      }
-      return null;
-    }
-  }
-
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
   WA.handleFormInputAI = handleFormInputAI;
-  WA.decideActions     = decideActions;
   WA.formAIController  = formAIController;
 
 })();

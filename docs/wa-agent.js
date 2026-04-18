@@ -107,72 +107,6 @@
     }
   }
 
-  // ─── NAVIGATION ───────────────────────────────────────────────────────────
-
-  function navigateTo(url, label) {
-    WA.showTransition(label);
-    WA.clearQueue();
-    WA.disconnectBridge();
-    setTimeout(() => { window.location.href = url; }, 400);
-  }
-
-  function checkArrival() {
-    // Simple navigate
-    const navAction = session.actions.find(a => a.type === 'navigate' && a.status === 'active');
-    if (navAction) {
-      // Mark as complete BEFORE reconnecting so state is ready
-      navAction.status      = 'complete';
-      navAction.completedAt = Date.now();
-      WA.saveSession(session);
-      
-      // Clear action state so new messages can flow
-      WA.setState('action', 'none');
-      
-      WA.openPanel();
-      
-      // Reconnect and send arrival prompt
-      setTimeout(() => {
-        WA.reconnectBridge();
-        
-        // Wait for connection, then send arrival message
-        setTimeout(() => {
-          if (WA.bridge && WA.bridge.sendText) {
-            const context = WA.PAGE_CONTEXT?.summary || 'this page';
-            WA.bridge.sendText(`I've arrived at ${context}.`);
-          }
-        }, 1000);
-      }, 100);
-      return;
-    }
-
-    // Navigate then fill
-    if (!session.pendingOnArrival) return;
-    const { page, action } = session.pendingOnArrival;
-
-    const currentPath = window.location.pathname.replace(/\/$/, '');
-    const targetPath  = new URL(page, window.location.href).pathname.replace(/\/$/, '');
-
-    if (currentPath !== targetPath) return;
-
-    delete session.pendingOnArrival;
-    WA.saveSession(session);
-    WA.openPanel();
-
-    setTimeout(async () => {
-      const fields = WA.freshFields();
-      if (!fields.length) {
-        agentSay("I'm here but I couldn't find the contact form. You can fill it in manually.");
-        WA.reconnectBridge();
-        return;
-      }
-      action.payload.fields = fields;
-      agentSay("We're here! Let's fill out that contact form.");
-      const fullAction = WA.createAction('fill_form', action.description, action.payload);
-      session.actions.push(fullAction);
-      await WA.executeAction(fullAction, session);
-    }, 900);
-  }
-
   // ─── SESSION ARCHIVE ──────────────────────────────────────────────────────
 
   function archiveSession(s) {
@@ -255,312 +189,6 @@
     if (WA.DEBUG) console.log('[WA] Session ended — fresh state restored');
   }
 
-  // ─── ACTION CARD RENDERING ────────────────────────────────────────────────
-
-  // ─── CONTEXT FILTERING (INTENT-AWARE) ─────────────────────────────────────
-
-  function normalise(text) {
-    return (text || "")
-      .toLowerCase()
-      .replace(/[^\w\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  function scoreElement(el, ctx) {
-    let score = 0;
-  
-    const keywords = (ctx?.keywords || []).map(k => normalise(k));
-    const targetSection = normalise(ctx?.section || "");
-  
-    // Build haystack from section properties
-    const keywordString = Array.isArray(el.keywords) ? el.keywords.join(" ") : "";
-    const haystack = normalise(
-      (el.title || "") + " " +
-      (el.summary || "") + " " +
-      keywordString + " " +
-      (el.type || "")
-    );
-  
-    // console.log('[WA] Scoring:', el.id, 'type:', el.type);
-    // console.log('[WA] Target section:', targetSection);
-    // console.log('[WA] Keywords:', keywords);
-    // console.log('[WA] Haystack sample:', haystack.slice(0, 100));
-  
-    // Strong match: section type is contained in target
-    // e.g., targetSection="hero section" contains el.type="hero"
-    if (targetSection && el.type) {
-      const normalizedType = normalise(el.type);
-      if (targetSection.includes(normalizedType)) {
-        score += 30;
-        //console.log('[WA] ✅ Type match!', el.type, 'in', targetSection, '+30');
-      }
-    }
-  
-    // keyword match in haystack
-    keywords.forEach(k => {
-      if (haystack.includes(k)) {
-        score += 5;
-        //console.log('[WA] ✅ Keyword match:', k, '+5');
-      }
-    });
-  
-    // title match
-    if (targetSection && el.title) {
-      const normalizedTitle = normalise(el.title);
-      if (normalizedTitle.includes(targetSection) || targetSection.includes(normalizedTitle)) {
-        score += 15;
-        //console.log('[WA] ✅ Title match:', '+15');
-      }
-    }
-  
-    // subsection relevance
-    if (el.subsections && Array.isArray(el.subsections)) {
-      el.subsections.forEach(sub => {
-        const subText = normalise(sub.title + " " + (sub.summary || ""));
-        keywords.forEach(k => {
-          if (subText.includes(k)) {
-            score += 3;
-            //console.log('[WA] ✅ Subsection match:', sub.title, k, '+3');
-          }
-        });
-      });
-    }
-  
-    console.log('[WA] Final score:', score);
-    return score;
-  }
-
-  function filterSubsections(subsections, knowledge) {
-    if (!Array.isArray(subsections) || !knowledge) return subsections;
-
-    return subsections
-      .map(sub => ({ ...sub, _score: scoreElement(sub, knowledge) }))
-      .filter(sub => sub._score > 0)
-      .slice(0, 5);
-  }
-
-  function filterPageContext(pageContext, knowledge) {
-    if (!pageContext?.page?.sections || !knowledge) return pageContext;
-
-    const scored = pageContext.page.sections.map(section => ({
-      ...section,
-      subsections: filterSubsections(section.subsections, knowledge),
-      _score: scoreElement(section, knowledge)
-    }));
-
-    const filtered = scored
-      .filter(section => section._score > 0)
-      .sort((a, b) => b._score - a._score)
-      .slice(0, 12); // limit size
-
-    return {
-      ...pageContext,
-      page: {
-        ...pageContext.page,
-        sections: filtered
-      }
-    };
-  }
-
-  function debugFilteredContext(full, filtered, knowledge) {
-    if (!WA.DEBUG) return;
-  
-    console.group('[WA] 🧠 Context Filtering');
-    console.log('Intent:', knowledge?.intent);
-    console.log('Keywords:', knowledge?.keywords);
-    console.log('Section:', knowledge?.section);
-  
-    // Get sections from both full and filtered contexts
-    const fullSections = full?.page?.sections || [];
-    const filteredSections = filtered?.page?.sections || [];
-  
-    console.group(`📦 FULL (${fullSections.length} sections)`);
-    fullSections.forEach(section => {
-      console.log(`[${section.type}] ${section.title}`);
-      if (section.subsections?.length) {
-        console.log(`   └─ ${section.subsections.length} subsections`);
-      }
-    });
-    console.groupEnd();
-  
-    console.group(`🎯 FILTERED (${filteredSections.length} sections)`);
-    filteredSections.forEach(section => {
-      const score = section._score !== undefined ? ` (score: ${section._score.toFixed(2)})` : '';
-      console.log(`[${section.type}] ${section.title}${score}`);
-      console.log(`   keywords: ${section.keywords.slice(0, 5).join(', ')}`);
-      
-      if (section.subsections?.length) {
-        section.subsections.forEach(sub => {
-          const subScore = sub._score !== undefined ? ` (${sub._score.toFixed(2)})` : '';
-          console.log(`   ↳ ${sub.title}${subScore}`);
-        });
-      }
-    });
-    console.groupEnd();
-  
-    console.groupEnd();
-  }
-
-  // ─── AI DECISION ENGINE ───────────────────────────────────────────────────
-
-  async function handleAgentMessage(userMessage, agentMessage, knowledgeContext) {
-    // TODO: re-enable when action decision engine is needed again
-    return;
-
-    // Apply intent-aware filtering
-    const filteredContext = filterPageContext(WA.PAGE_CONTEXT, knowledgeContext);
-  
-    // Debug full vs filtered
-    debugFilteredContext(WA.PAGE_CONTEXT, filteredContext, knowledgeContext);
-  
-    // GATE: Skip OpenAI if filtering did nothing AND there are many sections
-    const fullSections = WA.PAGE_CONTEXT?.page?.sections || [];
-    const filteredSections = filteredContext?.page?.sections || [];
-
-    if (filteredSections.length === fullSections.length && fullSections.length >= 5) {
-      if (WA.DEBUG) console.log('[WA] No filtering applied (0% reduction, >=5 sections) — skipping OpenAI');
-      return;
-    }
-  
-    if (typeof WA.showActionChecking === 'function') WA.showActionChecking();
-    const result = await WA.decideActions(
-      userMessage,
-      agentMessage,
-      knowledgeContext,
-      filteredContext, // Only pass filtered context
-      session.messages.slice(-4),
-      session.actions
-    );
-    if (typeof WA.hideActionChecking === 'function') WA.hideActionChecking();
-
-    if (!result || !result.actions?.length) return;
-  
-    // Double-check still clear
-    if (session.actions.some(a => ['pending','active'].includes(a.status))) return;
-  
-    // Filter out 'none' actions
-    const validActions = result.actions.filter(a => a.type && a.type !== 'none');
-    if (!validActions.length) return;
-  
-    // Multiple high-confidence actions → show multi-action card (never auto)
-    const highConfidence = validActions.filter(a => (a.confidence || 0.8) >= 0.7);
-    if (highConfidence.length > 1) {
-      // Force all actions to require confirmation when showing choice card
-      const manualActions = highConfidence.map(a => ({ ...a, auto: false }));
-      WA.renderMultiActionCard(manualActions);
-      return;
-    }
-  
-    // Single action or mixed confidence → execute in sequence
-    for (const action of validActions) {
-      await executeDecidedAction(action);
-      if (validActions.indexOf(action) < validActions.length - 1) {
-        await WA.sleep(300);
-      }
-    }
-  }
-
-  async function executeDecidedAction(action) {
-    const { type, auto, section_id, subsection_id, element_id, target_url, target_label, reason, confidence } = action;
-    const isAuto = auto === true;
-
-    if (type === 'scroll_to') {
-      // Try section_id first (new structure), fallback to element_id (old structure)
-      const sectionIdToFind = section_id || element_id;
-
-      // Find parent section in PAGE_CONTEXT
-      const section = WA.PAGE_CONTEXT?.page?.sections?.find(s => s.id === sectionIdToFind);
-
-      if (!section) {
-        console.warn('[WA] Could not find section:', sectionIdToFind);
-        return;
-      }
-
-      // If a specific subsection was identified, scroll to that instead
-      let scrollId = section.id;
-      let scrollTitle = section.title;
-
-      if (subsection_id) {
-        const sub = section.subsections?.find(s => s.id === subsection_id);
-        if (sub) {
-          scrollId = sub.id;
-          scrollTitle = sub.title;
-        } else {
-          console.warn('[WA] subsection_id not found in section, falling back to parent:', subsection_id);
-        }
-      }
-
-      // Use target_label from AI if provided, otherwise fallback to resolved title
-      const label = target_label || scrollTitle || scrollId;
-      const description = reason || `Show you the ${label} section`;
-
-      WA.proposeAction(session, 'scroll_to', description, {
-        sectionId:    scrollId,
-        sectionTitle: label,
-        elementTitle: scrollTitle || label,  // For backward compatibility
-        confidence:   confidence
-      }, isAuto !== false); // scroll_to is auto by default
-      return;
-    }
-  
-    if (type === 'fill_form') {
-      const description = reason || 'Help you fill out the contact form';
-      WA.proposeAction(session, 'fill_form', description, { 
-        fields: WA.freshFields(),
-        confidence: confidence
-      }, isAuto);
-      return;
-    }
-  
-    if (type === 'navigate_then_fill') {
-      const contact = WA.getContactPage();
-      if (!contact) return;
-      
-      const description = reason || `Take you to the ${contact.label} and fill out the enquiry form`;
-      const result = await WA.proposeAction(session, 'navigate_then_fill',
-        description,
-        {
-          targetPage:          contact.file,
-          targetLabel:         target_label || contact.label,
-          nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } },
-          confidence:          confidence
-        },
-        isAuto
-      );
-      return result;
-    }
-  
-    if (type === 'navigate' && target_url) {
-      const targetClean  = target_url.replace(/\/$/, '');
-      const currentClean = window.location.href.replace(/\/$/, '');
-      if (targetClean === currentClean) return;
-  
-      const page    = WA.getPageMap().find(p => p.file.replace(/\/$/, '') === targetClean);
-      const label   = target_label || (page ? page.label : 'page');
-      const contact = WA.getContactPage();
-  
-      if (contact && targetClean === contact.file.replace(/\/$/, '')) {
-        WA.proposeChoiceAction(session,
-          `Would you like to just visit the ${label}, or go there and fill out the enquiry form?`,
-          [
-            { label: 'Just browse',   action: { type: 'navigate',           description: `Take you to the ${label}.`,                payload: { targetPage: contact.file, targetLabel: label } } },
-            { label: 'Fill the form', action: { type: 'navigate_then_fill', description: `Take you to the ${label} and fill the form.`, payload: { targetPage: contact.file, targetLabel: label, nextActionOnArrival: { type: 'fill_form', description: 'Fill out the contact form.', payload: { fields: [] } } } } }
-          ]
-        );
-      } else {
-        const description = reason || `Take you to the ${label}`;
-        const result = await WA.proposeAction(session, 'navigate', description, { 
-          targetPage: target_url, 
-          targetLabel: label,
-          confidence: confidence
-        }, isAuto);
-        return result;
-      }
-      return;
-    }
-  }
-
   // ─── INIT ─────────────────────────────────────────────────────────────────
 
   // init() is async so it can await WA.loadSession(), which now fetches
@@ -578,7 +206,6 @@
     }
 
     const hasActiveSession = session.messages.length > 0;
-    const hasNavAction     = session.actions.some(a => a.type === 'navigate' && a.status === 'active');
     const hasFormResume    = !!(session.activeFormActionId &&
                                session.actions.find(a => a.id === session.activeFormActionId && a.status === 'active'));
 
@@ -595,7 +222,7 @@
     });
 
     // Resume interrupted form fill
-    if (session.activeFormActionId && !session.pendingOnArrival) {
+    if (session.activeFormActionId) {
       const resumeAction = session.actions.find(
         a => a.id === session.activeFormActionId && a.status === 'active'
       );
@@ -628,10 +255,9 @@
 
     WA.scrollToBottom();
     WA.renderDebug();
-    checkArrival();
 
     // Auto-connect if session active
-    if (hasActiveSession && !hasNavAction && !hasFormResume) {
+    if (hasActiveSession && !hasFormResume) {
       WA.reconnectBridge();
     }
 
@@ -651,11 +277,8 @@
   WA.handleKey            = handleKey;
   WA.agentSay             = agentSay;
   WA.userSay              = userSay;
-  WA.navigateTo           = navigateTo;
-  WA.endSession           = endSession;
-  WA.executeDecidedAction = executeDecidedAction;
-  WA.handleAgentMessage   = handleAgentMessage;
-  WA._lastUserMessage     = '';
+  WA.endSession        = endSession;
+  WA._lastUserMessage  = '';
 
   // ─── START ────────────────────────────────────────────────────────────────
 

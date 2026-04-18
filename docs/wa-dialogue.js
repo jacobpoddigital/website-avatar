@@ -207,20 +207,9 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
   // ─── CONTEXT BUILDERS ─────────────────────────────────────────────────────
 
   function buildPageContext() {
-    const pages = WA.PAGE_MAP || [];
-    const forms = WA.FORM_MAP || [];
     const lines = [
       `CURRENT PAGE: ${document.title} (${window.location.href})`,
-      // TESTING: pages and form fields temporarily disabled
-      // `AVAILABLE PAGES (${pages.length}):`,
-      // ...pages.map(p => `  - ${p.label}: ${p.file}`),
     ];
-    // if (forms.length) {
-    //   lines.push(`CONTACT FORM FIELDS:`);
-    //   forms[0]?.fields?.forEach(f => {
-    //     lines.push(`  - ${f.label}${f.required ? ' *' : ''} (${f.name})`);
-    //   });
-    // }
 
     // Prepend profile block so it appears at the top of the context
     const profileCtx = buildProfileContext();
@@ -253,34 +242,7 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
     lines.push('RECENT CONVERSATION:');
     recent.forEach(m => lines.push(`  ${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`));
     lines.push('');
-  
-    // URL validation failure - report FIRST so agent can immediately act
-    if (s.lastUrlValidationFailure) {
-      const failure = s.lastUrlValidationFailure;
-      const isRecent = Date.now() - failure.attemptedAt < 10000; // Last 10 seconds
-      
-      if (isRecent) {
-        lines.push('⚠️ CRITICAL: NAVIGATION FAILURE DETECTED');
-        lines.push(`Failed URL: ${failure.targetUrl}`);
-        lines.push(`Page label: "${failure.targetLabel}"`);
-        lines.push(`User asked: "${failure.userMessage}"`);
-        lines.push(`You responded: "${failure.agentResponse}"`);
-        lines.push('');
-        lines.push('PROBLEM: The URL you suggested returned a 404 error. The page does not exist.');
-        lines.push('');
-        lines.push('REQUIRED ACTION:');
-        lines.push('1. Check the AVAILABLE PAGES list in your context for valid alternatives');
-        lines.push('2. Suggest a different page that matches the user\'s intent');
-        lines.push('3. If no exact match exists, suggest the closest alternative and explain');
-        lines.push('4. Apologize for the confusion and move forward with a valid suggestion');
-        lines.push('');
-        
-        // Clear the failure after reporting and persist via backend (replaces sessionStorage.setItem)
-        delete s.lastUrlValidationFailure;
-        if (WA.saveSession) WA.saveSession(s); // fire-and-forget
-      }
-    }
-  
+
     // Active form fill — critical: do NOT say form was submitted
     const activeForm = (s.actions || []).find(a => a.type === 'fill_form' && a.status === 'active');
     if (activeForm) {
@@ -447,6 +409,59 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
       }
       warn('authenticate tool: showMagicLinkPrompt not available');
       return { error: 'prompt_unavailable' };
+    };
+
+    // ── get_sections ──────────────────────────────────────────────────────────
+    // Returns the sections discovered on the current page by wa-discover.js.
+    // Called on-demand so page context is never exposed unless the agent needs it.
+    tools['get_sections'] = async () => {
+      log('Client tool called: get_sections');
+      const sections = WA.PAGE_CONTEXT?.page?.sections;
+      if (!sections?.length) {
+        return { sections: [], message: 'No sections found on this page.' };
+      }
+      return {
+        sections: sections.map(s => ({
+          id:          s.id,
+          title:       s.title,
+          subsections: s.subsections?.map(sub => ({ id: sub.id, title: sub.title })) || []
+        }))
+      };
+    };
+
+    // ── navigate_to ───────────────────────────────────────────────────────────
+    // Direct page navigation. Agent uses this when it knows the exact URL
+    // (e.g. from a prior find_pages result). find_pages handles topic-based
+    // discovery; navigate_to handles the actual navigation step.
+    tools['navigate_to'] = async ({ url } = {}) => {
+      log('Client tool called: navigate_to', url);
+      if (!url) return { error: 'url_required' };
+      const targetClean  = url.replace(/\/$/, '');
+      const currentClean = window.location.href.replace(/\/$/, '');
+      if (targetClean === currentClean) return { already_here: true };
+      window.location.href = url;
+      return { navigating: true, url };
+    };
+
+    // ── scroll_to ─────────────────────────────────────────────────────────────
+    // Scrolls to a section by ID. Agent should call get_sections first to
+    // obtain valid section IDs, then pass the chosen id here.
+    tools['scroll_to'] = async ({ section_id } = {}) => {
+      log('Client tool called: scroll_to', section_id);
+      if (!section_id) return { error: 'section_id_required' };
+      const handler = WA.ActionRegistry?.['scroll_to'];
+      if (!handler) return { error: 'scroll_to_unavailable' };
+      try {
+        const sections = WA.PAGE_CONTEXT?.page?.sections || [];
+        const section  = sections.find(s => s.id === section_id)
+          || sections.flatMap(s => s.subsections || []).find(s => s.id === section_id);
+        const title = section?.title || section_id;
+        await handler.execute({ type: 'scroll_to', payload: { sectionId: section_id, sectionTitle: title } });
+        return { scrolled_to: title };
+      } catch (err) {
+        const available = (WA.PAGE_CONTEXT?.page?.sections || []).map(s => s.title);
+        return { error: err.message, available_sections: available };
+      }
     };
 
     const toolTypes = [
@@ -695,63 +710,14 @@ import { Conversation } from 'https://esm.sh/@elevenlabs/client@0.14.0';
           if (msg.source === 'ai') {
             // In text-only mode isFinal may be undefined — only skip if explicitly false
             if (msg.isFinal === false) return;
-            
-            // Parse knowledge context from JSON if present
-            let knowledgeContext = null;
-            let cleanText = msg.message;
-            
-            try {
-              // Look for JSON block in response (```json ... ```)
-              const jsonMatch = msg.message.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[1]);
-                knowledgeContext = {
-                  intent: parsed.intent || null,
-                  target_page: parsed.page && parsed.page !== 'unknown' ? parsed.page : null,
-                  section: parsed.section && parsed.section !== 'unknown' ? parsed.section : null,
-                  confidence: parsed.confidence || 0.8,
-                  keywords: parsed.keywords || [],
-                  matched_text: parsed.answer || cleanText
-                };
-                // Remove JSON block from display text
-                cleanText = msg.message.replace(/```json[\s\S]*?```/g, '').trim();
-              } else {
-                // Fallback: try to find raw JSON object
-                const rawJsonMatch = msg.message.match(/\{[\s\S]*?"intent"[\s\S]*?\}/);
-                if (rawJsonMatch) {
-                  const parsed = JSON.parse(rawJsonMatch[0]);
-                  knowledgeContext = {
-                    intent: parsed.intent || null,
-                    target_page: parsed.page && parsed.page !== 'unknown' ? parsed.page : null,
-                    section: parsed.section && parsed.section !== 'unknown' ? parsed.section : null,
-                    confidence: parsed.confidence || 0.8,
-                    keywords: parsed.keywords || [],
-                    matched_text: parsed.answer || cleanText
-                  };
-                  // Remove JSON from display text
-                  cleanText = msg.message.replace(/\{[\s\S]*?"intent"[\s\S]*?\}/, '').trim();
-                }
-              }
-            } catch(e) {
-              console.warn('[WA:Bridge] Failed to parse knowledge context:', e);
-            }
-            
-            // Clean up system markers and formatting
-            cleanText = cleanText.replace(/\[[^\]]+\]\s*/g, '').trim();
-            cleanText = cleanText.replace(/^Answer:\s*/i, '').trim();
-            cleanText = cleanText.replace(/^JSON:\s*/i, '').trim();
-            
+
+            const cleanText = msg.message.trim();
             if (!cleanText) return;
 
-            if (DEBUG) {
-              log(`Agent: "${cleanText.slice(0, 80)}"`);
-              if (knowledgeContext) {
-                log('Knowledge context:', knowledgeContext);
-              }
-            }
+            if (DEBUG) log(`Agent: "${cleanText.slice(0, 80)}"`);
 
             if (typeof WA.onAgentMessage === 'function') {
-              WA.onAgentMessage(cleanText, knowledgeContext);
+              WA.onAgentMessage(cleanText);
             }
             WA.inactivity?.tick();
           }

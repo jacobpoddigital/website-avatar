@@ -10,7 +10,6 @@
 
   let typingEl          = null;
   let waitingHintEl     = null;
-  let actionCheckingEl  = null;
   let typingInterval    = null;
   let waitingHintActive = false;
 
@@ -81,24 +80,7 @@
     if (waitingHintEl) { waitingHintEl.remove(); waitingHintEl = null; }
   }
 
-  // ─── ACTION CHECKING INDICATOR ────────────────────────────────────────────
-  // Shows a transient "Checking…" pill while OpenAI evaluates an action.
-  // Removed automatically once decideActions returns (positive or negative).
 
-  function showActionChecking() {
-    hideActionChecking();
-    const msgs = document.getElementById('wa-messages');
-    if (!msgs) return;
-    actionCheckingEl = document.createElement('div');
-    actionCheckingEl.className = 'wa-action-checking';
-    actionCheckingEl.textContent = 'Checking what I can do…';
-    msgs.appendChild(actionCheckingEl);
-    scrollToBottom();
-  }
-
-  function hideActionChecking() {
-    if (actionCheckingEl) { actionCheckingEl.remove(); actionCheckingEl = null; }
-  }
 
   // ─── MESSAGE FORMATTING ───────────────────────────────────────────────────
 
@@ -198,7 +180,7 @@
     card.querySelectorAll('button[data-btn-idx]').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.btnIdx);
-        buttons[idx].action();
+        buttons[idx].action(btn);
       });
     });
 
@@ -499,7 +481,7 @@
     buttons.push({
       text:   'No thanks',
       style:  'deny',
-      action: () => {}
+      action: (btn) => { btn.closest('.wa-action-card')?.remove(); }
     });
 
     WA.renderCard({
@@ -610,23 +592,6 @@
         { text: 'No thanks', style: 'deny', action: () => WA.denyAction(action.id, WA.getSession()) }
       ]
     });
-  }
-
-  function renderMultiActionCard(actions) {
-    const sorted = [...actions].sort((a, b) => (b.confidence || 0.8) - (a.confidence || 0.8));
-    const buttons = sorted.map(action => {
-      const label    = action.target_label || action.description || action.type;
-      const conf     = action.confidence || 0.8;
-      const indicator = conf < 0.7 ? ' (?)' : '';
-      return {
-        text:   label + indicator,
-        label:  ACTION_TYPE_LABELS[action.type] || action.type,
-        style:  'confirm',
-        action: async () => { if (WA.executeDecidedAction) await WA.executeDecidedAction(action); }
-      };
-    });
-    buttons.push({ text: 'No thanks', style: 'deny', action: () => { if (WA.setState) WA.setState('action', 'none'); } });
-    WA.renderCard({ label: 'Choose an action', message: 'I found a few options for you:', buttons });
   }
 
   // ─── FIELD & FORM HELPERS ─────────────────────────────────────────────────
@@ -1100,8 +1065,6 @@
 
   // ─── EXPOSE ───────────────────────────────────────────────────────────────
 
-  WA.showActionChecking     = showActionChecking;
-  WA.hideActionChecking     = hideActionChecking;
   WA.showTyping             = showTyping;
   WA.hideTyping             = hideTyping;
   WA.showWaitingHint        = showWaitingHint;
@@ -1118,7 +1081,6 @@
   WA.updateActionCardStatus = updateActionCardStatus;
   WA.renderOptionsCard      = renderOptionsCard;
   WA.renderActionCard       = renderActionCard;
-  WA.renderMultiActionCard  = renderMultiActionCard;
   WA.toggleChat             = toggleChat;
   WA.openPanel              = openPanel;
   WA.openPanelDirect        = openPanelDirect;
