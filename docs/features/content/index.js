@@ -75,9 +75,9 @@
         if (!provider) return { error: 'Content search not available on this site' };
         if (!provider.isAvailable()) return { error: `${provider.platformName} REST API is not reachable` };
 
-        // ElevenLabs passes a comma-separated string — parse into individual items
+        // ElevenLabs passes a pipe-separated string — parse into individual items
         const raw   = action.payload?.items || '';
-        const items = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 5);
+        const items = raw.split('|').map(s => s.trim()).filter(Boolean).slice(0, 5);
         if (!items.length) return { error: 'items is required' };
 
         _log('find_pages:', items);
