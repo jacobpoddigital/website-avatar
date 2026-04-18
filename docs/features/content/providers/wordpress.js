@@ -159,7 +159,7 @@
       ]);
 
       const seen   = new Set();
-      const addAll = (res) => {
+      const addAll = (res, typeFilter = null) => {
         if (res.status === 'rejected') {
           _warn('Search fetch failed:', res.reason?.message || res.reason);
           return [];
@@ -167,14 +167,18 @@
         return res.value
           .map(r => this._normaliseSearchResult(r))
           .filter(r => {
-            if (!r.url || seen.has(r.url)) return false;
+            if (!r.url) return false;
+            // Apply type filter BEFORE seen check so filtered-out URLs
+            // don't block the same URL from appearing in other result sets
+            if (typeFilter && !typeFilter(r)) return false;
+            if (seen.has(r.url)) return false;
             seen.add(r.url);
             return true;
           });
       };
 
       const sp  = addAll(sigPages);
-      const sc  = addAll(sigAny).filter(r => r.type !== 'Post' && r.type !== 'Page');
+      const sc  = addAll(sigAny, r => r.type !== 'Post' && r.type !== 'Page');
       const spo = addAll(sigPosts);
       const pp  = addAll(phrasePages);
       const ppo = addAll(phrasePosts);
