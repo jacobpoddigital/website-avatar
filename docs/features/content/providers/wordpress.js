@@ -126,15 +126,12 @@
      * Query-aware search strategy:
      *
      * Pages + custom post types are always searched — they answer navigational queries.
+     * Pages use an incremental keyword-reduction chain: all sig words → N-1 → … → 1 word →
+     * original phrase. The chain stops as soon as any step returns results, so a query like
+     * "seo services" that returns 0 pages will retry with just "seo" before giving up.
      * Posts are only searched when:
      *   (a) the query is informational/long-tail (question words, 4+ sig words, guide/tips/etc.), OR
-     *   (b) the page search returned 0 results.
-     *
-     * This keeps results tight for "where is your SEO page?" style queries while
-     * still surfacing blog content for "how to choose the best WordPress theme".
-     *
-     * Stop words stripped client-side so WP AND-matches meaningful terms in title/content.
-     * If sig-word query yields nothing, full original phrase is tried as a fallback.
+     *   (b) the entire pages chain + custom types returned 0 results.
      */
     async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
@@ -153,15 +150,24 @@
       const makePostUrl   = (q) => `/wp/v2/posts?${new URLSearchParams({ search: q, per_page: per, _fields: fields, status: 'publish' })}`;
       const makeCustomUrl = (q) => `/wp/v2/search?${new URLSearchParams({ search: q, type: 'post', per_page: per, _fields: customFields })}`;
 
-      const seen   = new Set();
-      const addAll = (res, normalise, typeFilter = null) => {
-        if (res.status === 'rejected') {
-          _warn('Search fetch failed:', res.reason?.message || res.reason);
-          return [];
+      // Build the incremental keyword chain: all words → N-1 → … → 1 → original phrase
+      const _buildChain = (words, original) => {
+        const chain = [];
+        for (let n = words.length; n >= 1; n--) {
+          const q = words.slice(0, n).join(' ');
+          if (q && !chain.includes(q)) chain.push(q);
         }
-        const arr = Array.isArray(res.value) ? res.value : [];
-        return arr
-          .map(r => normalise(r))
+        if (original && !chain.includes(original)) chain.push(original);
+        return chain;
+      };
+
+      const seen = new Set();
+      const norm  = (r) => this._normalisePost(r);
+      const normS = (r) => this._normaliseSearchResult(r);
+
+      const _collect = (raw, normFn, typeFilter = null) =>
+        (Array.isArray(raw) ? raw : [])
+          .map(r => normFn(r))
           .filter(r => {
             if (!r.url) return false;
             if (typeFilter && !typeFilter(r)) return false;
@@ -169,40 +175,44 @@
             seen.add(r.url);
             return true;
           });
-      };
 
-      const norm  = (r) => this._normalisePost(r);
-      const normS = (r) => this._normaliseSearchResult(r);
-
-      // ── Phase 1: pages + custom types (always) ─────────────────────────────
-      const [sigPageRes, sigCustomRes, phrasePageRes] = await Promise.allSettled([
-        this._fetch(makePageUrl(sigQuery)),
-        this._fetch(makeCustomUrl(sigQuery)),
-        sigQuery !== query ? this._fetch(makePageUrl(query)) : Promise.resolve([]),
-      ]);
-
-      const pages       = addAll(sigPageRes,    norm);
-      const customTypes = addAll(sigCustomRes,  normS, r => r.type !== 'Post' && r.type !== 'Page');
-      const phrasePages = addAll(phrasePageRes, norm);
-
-      const pageCount = pages.length + phrasePages.length;
-
-      // ── Phase 2: posts — only if long-tail query OR no pages found ─────────
-      let posts = [], phrasePosts = [];
-
-      if (longTail || pageCount === 0) {
-        _log(`fetching posts (reason: ${longTail ? 'long-tail' : 'no pages found'})`);
-        const [sigPostRes, phrasePostRes] = await Promise.allSettled([
-          this._fetch(makePostUrl(sigQuery)),
-          sigQuery !== query ? this._fetch(makePostUrl(query)) : Promise.resolve([]),
-        ]);
-        posts       = addAll(sigPostRes,    norm);
-        phrasePosts = addAll(phrasePostRes, norm);
+      // ── Phase 1a: pages — walk the chain, stop at first hit ───────────────
+      const pageChain = _buildChain(sigWords, sigQuery !== query ? query : null);
+      let pages = [];
+      for (const q of pageChain) {
+        _log(`trying pages: "${q}"`);
+        const raw = await this._fetch(makePageUrl(q)).catch(e => { _warn(e.message); return []; });
+        const hits = _collect(raw, norm);
+        if (hits.length > 0) {
+          pages = hits;
+          _log(`pages hit (${hits.length}) with "${q}"`);
+          break;
+        }
       }
 
-      const results = [...pages, ...customTypes, ...phrasePages, ...posts, ...phrasePosts];
+      // ── Phase 1b: custom post types — single broad query ──────────────────
+      const customRaw  = await this._fetch(makeCustomUrl(sigQuery)).catch(e => { _warn(e.message); return []; });
+      const customTypes = _collect(customRaw, normS, r => r.type !== 'Post' && r.type !== 'Page');
 
-      _log(`search results: ${results.length} (pages: ${pages.length}, phrasePages: ${phrasePages.length}, custom: ${customTypes.length}, posts: ${posts.length + phrasePosts.length})`);
+      // ── Phase 2: posts — only if long-tail OR pages + custom types empty ──
+      let posts = [];
+      if (longTail || (pages.length + customTypes.length === 0)) {
+        _log(`fetching posts (reason: ${longTail ? 'long-tail' : 'no pages/custom found'})`);
+        const postChain = _buildChain(sigWords, sigQuery !== query ? query : null);
+        for (const q of postChain) {
+          _log(`trying posts: "${q}"`);
+          const raw  = await this._fetch(makePostUrl(q)).catch(e => { _warn(e.message); return []; });
+          const hits = _collect(raw, norm);
+          if (hits.length > 0) {
+            posts = hits;
+            _log(`posts hit (${hits.length}) with "${q}"`);
+            break;
+          }
+        }
+      }
+
+      const results = [...pages, ...customTypes, ...posts];
+      _log(`search results: ${results.length} (pages: ${pages.length}, custom: ${customTypes.length}, posts: ${posts.length})`);
       return results;
     }
 
