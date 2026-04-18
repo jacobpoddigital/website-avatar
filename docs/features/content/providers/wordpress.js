@@ -123,6 +123,33 @@
     // ── INTERFACE ────────────────────────────────────────────────────────────
 
     /**
+     * Resolve a known page/post title to a confirmed URL.
+     * Used by find_pages — the agent already knows the title exists, we just need the URL.
+     * Strips punctuation (handles "PPC in 2026: What You Need to Know" style titles),
+     * searches pages and posts in parallel, returns the first match.
+     */
+    async resolve(title) {
+      const q = title.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!q) return null;
+
+      _log('resolve:', q);
+      const fields = 'id,title,link,type,excerpt';
+      const params = new URLSearchParams({ search: q, per_page: '5', _fields: fields, status: 'publish' });
+
+      const [pageRes, postRes] = await Promise.allSettled([
+        this._fetch(`/wp/v2/pages?${params}`),
+        this._fetch(`/wp/v2/posts?${params}`)
+      ]);
+
+      const pages = pageRes.status === 'fulfilled' && Array.isArray(pageRes.value) ? pageRes.value : [];
+      const posts  = postRes.status === 'fulfilled' && Array.isArray(postRes.value)  ? postRes.value  : [];
+
+      // Pages take priority — return first page hit, then first post hit
+      const hit = pages[0] || posts[0] || null;
+      return hit ? this._normalisePost(hit) : null;
+    }
+
+    /**
      * Query-aware search strategy:
      *
      * Pages + custom post types are always searched — they answer navigational queries.

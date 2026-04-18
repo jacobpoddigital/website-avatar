@@ -87,10 +87,10 @@
           const results = [];
 
           for (const item of items) {
-            const hits = await provider.search(item, { limit: 5 });
-            if (hits.length && !seen.has(hits[0].url)) {
-              seen.add(hits[0].url);
-              results.push(hits[0]);
+            const hit = await provider.resolve(item);
+            if (hit && !seen.has(hit.url)) {
+              seen.add(hit.url);
+              results.push(hit);
             }
           }
 

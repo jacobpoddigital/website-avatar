@@ -405,6 +405,9 @@
   // ─── AI DECISION ENGINE ───────────────────────────────────────────────────
 
   async function handleAgentMessage(userMessage, agentMessage, knowledgeContext) {
+    // TODO: re-enable when action decision engine is needed again
+    return;
+
     // Apply intent-aware filtering
     const filteredContext = filterPageContext(WA.PAGE_CONTEXT, knowledgeContext);
   
