@@ -65,29 +65,6 @@
 
   // ─── ACTION HANDLERS ──────────────────────────────────────────────────────
 
-  // NAVIGATE
-  registerAction({
-    type:            'navigate',
-    label:           'Navigate to page',
-    permissionLevel: 'propose',
-
-    execute: async (action) => {
-      const { targetPage, targetLabel } = action.payload;
-      if (WA.agentSay) WA.agentSay(`Navigating you to the ${targetLabel}…`);
-      await WA.sleep(800);
-      if (WA.navigateTo) WA.navigateTo(targetPage, targetLabel);
-    },
-
-    onError: async (err, action) => {
-      if (WA.agentSay) WA.agentSay(`I couldn't navigate to ${action.payload.targetLabel}. You can find it in the menu.`);
-      if (WA.reconnectBridge) WA.reconnectBridge();
-    },
-
-    onComplete: async () => {
-      // Reconnect happens in checkArrival() on new page
-    }
-  });
-
   // FILL FORM
   registerAction({
     type:            'fill_form',
@@ -108,55 +85,6 @@
 
     onComplete: async (action) => {
       setTimeout(() => { if (WA.reconnectBridge) WA.reconnectBridge(); }, 1000);
-    }
-  });
-
-  // NAVIGATE THEN FILL
-  registerAction({
-    type:            'navigate_then_fill',
-    label:           'Go to contact page and fill form',
-    permissionLevel: 'propose',
-
-    execute: async (action, session) => {
-      const { targetPage, targetLabel, nextActionOnArrival } = action.payload;
-      if (WA.agentSay) WA.agentSay(`I'll take you to the ${targetLabel} and we'll fill out the form together.`);
-      session.pendingOnArrival = { page: targetPage, action: nextActionOnArrival };
-      if (WA.saveSession) WA.saveSession(session);
-      await WA.sleep(1000);
-      if (WA.navigateTo) WA.navigateTo(targetPage, targetLabel);
-    },
-
-    onError: async (err, action) => {
-      if (WA.agentSay) WA.agentSay(`I couldn't navigate to ${action.payload.targetLabel}. You can find it in the menu.`);
-      if (WA.reconnectBridge) WA.reconnectBridge();
-    },
-
-    onComplete: async () => {}
-  });
-
-  // CLICK ELEMENT
-  registerAction({
-    type:            'click_element',
-    label:           'Click page element',
-    permissionLevel: 'propose',
-
-    execute: async (action) => {
-      const { elementId, elementText } = action.payload;
-      const ctx = WA.PAGE_CONTEXT;
-      const el  = ctx?._refs?.[elementId];
-      if (!el) throw new Error(`Element ${elementId} not found`);
-      if (WA.agentSay) WA.agentSay(`Clicking "${elementText}" for you…`);
-      await WA.sleep(400);
-      el.click();
-    },
-
-    onError: async (err, action) => {
-      if (WA.agentSay) WA.agentSay(`I couldn't click that — you can click "${action.payload.elementText}" yourself.`);
-      if (WA.reconnectBridge) WA.reconnectBridge();
-    },
-
-    onComplete: async () => {
-      setTimeout(() => { if (WA.reconnectBridge) WA.reconnectBridge(); }, 800);
     }
   });
 
@@ -575,124 +503,7 @@
     });
   }
 
-  // ─── URL VALIDATION ───────────────────────────────────────────────────────
-
-  async function validateUrl(url) {
-    try {
-      const resp = await fetch(url, { method: 'HEAD' });
-      return resp.ok;
-    } catch {
-      return false;
-    }
-  }
-
   // ─── ACTION ORCHESTRATION ─────────────────────────────────────────────────
-
-  function createAction(type, description, payload) {
-    const action = {
-      id:          'act_' + Date.now(),
-      type,
-      description,
-      payload,
-      status:      'pending',
-      createdAt:   Date.now(),
-      startedAt:   null,
-      completedAt: null,
-      error:       null
-    };
-    return action;
-  }
-
-  async function proposeAction(session, type, description, payload, autoOverride) {
-    // Guard — only one pending/active at a time
-    const hasActive = session.actions.some(a => ['pending','active'].includes(a.status));
-    if (hasActive) {
-      if (WA.DEBUG) console.log('[WA] Action already pending/active — skipping proposal');
-      return { failed: false, reason: 'action_already_active' }; // Return status
-    }
-  
-    const handler = ActionRegistry[type];
-  
-    // For navigate actions, validate URL first
-    if (type === 'navigate' && payload?.targetPage) {
-      const isValid = await validateUrl(payload.targetPage);
-      if (!isValid) {
-        if (WA.DEBUG) console.warn(`[WA] Navigation blocked — 404 detected: ${payload.targetPage}`);
-        
-        // Record the failure in session state
-        session.lastUrlValidationFailure = {
-          targetUrl: payload.targetPage,
-          targetLabel: payload.targetLabel,
-          attemptedAt: Date.now(),
-          userMessage: WA._lastUserMessage || '',
-          agentResponse: session.messages[session.messages.length - 1]?.text || ''
-        };
-        
-        if (WA.saveSession) WA.saveSession(session);
-        
-        // Provide immediate feedback to user
-        if (WA.agentSay) {
-          WA.agentSay(`I tried to find "${payload.targetLabel}" but that page isn't available. Let me suggest an alternative.`);
-        }
-        
-        // Reconnect only if disconnected - if connected, agent will see failure on next turn
-        if (WA.reconnectBridge && WA.bridge && !WA.bridge.isConnected()) {
-          setTimeout(() => WA.reconnectBridge(), 1500);
-        }
-        
-        return { failed: true, reason: 'url_validation_failed' }; // Return failure status
-      }
-    }
-  
-    const action  = createAction(type, description, payload);
-    session.actions.push(action);
-    if (WA.saveSession) WA.saveSession(session);
-
-    const isAuto = autoOverride === true || handler?.permissionLevel === 'auto';
-
-    if (isAuto) {
-      if (WA.DEBUG) console.log(`[WA] Auto-executing: ${type}`);
-      if (WA.setState) WA.setState('action', 'active');
-      action.status    = 'active';
-      action.startedAt = Date.now();
-      if (WA.saveSession) WA.saveSession(session);
-
-      // Skip turn instead of disconnect - stay connected during action
-      if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
-      executeAction(action, session);
-      return { failed: false }; // Success
-    }
-
-    if (WA.setState) WA.setState('action', 'proposed');
-    if (WA.renderActionCard) WA.renderActionCard(action);
-  }
-
-  function proposeChoiceAction(session, description, options) {
-    const hasActive = session.actions.some(a => ['pending','active'].includes(a.status));
-    if (hasActive) return;
-
-    if (WA.renderCard) {
-      WA.renderCard({
-        label:   'Choose an action',
-        message: description,
-        buttons: options.map((opt) => ({
-          text:   opt.label,
-          style:  'confirm',
-          action: () => {
-            const a = createAction(opt.action.type, opt.action.description, opt.action.payload);
-            session.actions.push(a);
-            a.status    = 'active';
-            a.startedAt = Date.now();
-            if (WA.saveSession) WA.saveSession(session);
-
-            // Skip turn instead of disconnect - stay connected during action
-            if (WA.bridge?.skipTurn) WA.bridge.skipTurn();
-            executeAction(a, session);
-          }
-        })).concat([{ text: 'No thanks', style: 'deny', action: () => { if (WA.setState) WA.setState('action', 'none'); } }])
-      });
-    }
-  }
 
   function confirmAction(actionId, session) {
     const action = session.actions.find(a => a.id === actionId);
@@ -754,9 +565,6 @@
   WA.ActionRegistry        = ActionRegistry;
   WA.registerAction        = registerAction;
   WA.executeAction         = executeAction;
-  WA.createAction          = createAction;
-  WA.proposeAction         = proposeAction;
-  WA.proposeChoiceAction   = proposeChoiceAction;
   WA.confirmAction         = confirmAction;
   WA.denyAction            = denyAction;
   WA.dismissPendingActions = dismissPendingActions;

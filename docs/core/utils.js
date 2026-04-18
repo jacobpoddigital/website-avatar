@@ -17,33 +17,6 @@
   
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   
-    // ─── PAGE / FORM HELPERS ──────────────────────────────────────────────────
-  
-    function getPageMap()    { return WA.PAGE_MAP || []; }
-    function getFormMap()    { return WA.FORM_MAP || []; }
-  
-    function getContactPage() {
-      return getPageMap().find(p =>
-        p.label.toLowerCase().includes('contact') ||
-        p.keywords.some(k => k.includes('contact')) ||
-        p.file.includes('contact')
-      ) || null;
-    }
-  
-    function freshFields() {
-      const forms = getFormMap();
-      if (!forms.length) return [];
-      return forms[0].fields.map(f => ({ ...f, value: null }));
-    }
-  
-    function isOnContactPage() {
-      const contact = getContactPage();
-      if (!contact) return false;
-      const current = window.location.href.replace(/\/$/, '');
-      const target  = contact.file.replace(/\/$/, '');
-      return current === target || window.location.pathname === new URL(contact.file).pathname;
-    }
-  
     // ─── FIELD UTILITIES ──────────────────────────────────────────────────────
   
     function getFieldElement(field) {
@@ -170,11 +143,6 @@
     WA.log                = log;
     WA.warn               = warn;
     WA.sleep              = sleep;
-    WA.getPageMap         = getPageMap;
-    WA.getFormMap         = getFormMap;
-    WA.getContactPage     = getContactPage;
-    WA.freshFields        = freshFields;
-    WA.isOnContactPage    = isOnContactPage;
     WA.getFieldElement    = getFieldElement;
     WA.fillField          = fillField;
     WA.fillCheckboxField  = fillCheckboxField;

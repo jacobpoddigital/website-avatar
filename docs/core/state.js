@@ -66,7 +66,6 @@
         actions: [],
         activeFormActionId: null,
         isOpen: false,
-        lastUrlValidationFailure: null,
         sentPrompts: []   // replaces the separate wa_sent_prompts sessionStorage key
       };
     }
@@ -101,14 +100,6 @@
           // Clear activeFormActionId
           if (s.activeFormActionId) {
             s.activeFormActionId = null;
-          }
-
-          // Clear stale pendingOnArrival
-          if (s.pendingOnArrival) {
-            const alreadyArrived = (s.actions || []).some(
-              a => a.type === 'navigate_then_fill' && a.status === 'complete'
-            );
-            if (alreadyArrived) delete s.pendingOnArrival;
           }
 
           // Ensure sentPrompts exists (for sessions saved before this field was added)
