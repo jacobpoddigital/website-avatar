@@ -4,9 +4,10 @@
  * Platform-agnostic site content search for Website Avatar.
  * Detects the active CMS from WA_CONFIG and loads the appropriate provider.
  *
- * After fetching results from the CMS, an AI call to /classify picks the most
- * relevant result for the visitor's query. All results are shown in the card,
- * with the AI-recommended one badged as "Best match" and pinned first.
+ * The agent calls content_search immediately when the user asks about content,
+ * guides, or pages — same pattern as ecom_product_search. The provider handles
+ * all search strategy (incremental keyword reduction, long-tail detection, etc.).
+ * This layer stays thin: call provider, queue results, return titles to agent.
  *
  * Config-driven — never auto-detects from window globals.
  * Client KV config must include: { "cmsPlatform": "wordpress" }
@@ -22,8 +23,6 @@
   const WA   = window.WebsiteAvatar || (window.WebsiteAvatar = {});
   const _log  = (...a) => WA.DEBUG && console.log('[WA:Content]', ...a);
   const _warn = (...a) => console.warn('[WA:Content]', ...a);
-
-  const SEARCH_LIMIT = 100;
 
   // ── PROVIDER REGISTRY ──────────────────────────────────────────────────────
 
@@ -63,24 +62,6 @@
     return _provider;
   }
 
-  // ── STOP WORDS ─────────────────────────────────────────────────────────────
-
-  const STOP_WORDS = new Set([
-    'a','an','the','and','or','for','in','on','at','to','of','is','it',
-    'with','that','this','be','as','are','was','were','have','has','had',
-    'do','does','did','will','would','could','should','may','might','can',
-    'not','but','from','by','so','if','about','into','up','out','i','me',
-    'my','we','you','your','get','what','some','any','give','show',
-    'find','look','search','want','need','looking','something','anything',
-    'where','how','tell','page','info','information','details','more'
-  ]);
-
-  function _significantWords(query) {
-    return query.trim().toLowerCase()
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !STOP_WORDS.has(w));
-  }
-
   // ── ACTION REGISTRATION ────────────────────────────────────────────────────
 
   function _registerActions() {
@@ -99,50 +80,24 @@
         const { query } = action.payload || {};
         if (!query) return { error: 'query is required' };
 
-        _log('Content search:', query, `(limit: ${SEARCH_LIMIT})`);
+        _log('Content search:', query);
 
         try {
-          // Primary: full query
-          let results = await provider.search(query, { limit: SEARCH_LIMIT });
-
-          // Fallback chain: stop-word stripped → top 3 words → individual words
-          if (!results.length && query.trim().includes(' ')) {
-            const words = _significantWords(query);
-
-            if (words.length) {
-              const shortQuery = words.slice(0, 3).join(' ');
-              _log('Search fallback (3 words):', shortQuery);
-              results = await provider.search(shortQuery, { limit: SEARCH_LIMIT });
-            }
-
-            if (!results.length && words.length) {
-              const seen = new Set();
-              for (const word of words.slice(0, 3)) {
-                _log('Search fallback (single word):', word);
-                const hits = await provider.search(word, { limit: SEARCH_LIMIT });
-                for (const r of hits) {
-                  if (!seen.has(r.url)) {
-                    seen.add(r.url);
-                    results.push(r);
-                  }
-                }
-                if (results.length >= SEARCH_LIMIT) break;
-              }
-              results = results.slice(0, SEARCH_LIMIT);
-            }
-          }
+          const results = await provider.search(query);
 
           if (!results.length) {
-            return { shown: 0 };
+            return { results: [], shown: 0 };
           }
 
-          _queueContentResults(results.slice(0, 5));
+          const top = results.slice(0, 5);
+          _queueContentResults(top);
 
-          if (typeof WA.renderPendingContentCard === 'function') {
-            WA.renderPendingContentCard();
-          }
-
-          return { shown: Math.min(results.length, 5) };
+          // Return titles + types so the agent can reference what was found,
+          // but no URLs or excerpts that would invite verbatim narration.
+          return {
+            results: top.map(r => ({ title: r.title, type: r.type })),
+            shown:   top.length
+          };
 
         } catch (err) {
           _warn('content_search threw:', err.message);
