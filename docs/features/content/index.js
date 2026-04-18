@@ -23,8 +23,7 @@
   const _log  = (...a) => WA.DEBUG && console.log('[WA:Content]', ...a);
   const _warn = (...a) => console.warn('[WA:Content]', ...a);
 
-  const CLASSIFY_URL = 'https://backend.jacob-e87.workers.dev/classify';
-  const SEARCH_LIMIT = 100; // per-type fetch cap — AI sees the full pool before any trimming
+  const SEARCH_LIMIT = 100;
 
   // ── PROVIDER REGISTRY ──────────────────────────────────────────────────────
 
@@ -82,53 +81,6 @@
       .filter(w => w.length > 2 && !STOP_WORDS.has(w));
   }
 
-  // ── AI RANKING ─────────────────────────────────────────────────────────────
-
-  /**
-   * Ask OpenAI (via /classify proxy) to pick the top 5 most relevant results
-   * for the visitor's query, ordered by relevance.
-   * Returns an ordered array of indices, or null on failure.
-   */
-  async function _aiRankTop5(query, results) {
-    if (!results.length) return null;
-
-    const list = results.map((r, i) =>
-      `${i}. ${r.title} (${r.type})${r.excerpt ? ' — ' + r.excerpt.slice(0, 120) : ''}`
-    ).join('\n');
-
-    const prompt = `A website visitor asked: "${query}"
-
-The following pages were found on the site:
-${list}
-
-Return the index of every result, ordered from most to least relevant to the visitor's question.
-Do not filter any out — just sort them. Return at most 5.
-Reply with JSON only — no explanation:
-{ "top": [<index>, <index>, ...] }`;
-
-    try {
-      const res = await fetch(CLASSIFY_URL, {
-        method:  'POST',
-        signal:  AbortSignal.timeout(8000),
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt, maxTokens: 60 })
-      });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      const raw  = (data.content || '').replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(raw);
-      const top = (parsed.top || [])
-        .map(i => parseInt(i, 10))
-        .filter(i => !isNaN(i) && i >= 0 && i < results.length)
-        .slice(0, 5);
-      _log(`AI top ${top.length}:`, top.map(i => `"${results[i].title}"`).join(', '));
-      return top.length ? top : null;
-    } catch (err) {
-      _warn('AI ranking failed:', err.message);
-      return null;
-    }
-  }
-
   // ── ACTION REGISTRATION ────────────────────────────────────────────────────
 
   function _registerActions() {
@@ -181,31 +133,16 @@ Reply with JSON only — no explanation:
           }
 
           if (!results.length) {
-            return { results: [] };
+            return { shown: 0 };
           }
 
-          // AI ranking: picks top 5 from the full pool, ordered by relevance
-          const topIndices = await _aiRankTop5(query, results);
+          _queueContentResults(results.slice(0, 5));
 
-          let finalResults;
-          if (topIndices) {
-            finalResults = topIndices.map((i, rank) => ({
-              ...results[i],
-              recommended: rank === 0
-            }));
-          } else {
-            finalResults = results.slice(0, 5);
-          }
-
-          _queueContentResults(finalResults);
-
-          // Agent answers first then calls this tool — render the card immediately
-          // rather than waiting for a subsequent agent message to trigger it.
           if (typeof WA.renderPendingContentCard === 'function') {
             WA.renderPendingContentCard();
           }
 
-          return { results };
+          return { shown: Math.min(results.length, 5) };
 
         } catch (err) {
           _warn('content_search threw:', err.message);
