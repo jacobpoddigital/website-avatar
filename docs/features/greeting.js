@@ -16,7 +16,7 @@
        * Dev override: add ?wa_greeting=1 to the URL to bypass the dismissed flag.
        */
       shouldShow() {
-        if (new URLSearchParams(window.location.search).get('wa_greeting') === '1') return true;
+        if (new URLSearchParams(window.location.search).get('wa_greeting')) return true;
 
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return true;
@@ -45,21 +45,30 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ expiry }));
       },
   
+      getVariant() {
+        const param = new URLSearchParams(window.location.search).get('wa_greeting');
+        if (param === 'v2' || param === 'v3' || param === 'v4') return param;
+        return 'control';
+      },
+
       /**
        * Show the greeting widget with fade-in animation
        */
       show(delay = 1000) {
         if (!this.shouldShow()) return;
-        
+
+        const variant = this.getVariant();
         const greeting = document.getElementById('wa-greeting');
         const bubble = document.getElementById('wa-bubble');
         if (!greeting) return;
-  
+
+        greeting.classList.add(`wa-variant-${variant}`);
+
         setTimeout(() => {
           greeting.classList.add('wa-greeting-visible');
-          // Hide bubble while greeting is showing
-          if (bubble) {
-            bubble.classList.add('wa-hidden');
+          if (bubble) bubble.classList.add('wa-hidden');
+          if (variant !== 'control') {
+            this._animateVariantEntry(greeting);
           }
         }, delay);
       },
@@ -156,6 +165,68 @@
         this.show();
       },
   
+      _typeText(el, onComplete) {
+        const text = el.textContent.trim();
+        el.textContent = '';
+
+        const cursor = document.createElement('span');
+        cursor.className = 'wa-typing-cursor';
+        el.appendChild(cursor);
+
+        let i = 0;
+        const tick = () => {
+          if (i < text.length) {
+            cursor.insertAdjacentText('beforebegin', text[i]);
+            i++;
+            setTimeout(tick, 28 + Math.random() * 22);
+          } else {
+            setTimeout(() => {
+              cursor.remove();
+              if (onComplete) onComplete();
+            }, 400);
+          }
+        };
+        setTimeout(tick, 150);
+      },
+
+      _animateVariantEntry(greeting) {
+        const bubbleP = greeting.querySelector('.wa-greeting-bubble p');
+        const bullets = greeting.querySelectorAll('.wa-greeting-bullets-list li');
+        const actionsEl = document.getElementById('wa-greeting-actions');
+        const consentGiven = !!localStorage.getItem('wa_gdpr_consent');
+
+        if (!bubbleP) return;
+
+        bullets.forEach(li => {
+          li.style.opacity = '0';
+          li.style.transform = 'translateY(8px)';
+        });
+
+        if (actionsEl && consentGiven) {
+          actionsEl.style.opacity = '0';
+          actionsEl.style.transform = 'translateY(8px)';
+        }
+
+        this._typeText(bubbleP, () => {
+          bullets.forEach((li, i) => {
+            setTimeout(() => {
+              li.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+              li.style.opacity = '1';
+              li.style.transform = 'translateY(0)';
+            }, i * 160);
+          });
+
+          const actionsDelay = bullets.length * 160 + 80;
+          if (actionsEl && consentGiven) {
+            setTimeout(() => {
+              actionsEl.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+              actionsEl.style.opacity = '1';
+              actionsEl.style.transform = 'translateY(0)';
+            }, actionsDelay);
+          }
+        });
+      },
+
       /**
        * Attach click handlers to greeting buttons
        */
