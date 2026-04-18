@@ -123,17 +123,18 @@
     // ── INTERFACE ────────────────────────────────────────────────────────────
 
     /**
-     * Parallel search using /wp/v2/pages and /wp/v2/posts directly.
+     * Query-aware search strategy:
      *
-     * The /wp/v2/search endpoint is unreliable for pages in widget context.
-     * Using /wp/v2/pages and /wp/v2/posts directly is consistent and returns
-     * the same results as browser console tests. /wp/v2/search is kept only
-     * for custom post types (type=post excludes page subtype).
+     * Pages + custom post types are always searched — they answer navigational queries.
+     * Posts are only searched when:
+     *   (a) the query is informational/long-tail (question words, 4+ sig words, guide/tips/etc.), OR
+     *   (b) the page search returned 0 results.
      *
-     * Stop words are stripped client-side before sending so WP AND-matches
-     * meaningful terms anywhere in title/content.
+     * This keeps results tight for "where is your SEO page?" style queries while
+     * still surfacing blog content for "how to choose the best WordPress theme".
      *
-     * Merge order: pages → custom post types → posts
+     * Stop words stripped client-side so WP AND-matches meaningful terms in title/content.
+     * If sig-word query yields nothing, full original phrase is tried as a fallback.
      */
     async search(query, { limit = 10 } = {}) {
       _log('search:', query, `limit: ${limit}`);
@@ -141,32 +142,16 @@
       const per      = String(limit);
       const sigWords = this._significantWords(query);
       const sigQuery = sigWords.join(' ') || query;
+      const longTail = this._isLongTailQuery(query, sigWords);
 
-      const pageFields = 'id,title,link,type,excerpt';
-      const postFields = 'id,title,link,type,excerpt';
+      _log(`query type: ${longTail ? 'long-tail' : 'navigational'}, sigQuery: "${sigQuery}"`);
 
-      const makePageUrl = (q) => {
-        const p = new URLSearchParams({ search: q, per_page: per, _fields: pageFields, status: 'publish' });
-        return `/wp/v2/pages?${p}`;
-      };
-      const makePostUrl = (q) => {
-        const p = new URLSearchParams({ search: q, per_page: per, _fields: postFields, status: 'publish' });
-        return `/wp/v2/posts?${p}`;
-      };
-      const makeCustomUrl = (q) => {
-        const p = new URLSearchParams({ search: q, type: 'post', per_page: per, _fields: 'id,title,url,type,subtype' });
-        return `/wp/v2/search?${p}`;
-      };
+      const fields       = 'id,title,link,type,excerpt';
+      const customFields = 'id,title,url,type,subtype';
 
-      const fetches = [
-        this._fetch(makePageUrl(sigQuery)),                                          // sig words — pages
-        this._fetch(makePostUrl(sigQuery)),                                          // sig words — posts
-        this._fetch(makeCustomUrl(sigQuery)),                                        // sig words — custom types
-        sigQuery !== query ? this._fetch(makePageUrl(query)) : Promise.resolve([]), // full phrase — pages
-        sigQuery !== query ? this._fetch(makePostUrl(query)) : Promise.resolve([]), // full phrase — posts
-      ];
-
-      const settled = await Promise.allSettled(fetches);
+      const makePageUrl   = (q) => `/wp/v2/pages?${new URLSearchParams({ search: q, per_page: per, _fields: fields, status: 'publish' })}`;
+      const makePostUrl   = (q) => `/wp/v2/posts?${new URLSearchParams({ search: q, per_page: per, _fields: fields, status: 'publish' })}`;
+      const makeCustomUrl = (q) => `/wp/v2/search?${new URLSearchParams({ search: q, type: 'post', per_page: per, _fields: customFields })}`;
 
       const seen   = new Set();
       const addAll = (res, normalise, typeFilter = null) => {
@@ -189,16 +174,48 @@
       const norm  = (r) => this._normalisePost(r);
       const normS = (r) => this._normaliseSearchResult(r);
 
-      const pages      = addAll(settled[0], norm);
-      const customTypes= addAll(settled[2], normS, r => r.type !== 'Post' && r.type !== 'Page');
-      const phrasePages= addAll(settled[3], norm);
-      const posts      = addAll(settled[1], norm);
-      const phrasePosts= addAll(settled[4], norm);
+      // ── Phase 1: pages + custom types (always) ─────────────────────────────
+      const [sigPageRes, sigCustomRes, phrasePageRes] = await Promise.allSettled([
+        this._fetch(makePageUrl(sigQuery)),
+        this._fetch(makeCustomUrl(sigQuery)),
+        sigQuery !== query ? this._fetch(makePageUrl(query)) : Promise.resolve([]),
+      ]);
+
+      const pages       = addAll(sigPageRes,    norm);
+      const customTypes = addAll(sigCustomRes,  normS, r => r.type !== 'Post' && r.type !== 'Page');
+      const phrasePages = addAll(phrasePageRes, norm);
+
+      const pageCount = pages.length + phrasePages.length;
+
+      // ── Phase 2: posts — only if long-tail query OR no pages found ─────────
+      let posts = [], phrasePosts = [];
+
+      if (longTail || pageCount === 0) {
+        _log(`fetching posts (reason: ${longTail ? 'long-tail' : 'no pages found'})`);
+        const [sigPostRes, phrasePostRes] = await Promise.allSettled([
+          this._fetch(makePostUrl(sigQuery)),
+          sigQuery !== query ? this._fetch(makePostUrl(query)) : Promise.resolve([]),
+        ]);
+        posts       = addAll(sigPostRes,    norm);
+        phrasePosts = addAll(phrasePostRes, norm);
+      }
 
       const results = [...pages, ...customTypes, ...phrasePages, ...posts, ...phrasePosts];
 
-      _log(`search results: ${results.length} (pages: ${pages.length}, phrase pages: ${phrasePages.length}, posts: ${posts.length}, custom: ${customTypes.length})`);
+      _log(`search results: ${results.length} (pages: ${pages.length}, phrasePages: ${phrasePages.length}, custom: ${customTypes.length}, posts: ${posts.length + phrasePosts.length})`);
       return results;
+    }
+
+    /**
+     * Returns true when the query signals informational intent — blog posts are likely relevant.
+     * Navigational queries (service pages, contact, pricing) return false.
+     */
+    _isLongTailQuery(query, sigWords) {
+      const q = query.toLowerCase();
+      if (/\b(how|why|what|when|which|where|who)\b/.test(q)) return true;
+      if (sigWords.length >= 4) return true;
+      if (/\b(guide|tips|tutorial|advice|ideas|examples|best|vs|versus|comparison|review|help|learn|understand|difference|pros|cons)\b/.test(q)) return true;
+      return false;
     }
 
     _significantWords(query) {
