@@ -145,10 +145,24 @@
       const pages = pageRes.status === 'fulfilled' && Array.isArray(pageRes.value) ? pageRes.value : [];
       const posts  = postRes.status === 'fulfilled' && Array.isArray(postRes.value)  ? postRes.value  : [];
 
-      // Pages take priority — trust WP's own relevance ranking
-      const hit = pages[0] || posts[0] || null;
-      if (hit) _log('resolve hit:', this._decodeEntities(hit.title?.rendered || hit.title || ''));
-      return hit ? this._normalisePost(hit) : null;
+      const all = [...pages, ...posts];
+      if (!all.length) return null;
+
+      // WP relevance doesn't always put the exact title first — score by word overlap
+      const needle = q.toLowerCase().trim();
+      const needleWords = needle.split(/\s+/).filter(w => w.length > 2);
+
+      const _score = (r) => {
+        const rTitle = this._decodeEntities(r.title?.rendered || r.title || '').toLowerCase().trim();
+        if (rTitle === needle) return 100;
+        if (rTitle.includes(needle) || needle.includes(rTitle)) return 80;
+        const matched = needleWords.filter(w => rTitle.includes(w)).length;
+        return needleWords.length ? (matched / needleWords.length) * 60 : 0;
+      };
+
+      const hit = all.reduce((best, r) => _score(r) >= _score(best) ? r : best, all[0]);
+      _log('resolve hit:', this._decodeEntities(hit.title?.rendered || hit.title || ''), `(score ${_score(hit)})`);
+      return this._normalisePost(hit);
     }
 
     /**
