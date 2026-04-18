@@ -129,29 +129,32 @@
      * searches pages and posts in parallel, returns the first match.
      */
     async resolve(title) {
-      // Strip punctuation so WP doesn't choke on colons, apostrophes, etc.
-      const q = title.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      // Preserve hyphens (e.g. "Short-Form") — WP matches them as tokens.
+      // Strip everything else that could break the query (colons, question marks, etc.)
+      const q = title.replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
       if (!q) return null;
 
       _log('resolve:', q);
-      const fields = 'id,title,link,type,excerpt';
-      const params = new URLSearchParams({ search: q, per_page: '5', _fields: fields, status: 'publish' });
+      const fields  = 'id,title,link,type,excerpt';
+      const _search = (searchQ) => {
+        const p = new URLSearchParams({ search: searchQ, per_page: '10', _fields: fields, status: 'publish' });
+        return Promise.allSettled([
+          this._fetch(`/wp/v2/pages?${p}`),
+          this._fetch(`/wp/v2/posts?${p}`)
+        ]);
+      };
 
-      const [pageRes, postRes] = await Promise.allSettled([
-        this._fetch(`/wp/v2/pages?${params}`),
-        this._fetch(`/wp/v2/posts?${params}`)
-      ]);
+      const _collect = ([pR, poR]) => {
+        const pg = pR.status  === 'fulfilled' && Array.isArray(pR.value)  ? pR.value  : [];
+        const po = poR.status === 'fulfilled' && Array.isArray(poR.value) ? poR.value : [];
+        return [...pg, ...po];
+      };
 
-      const pages = pageRes.status === 'fulfilled' && Array.isArray(pageRes.value) ? pageRes.value : [];
-      const posts  = postRes.status === 'fulfilled' && Array.isArray(postRes.value)  ? postRes.value  : [];
+      let all = _collect(await _search(q));
 
-      const all = [...pages, ...posts];
-      if (!all.length) return null;
-
-      // WP relevance doesn't always put the exact title first — score by word overlap
-      const needle = q.toLowerCase().trim();
+      // Score against the original title — WP relevance ranking isn't reliable
+      const needle      = q.toLowerCase().trim();
       const needleWords = needle.split(/\s+/).filter(w => w.length > 2);
-
       const _score = (r) => {
         const rTitle = this._decodeEntities(r.title?.rendered || r.title || '').toLowerCase().trim();
         if (rTitle === needle) return 100;
@@ -160,7 +163,24 @@
         return needleWords.length ? (matched / needleWords.length) * 60 : 0;
       };
 
-      const hit = all.reduce((best, r) => _score(r) >= _score(best) ? r : best, all[0]);
+      // If 0 results or best match score is weak, retry with sig words —
+      // long generic titles can return unrelated posts at the top
+      const bestOf = (arr) => arr.length ? arr.reduce((b, r) => _score(r) >= _score(b) ? r : b, arr[0]) : null;
+      let hit = bestOf(all);
+
+      if (!hit || _score(hit) < 40) {
+        const sigQ = this._significantWords(q).join(' ');
+        if (sigQ) {
+          _log(`resolve: score ${hit ? _score(hit) : 0} below threshold, retrying with sig words:`, sigQ);
+          const sigAll = _collect(await _search(sigQ));
+          // Merge both result sets and re-score
+          const merged = [...all, ...sigAll].filter((r, i, a) => a.findIndex(x => x.id === r.id) === i);
+          const sigHit = bestOf(merged);
+          if (sigHit && _score(sigHit) > (hit ? _score(hit) : 0)) hit = sigHit;
+        }
+      }
+
+      if (!hit) return null;
       _log('resolve hit:', this._decodeEntities(hit.title?.rendered || hit.title || ''), `(score ${_score(hit)})`);
       return this._normalisePost(hit);
     }
